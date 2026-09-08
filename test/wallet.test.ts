@@ -1,6 +1,6 @@
 import { Wallet } from "@anchor-lang/core";
 import { describe, expect, it } from "vitest";
-import { authMessage } from "../src/gateway/auth.js";
+import { hashRequestAuth } from "../src/gateway/auth.js";
 import { generateKeypair } from "../src/solana/kit.js";
 import { gatewaySignerFromWallet, signerFromKeypair, type MolphaWallet } from "../src/wallet.js";
 
@@ -10,7 +10,13 @@ describe("gatewaySignerFromWallet", () => {
     const wallet = new Wallet(keypair);
     const signer = gatewaySignerFromWallet(wallet);
     expect(signer).toBeDefined();
-    const msg = authMessage(new Uint8Array(32), 1n);
+    const msg = hashRequestAuth({
+      programId: new Uint8Array(32),
+      gateway: new Uint8Array(32),
+      sourceId: new Uint8Array(32),
+      signaturesRequired: 1,
+      timestamp: 1n,
+    });
     const sig = await signer!(msg);
     expect(sig).toHaveLength(64);
     expect(await signerFromKeypair(keypair)(msg)).toEqual(sig);

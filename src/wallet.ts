@@ -9,7 +9,7 @@ import type { SolanaKeypair } from "./solana/kit.js";
 /** Anchor `Wallet` plus optional gateway auth override. */
 export type MolphaWallet = Wallet & {
   /**
-   * Signs gateway `authMessage` payloads. When omitted, derived from Anchor
+   * Signs gateway request-auth hashes (`hashRequestAuth`). When omitted, derived from Anchor
    * `Wallet.payer` when the keypair secret is available (Node `Wallet`, etc.).
    */
   signAuthMessage?: Signer;

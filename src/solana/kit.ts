@@ -1,5 +1,5 @@
 import { web3 } from "@anchor-lang/core";
-import { address, getAddressEncoder, type Address } from "@solana/kit";
+import { address, getAddressDecoder, getAddressEncoder, type Address } from "@solana/kit";
 
 export type SolanaAddress = Address | string | InstanceType<typeof web3.PublicKey>;
 export type SolanaConnection = InstanceType<typeof web3.Connection>;
@@ -18,6 +18,7 @@ export const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = address(
 export const SYSTEM_PROGRAM_ADDRESS = address("11111111111111111111111111111111");
 
 const addressEncoder = getAddressEncoder();
+const addressDecoder = getAddressDecoder();
 
 export function toSolanaAddress(value: SolanaAddress): Address {
   return address(typeof value === "string" ? value : value.toBase58());
@@ -29,6 +30,11 @@ export function toPublicKey(value: SolanaAddress): InstanceType<typeof web3.Publ
 
 export function addressBytes(value: SolanaAddress): Uint8Array {
   return Uint8Array.from(addressEncoder.encode(toSolanaAddress(value)));
+}
+
+/** Base58 `Address` from 32 raw bytes (e.g. a `Registry.nodes[i]` entry). */
+export function addressFromBytes(bytes: Uint8Array): Address {
+  return addressDecoder.decode(bytes);
 }
 
 export function findProgramAddressSync(

@@ -1,6 +1,8 @@
 /**
  * Minimal Molpha verifier ABI for `verify` and registry reads.
- * Matches `IValidator` in the Molpha EVM contracts repo.
+ * Matches the deployed `verify(DataUpdate, SchnorrSignature)` verifier. The first tuple
+ * component carries the 32-byte source id (the contract source names it `jobId`;
+ * component names do not affect ABI encoding).
  */
 export const MOLPHA_VERIFIER_ABI = [
   {
@@ -12,7 +14,7 @@ export const MOLPHA_VERIFIER_ABI = [
         name: "dataUpdate",
         type: "tuple",
         components: [
-          { name: "jobId", type: "bytes32" },
+          { name: "sourceId", type: "bytes32" },
           { name: "registryVersion", type: "uint32" },
           { name: "signaturesRequired", type: "uint32" },
           { name: "value", type: "bytes32" },

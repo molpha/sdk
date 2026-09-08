@@ -1,8 +1,8 @@
 /**
  * `MolphaSolanaClient` — consumer on-chain surface only (subscribe, extend,
- * submitDataUpdate, readFeed/readPlan/readSubscription,
- * getRegistrySelectionConfig, verifyNodeKeysForPrivateApi). Built from an
- * Anchor `Program` over the vendored IDL.
+ * submitAttestation, readFeed/readPlan/readSubscription/readRegistry,
+ * getRegistrySelectionConfig, verifyNodeKeysForPrivateApi). Built from an Anchor
+ * `Program` over the vendored IDL.
  */
 import {
   AnchorProvider,
@@ -12,18 +12,24 @@ import {
 } from "@anchor-lang/core";
 import BN from "bn.js";
 import type { Address } from "@solana/kit";
-import { hexToBytes, toFixedBytes } from "../core/encoding.js";
+import { toFixedBytes } from "../core/encoding.js";
 import {
   normalizeSecp256k1PublicKeyHex,
   secp256k1PublicKeyFromCoordinates,
 } from "../core/nodeKeys.js";
-import type { DataUpdateResult, Node, NodeKeyVerifierArgs, RegistrySelectionConfig } from "../core/types.js";
+import type {
+  DataUpdateResult,
+  Node,
+  NodeKeyVerifierArgs,
+  RegistrySelectionConfig,
+} from "../core/types.js";
 import {
   type RegistryStateView,
-  resolveRegistryIndexForVersion,
+  type RegistryView,
   resolveRemainingAccounts,
 } from "./accounts.js";
 import {
+  addressFromBytes,
   getAssociatedTokenAddressSync,
   setComputeUnitLimit,
   SYSTEM_PROGRAM_ADDRESS,
@@ -34,9 +40,9 @@ import {
 } from "./kit.js";
 import {
   feedPda,
-  nodePda,
   planPda,
   protocolConfigPda,
+  registryPda,
   registryStatePda,
   subscriptionPda,
 } from "./pdas.js";
@@ -45,7 +51,8 @@ import { PlanType, planIdFromVariant, planVariant, type PlanId } from "./plans.j
 
 export { PlanType, type PlanId } from "./plans.js";
 
-const DEFAULT_COMPUTE_UNIT_LIMIT = 700_000;
+/** Matches the program CLI default; `submit_attestation` verifies the aggregate on-chain. */
+const DEFAULT_COMPUTE_UNIT_LIMIT = 1_400_000;
 type Commitment = NonNullable<ConstructorParameters<typeof AnchorProvider>[2]>["commitment"];
 
 export interface SubscribeResult {
@@ -60,6 +67,8 @@ export interface PlanInfo {
   subscriptionPrice: bigint;
   maxSigners: number;
   maxDelegates: number;
+  /** Rounds a subscription on this plan may settle per period. */
+  maxRounds: bigint;
   privateApiEnabled: boolean;
   isActive: boolean;
 }
@@ -82,17 +91,33 @@ export interface SubscriptionInfo {
 
 export interface SubmitResult {
   signature: string;
+  /** Feed PDA written by this submit (`["molpha_feed", sourceId, [signaturesRequired], submitter]`). */
+  feed: Address;
 }
 
 export interface FeedAccount {
-  feedId: number[];
-  value: number[];
+  sourceId: number[];
+  /** Stored payload: raw value (`valueKind.value`) or keccak digest (`valueKind.hash`), ≤ 32 bytes. */
+  value: Uint8Array | number[];
   valueKind: { value: Record<string, never> } | { hash: Record<string, never> };
+  /** u64 unix seconds. */
   canonicalTimestamp: BN;
   signaturesRequired: number;
   signersBitmap: number[];
   registryVersion: number;
   bump: number;
+}
+
+/** Anchor-encoded `SubmitAttestationArgs` (camelCase field names). */
+export interface SubmitAttestationArgs {
+  sourceId: number[];
+  registryVersion: number;
+  value: number[];
+  canonicalTimestamp: BN;
+  signaturesRequired: number;
+  aggSigS: number[];
+  commitment: number[];
+  signersBitmap: number[];
 }
 
 interface NodeAccount {
@@ -142,21 +167,29 @@ export class MolphaSolanaClient {
   }
 
   /**
-   * Current registry version and selection `redundancy_buffer` from a single
-   * `RegistryState` account read. Prefer this over {@link getRegistryVersion}
-   * when deriving gateway selection bitmaps.
+   * Current registry version plus the selection inputs of that snapshot
+   * (`redundancy_buffer`, `node_count`). Two account reads: `RegistryState`, then the
+   * version-addressed `Registry`. Prefer this over {@link getRegistryVersion} when
+   * deriving gateway selection bitmaps.
    */
-  async getRegistrySelectionConfig(): Promise<RegistrySelectionConfig> {
-    const registry = await this.fetchRegistry();
+  async getRegistrySelectionConfig(): Promise<Required<RegistrySelectionConfig>> {
+    const state = await this.fetchRegistryState();
+    const registry = await this.fetchRegistry(state.currentVersion);
     return {
-      registryVersion: registry.currentVersion,
+      registryVersion: state.currentVersion,
       redundancyBuffer: registry.redundancyBuffer,
+      nodeCount: registry.nodeCount,
     };
   }
 
   async getRegistryVersion(): Promise<number> {
-    const { registryVersion } = await this.getRegistrySelectionConfig();
-    return registryVersion;
+    return (await this.fetchRegistryState()).currentVersion;
+  }
+
+  /** Read an immutable registry snapshot; defaults to the current version. */
+  async readRegistry(version?: number): Promise<RegistryView> {
+    const target = version ?? (await this.fetchRegistryState()).currentVersion;
+    return this.fetchRegistry(target);
   }
 
   /** Fetch a plan's on-chain terms, including the USDC `subscriptionPrice` charged on `subscribe`. */
@@ -218,12 +251,11 @@ export class MolphaSolanaClient {
 
     const signature = await this.methods
       .subscribe(planVariant(planId))
-      .accounts({
+      .accountsPartial({
         owner,
         protocolConfig: protocolConfigPda(this.programId),
         plan: planPda(planId, this.programId),
         subscription: subscriptionPda(owner, this.programId),
-        usdcMint,
         ownerUsdc,
         treasury,
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
@@ -251,12 +283,11 @@ export class MolphaSolanaClient {
 
     const signature = await this.methods
       .extendSubscription()
-      .accounts({
+      .accountsPartial({
         owner,
         protocolConfig: protocolConfigPda(this.programId),
         subscription,
         plan: planPda(planId, this.programId),
-        usdcMint,
         ownerUsdc,
         treasury,
         tokenProgram: TOKEN_PROGRAM_ADDRESS,
@@ -286,54 +317,85 @@ export class MolphaSolanaClient {
     return price;
   }
 
-  async submitDataUpdate(
+  /**
+   * Submit a gateway attestation via `submit_attestation`. The feed account for
+   * `(sourceId, signaturesRequired, submitter)` is created on first use. Signer
+   * `Node` accounts are resolved from the registry snapshot the round was signed
+   * against and passed as remaining accounts.
+   */
+  async submitAttestation(
     result: DataUpdateResult,
     opts?: { computeUnitLimit?: number },
   ): Promise<SubmitResult> {
-    const registry = await this.fetchRegistry();
-    const feedId = hexToBytes(result.feedId);
-    const remaining = resolveRemainingAccounts(result, registry, this.programId);
+    const sourceId = toFixedBytes(result.sourceId, 32, "sourceId");
+    const submitter = this.wallet;
+    const registry = await this.fetchRegistry(result.registryVersion);
+    const remaining = resolveRemainingAccounts(result.signersBitmap, registry);
+    const feed = feedPda(sourceId, result.signaturesRequired, submitter, this.programId);
     const cuIx = setComputeUnitLimit(opts?.computeUnitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT);
 
     const signature = await this.methods
-      .submitDataUpdate(this.buildSubmitArgs(result))
-      .accounts({
-        submitter: this.wallet,
-        registryState: registryStatePda(this.programId),
-        feed: feedPda(feedId, this.programId),
+      .submitAttestation(buildSubmitAttestationArgs(result))
+      .accountsPartial({
+        submitter,
+        registry: registryPda(result.registryVersion, this.programId),
+        feed,
+        protocolConfig: protocolConfigPda(this.programId),
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
       })
       .remainingAccounts(remaining)
       .preInstructions([cuIx])
       .rpc();
-    return { signature };
+    return { signature, feed };
   }
 
-  async readFeed(feedId: string): Promise<FeedAccount | null> {
-    const feed = feedPda(hexToBytes(feedId), this.programId);
+  /** @deprecated Renamed to {@link submitAttestation}. */
+  submitDataUpdate(
+    result: DataUpdateResult,
+    opts?: { computeUnitLimit?: number },
+  ): Promise<SubmitResult> {
+    return this.submitAttestation(result, opts);
+  }
+
+  /**
+   * Read the feed written by `submitter` (default: this wallet) for
+   * `(sourceId, signaturesRequired)`, or `null` before its first submit.
+   */
+  async readFeed(
+    sourceId: string,
+    signaturesRequired: number,
+    submitter: SolanaAddress = this.wallet,
+  ): Promise<FeedAccount | null> {
+    const feed = feedPda(
+      toFixedBytes(sourceId, 32, "sourceId"),
+      signaturesRequired,
+      submitter,
+      this.programId,
+    );
     return (await this.accounts.feed.fetchNullable(feed)) as FeedAccount | null;
   }
 
   /**
    * Authenticate gateway-provided private API encryption keys against the
-   * on-chain Node accounts for the round's registry version.
+   * on-chain Node accounts of the round's registry snapshot (`registry.nodes[index]`).
    */
   async verifyNodeKeysForPrivateApi(args: NodeKeyVerifierArgs): Promise<void> {
-    const registry = await this.fetchRegistry();
+    const registry = await this.fetchRegistry(args.registryVersion);
     const selectedNodes = selectedNodesForVerifier(args);
 
     await Promise.all(
       selectedNodes.map(async (node) => {
-        const registryIndex = resolveRegistryIndexForVersion(
-          node.index,
-          args.registryVersion,
-          registry,
-        );
-        const account = await this.fetchNodeAccount(registryIndex, node.index);
+        const nodeAddress = registry.nodes[node.index];
+        if (node.index >= registry.nodeCount || nodeAddress === undefined) {
+          throw new Error(
+            `Gateway selected node ${node.index} is outside registry ${registry.version} node_count ${registry.nodeCount}`,
+          );
+        }
+        const account = await this.fetchNodeAccount(nodeAddress, node.index);
         const onChainKey = secp256k1PublicKeyFromCoordinates(
           nodeCoordinate(account, "secp256k1PubkeyX", "secp256k1_pubkey_x"),
           nodeCoordinate(account, "secp256k1PubkeyY", "secp256k1_pubkey_y"),
-          `Node(${registryIndex}) secp256k1 public key`,
+          `Node(${nodeAddress}) secp256k1 public key`,
         );
         const gatewayKey = normalizeSecp256k1PublicKeyHex(
           node.signingKey,
@@ -341,24 +403,11 @@ export class MolphaSolanaClient {
         );
         if (gatewayKey !== onChainKey) {
           throw new Error(
-            `Gateway selected node ${node.index} signingKey does not match on-chain Node(${registryIndex})`,
+            `Gateway selected node ${node.index} signingKey does not match on-chain Node(${nodeAddress})`,
           );
         }
       }),
     );
-  }
-
-  private buildSubmitArgs(result: DataUpdateResult) {
-    return {
-      feedId: Array.from(hexToBytes(result.feedId)),
-      registryVersion: result.registryVersion,
-      value: Buffer.from(hexToBytes(result.valuePacked)),
-      canonicalTimestamp: new BN(result.timestamp),
-      signaturesRequired: result.signaturesRequired,
-      aggSigS: Array.from(toFixedBytes(result.s, 32, "s")),
-      commitmentAddr: Array.from(toFixedBytes(result.commitmentAddr, 20, "commitmentAddr")),
-      signersBitmap: Array.from(toFixedBytes(result.signersBitmap, 32, "signersBitmap")),
-    };
   }
 
   private decodePlan(account: {
@@ -366,6 +415,7 @@ export class MolphaSolanaClient {
     subscriptionPrice: { toString(): string };
     maxSigners: number;
     maxDelegates: number;
+    maxRounds: { toString(): string };
     privateApiEnabled: boolean;
     isActive: boolean;
   }): PlanInfo {
@@ -374,49 +424,73 @@ export class MolphaSolanaClient {
       subscriptionPrice: BigInt(account.subscriptionPrice.toString()),
       maxSigners: account.maxSigners,
       maxDelegates: account.maxDelegates,
+      maxRounds: BigInt(account.maxRounds.toString()),
       privateApiEnabled: account.privateApiEnabled,
       isActive: account.isActive,
     };
   }
 
-  private async fetchRegistry(): Promise<RegistryStateView> {
-    const registry = await this.accounts.registryState.fetch(
-      registryStatePda(this.programId),
-    );
+  private async fetchRegistryState(): Promise<RegistryStateView> {
+    const state = await this.accounts.registryState.fetch(registryStatePda(this.programId));
     return {
-      currentVersion: registry.currentVersion,
-      previousVersion: registry.previousVersion,
-      previousExpiresAt: BigInt(registry.previousExpiresAt.toString()),
+      currentVersion: state.currentVersion,
+      nextVersion: state.nextVersion,
+    };
+  }
+
+  private async fetchRegistry(version: number): Promise<RegistryView> {
+    const registry = await this.accounts.registry.fetch(registryPda(version, this.programId));
+    const nodeCount: number = registry.nodeCount;
+    const nodes = (registry.nodes as Array<Uint8Array | number[]>)
+      .slice(0, nodeCount)
+      .map((entry) => addressFromBytes(Uint8Array.from(entry)));
+    return {
+      version: registry.version,
+      nodeCount,
       redundancyBuffer: registry.redundancyBuffer,
-      lastTransitionType: registry.lastTransitionType,
-      removedOldIndex: registry.removedOldIndex,
-      movedOldIndex: registry.movedOldIndex,
+      nodes,
+      graceActiveUntil: BigInt(registry.graceActiveUntil.toString()),
     };
   }
 
   private async fetchNodeAccount(
-    registryIndex: number,
+    nodeAddress: Address,
     selectedNodeIndex: number,
   ): Promise<NodeAccount> {
     try {
-      return await this.accounts.node.fetch(nodePda(registryIndex, this.programId));
+      return await this.accounts.node.fetch(nodeAddress);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `Failed to fetch on-chain Node(${registryIndex}) for selected node ${selectedNodeIndex}: ${detail}`,
+        `Failed to fetch on-chain Node(${nodeAddress}) for selected node ${selectedNodeIndex}: ${detail}`,
       );
     }
   }
 
+  /** `usdc_mint` from `ProtocolConfig`; the treasury is its ATA owned by the config PDA. */
   private async fetchProtocolTokens(): Promise<{ usdcMint: Address; treasury: Address }> {
-    const config = await this.accounts.protocolConfig.fetch(
-      protocolConfigPda(this.programId),
-    );
+    const protocolConfig = protocolConfigPda(this.programId);
+    const config = await this.accounts.protocolConfig.fetch(protocolConfig);
+    const usdcMint = toSolanaAddress(config.usdcMint);
     return {
-      usdcMint: toSolanaAddress(config.usdcMint),
-      treasury: toSolanaAddress(config.treasury),
+      usdcMint,
+      treasury: getAssociatedTokenAddressSync(usdcMint, protocolConfig),
     };
   }
+}
+
+/** Build the Anchor `SubmitAttestationArgs` for a gateway result. */
+export function buildSubmitAttestationArgs(result: DataUpdateResult): SubmitAttestationArgs {
+  return {
+    sourceId: Array.from(toFixedBytes(result.sourceId, 32, "sourceId")),
+    registryVersion: result.registryVersion,
+    value: Array.from(toFixedBytes(result.valuePacked, 32, "valuePacked")),
+    canonicalTimestamp: new BN(result.timestamp),
+    signaturesRequired: result.signaturesRequired,
+    aggSigS: Array.from(toFixedBytes(result.s, 32, "s")),
+    commitment: Array.from(toFixedBytes(result.commitmentAddr, 20, "commitmentAddr")),
+    signersBitmap: Array.from(toFixedBytes(result.signersBitmap, 32, "signersBitmap")),
+  };
 }
 
 /** Normalize a confirmed USDC amount (base units) to `bigint`, rejecting non-integers. */

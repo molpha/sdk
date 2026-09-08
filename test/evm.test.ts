@@ -9,7 +9,7 @@ import {
 } from "../src/evm/helpers.js";
 
 const SAMPLE_RESULT: DataUpdateResult = {
-  feedId: "aa".repeat(32),
+  sourceId: "aa".repeat(32),
   value: "100",
   valuePacked: "bb".repeat(32),
   timestamp: 1_700_000_000,
@@ -32,12 +32,12 @@ describe("MOLPHA verifier address", () => {
 describe("toFixedHex", () => {
   it("normalizes hex with optional 0x prefix and quotes", () => {
     expect(toFixedHex("aa".repeat(20), 20, "commitment")).toBe(`0x${"aa".repeat(20)}`);
-    expect(toFixedHex(`0x${"bb".repeat(32)}`, 32, "jobId")).toBe(`0x${"bb".repeat(32)}`);
+    expect(toFixedHex(`0x${"bb".repeat(32)}`, 32, "sourceId")).toBe(`0x${"bb".repeat(32)}`);
     expect(toFixedHex(`"${"cc".repeat(32)}"`, 32, "signature")).toBe(`0x${"cc".repeat(32)}`);
   });
 
   it("throws on wrong byte length", () => {
-    expect(() => toFixedHex("abcd", 32, "jobId")).toThrow(/expected 32 bytes/);
+    expect(() => toFixedHex("abcd", 32, "sourceId")).toThrow(/expected 32 bytes/);
   });
 });
 

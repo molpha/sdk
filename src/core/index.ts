@@ -4,8 +4,9 @@
  * program and EVM verifier.
  */
 export * from "./apiconfig.js";
+export * from "./constants.js";
 export * from "./encoding.js";
-export * from "./ids.js";
+export * from "./message.js";
 export * from "./nodeKeys.js";
 export * from "./selection.js";
 export * from "./types.js";

@@ -1,10 +1,14 @@
 /**
  * Public protocol types (spec §8). Kept dependency-free so they can be imported
  * from any entry point.
+ *
+ * Hex convention: every `*Id`, bitmap, scalar and address field typed `string` is plain
+ * lowercase hex without a `0x` prefix unless documented otherwise.
  */
 
 /** A registered oracle node as returned by the gateway. */
 export interface Node {
+  /** Position in the registry snapshot; maps to signers-bitmap bit `index`. */
   index: number;
   peerId: string;
   address: string;
@@ -14,8 +18,8 @@ export interface Node {
 
 /** Selected node-key material that must be authenticated before private API encryption. */
 export interface NodeKeyVerifierArgs {
-  /** 32-byte feed id, hex. */
-  feedId: string;
+  /** 32-byte source id, hex. */
+  sourceId: string;
   /** On-chain registry version the gateway round is bound to. */
   registryVersion: number;
   /** Canonical timestamp used to derive the selected indexes. */
@@ -32,7 +36,7 @@ export interface NodeKeyVerifierArgs {
  */
 export type NodeKeyVerifier = (args: NodeKeyVerifierArgs) => void | Promise<void>;
 
-/** The off-chain API definition a feed resolves. */
+/** The off-chain API definition a source resolves. */
 export interface APIConfig {
   url: string;
   method?: "GET" | "POST" | "PUT";
@@ -52,22 +56,28 @@ export interface EncKeyBundle {
   envelopes: Record<string, string>;
 }
 
-/** Signs a message and returns a 64-byte ed25519 signature. */
+/** Signs a 32-byte message and returns a 64-byte ed25519 signature. */
 export type Signer = (message: Uint8Array) => Promise<Uint8Array>;
 
 /**
- * On-chain registry fields a gateway selection round is bound to. Fetched from
- * `RegistryState` (`current_version`, `redundancy_buffer`).
+ * On-chain registry fields a gateway selection round is bound to. `registryVersion`
+ * comes from `RegistryState.current_version`; `redundancyBuffer` and `nodeCount` from
+ * the version-addressed `Registry` snapshot.
  */
 export interface RegistrySelectionConfig {
   registryVersion: number;
   /** Selection padding: `min(signaturesRequired + redundancyBuffer, nodeCount)`. */
   redundancyBuffer: number;
+  /**
+   * `Registry.node_count` of the snapshot — the value the chain derives selection from.
+   * Optional for standalone callers; when absent the gateway node-list length is used.
+   */
+  nodeCount?: number;
 }
 
 /**
- * Aggregate Schnorr signature in the commitment-address form the shipped program
- * verifies (`MOLPHA_MESSAGE_V1`). The legacy `(rx, ryParity)` fields are gone.
+ * Aggregate Schnorr signature in the commitment-address form the program verifies over
+ * the attestation message (see `attestationMessageHash`).
  */
 export interface SchnorrSignature {
   /** 32-byte scalar, hex. */
@@ -80,10 +90,11 @@ export interface SchnorrSignature {
 
 /** A completed gateway round, ready to submit on-chain. */
 export interface DataUpdateResult {
-  feedId: string;
+  /** 32-byte source id, hex (`deriveSourceId(apiConfig)`). */
+  sourceId: string;
   /** Human-readable value. */
   value: string;
-  /** 32-byte packed value, hex. */
+  /** 32-byte packed value, hex — the bytes covered by the signature. */
   valuePacked: string;
   /** canonicalTimestamp (seconds). */
   timestamp: number;

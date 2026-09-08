@@ -1,7 +1,7 @@
 {
   "name": "@molpha/sdk",
   "version": "0.0.0",
-  "description": "Molpha Consumer SDK — subscribe, create feeds, run gateway rounds, submit and read on-chain data.",
+  "description": "Molpha Consumer SDK — subscribe, request signed data from the gateway, submit attestations and read on-chain feeds.",
   "license": "MIT",
   "repository": {
     "type": "git",

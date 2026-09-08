@@ -12,7 +12,7 @@ import {
 } from "../src/starknet/helpers.js";
 
 const SAMPLE_RESULT: DataUpdateResult = {
-  feedId: "aa".repeat(32),
+  sourceId: "aa".repeat(32),
   value: "100",
   valuePacked: "bb".repeat(32),
   timestamp: 1_700_000_000,
@@ -51,7 +51,7 @@ describe("Starknet verifier argument helpers", () => {
     const { dataUpdate, signature } = buildStarknetVerifierArgs(SAMPLE_RESULT);
 
     expect(dataUpdate).toEqual({
-      feed_id: BigInt(`0x${"aa".repeat(32)}`),
+      source_id: BigInt(`0x${"aa".repeat(32)}`),
       registry_version: 2,
       signatures_required: 3,
       value: BigInt(`0x${"bb".repeat(32)}`),

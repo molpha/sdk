@@ -5,9 +5,9 @@
 import { bigIntFromBytesBe, toFixedBytes } from "../core/encoding.js";
 import type { DataUpdateResult } from "../core/types.js";
 
-/** `(bytes32 feedId, uint32 registryVersion, uint32 signaturesRequired, bytes32 valuePacked, uint64 timestamp)` */
+/** `(bytes32 sourceId, uint32 registryVersion, uint32 signaturesRequired, bytes32 valuePacked, uint64 timestamp)` */
 export type EvmDataUpdateTuple = readonly [
-  feedId: `0x${string}`,
+  sourceId: `0x${string}`,
   registryVersion: number,
   signaturesRequired: number,
   valuePacked: `0x${string}`,
@@ -64,7 +64,7 @@ export function signersBitmapToUint256(value: string): bigint {
 /** Build verifier `DataUpdate` and `SchnorrSignature` tuples from a gateway result. */
 export function buildEvmVerifierArgs(result: DataUpdateResult): EvmVerifierArgs {
   const dataUpdate: EvmDataUpdateTuple = [
-    toFixedHex(result.feedId, 32, "feedId"),
+    toFixedHex(result.sourceId, 32, "sourceId"),
     result.registryVersion,
     result.signaturesRequired,
     toFixedHex(result.valuePacked, 32, "valuePacked"),

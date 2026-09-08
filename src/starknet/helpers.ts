@@ -7,7 +7,8 @@ import type { DataUpdateResult } from "../core/types.js";
 
 /** Starknet calldata shape for `DataUpdate`. */
 export interface StarknetDataUpdate {
-  feed_id: bigint;
+  /** 32-byte source id as u256 (the Cairo struct still names this field `feed_id`). */
+  source_id: bigint;
   registry_version: number;
   signatures_required: number;
   value: bigint;
@@ -70,7 +71,7 @@ export function signersBitmapToStarknetUint256(value: string): bigint {
 /** Build verifier `DataUpdate` and `SchnorrSignature` structs from a gateway result. */
 export function buildStarknetVerifierArgs(result: DataUpdateResult): StarknetVerifierArgs {
   const dataUpdate: StarknetDataUpdate = {
-    feed_id: fixedHexToBigInt(result.feedId, 32, "feedId"),
+    source_id: fixedHexToBigInt(result.sourceId, 32, "sourceId"),
     registry_version: result.registryVersion,
     signatures_required: result.signaturesRequired,
     value: fixedHexToBigInt(result.valuePacked, 32, "valuePacked"),
