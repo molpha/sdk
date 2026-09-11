@@ -6,12 +6,17 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, utf8 } from "./encoding.js";
 import type { APIConfig } from "./types.js";
 
+function sortHeaders(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers).sort(([a], [b]) => a.localeCompare(b)));
+}
+
 /** Gateway wire shape — defaults applied before hash / encryption. */
 export function canonicalizeAPIConfig(apiConfig: APIConfig): APIConfig {
+  const headers = apiConfig.headers ?? {};
   return {
     url: apiConfig.url,
     method: apiConfig.method ?? "GET",
-    headers: apiConfig.headers ?? {},
+    headers: Object.keys(headers).length === 0 ? headers : sortHeaders(headers),
     responseParser: apiConfig.responseParser,
     valueTransform: apiConfig.valueTransform ?? "",
   };

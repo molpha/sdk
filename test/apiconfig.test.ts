@@ -23,6 +23,20 @@ describe("canonicalizeAPIConfig", () => {
       valueTransform: "",
     });
   });
+
+  it("sorts header names so insertion order does not change the hash", () => {
+    const base = {
+      url: "https://api.example.com/v1/finalized/rate",
+      responseParser: "$.rate",
+    };
+    const a = canonicalizeAPIConfig({ ...base, headers: { "Z-Header": "z", "A-Header": "a" } });
+    const b = canonicalizeAPIConfig({ ...base, headers: { "A-Header": "a", "Z-Header": "z" } });
+
+    expect(a).toEqual(b);
+    expect(deriveSourceIdString({ ...base, headers: { "Z-Header": "z", "A-Header": "a" } })).toBe(
+      deriveSourceIdString({ ...base, headers: { "A-Header": "a", "Z-Header": "z" } }),
+    );
+  });
 });
 
 describe("deriveApiConfigHash", () => {
