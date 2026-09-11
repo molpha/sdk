@@ -48,7 +48,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 interface MockRoutes {
   execute: (url: string, body: Record<string, unknown>) => Response | Promise<Response>;
   /** `/v1/info` handler by endpoint origin; unmatched origins throw like a dead host. */
-  info?: (url: string) => Response | Promise<Response>;
+  info?: (url: string, init?: RequestInit) => Response | Promise<Response>;
 }
 
 /** Routes GETs to nodes/health (+ optional info) and lets the test control each /execute POST. */
@@ -60,7 +60,7 @@ function mockFetch(routes: MockRoutes) {
     }
     if (url.endsWith("/v1/info")) {
       if (!routes.info) throw new Error(`unexpected fetch: ${url}`);
-      return routes.info(url);
+      return routes.info(url, init);
     }
     if (url.endsWith("/nodes")) return jsonResponse(nodes);
     if (url.endsWith("/health")) return jsonResponse({ ok: true });
@@ -365,6 +365,42 @@ describe("MolphaGateway request auth", () => {
 
     const gw = new MolphaGateway(["http://gw1", "http://gw2"], registry, signer, SUBSCRIPTION_OWNER);
     const result = await gw.requestSignedData({ signaturesRequired: 1, apiConfig });
+    expect(result.value).toBe("9");
+    expect(await expectedAuthSig(publicKey, postedBody!, GATEWAY_AUTHORITY_2)).toBe(true);
+  });
+
+  it("times out a hanging /v1/info and fails over to the next endpoint", async () => {
+    const { publicKey, signer } = ed25519Signer();
+    let postedBody: Record<string, unknown> | undefined;
+    globalThis.fetch = mockFetch({
+      info: (url, init) => {
+        if (url.startsWith("http://gw1")) {
+          return new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            if (!signal) return;
+            if (signal.aborted) {
+              reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+              return;
+            }
+            signal.addEventListener("abort", () => {
+              reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+            });
+          });
+        }
+        return jsonResponse({ status: "ok", data: { gatewayAuthority: GATEWAY_AUTHORITY_2 } });
+      },
+      execute: (_url, body) => {
+        postedBody = body;
+        return completed({ value: "9" });
+      },
+    }) as unknown as typeof fetch;
+
+    const gw = new MolphaGateway(["http://gw1", "http://gw2"], registry, signer, SUBSCRIPTION_OWNER);
+    const result = await gw.requestSignedData({
+      signaturesRequired: 1,
+      apiConfig,
+      timeoutMs: 50,
+    });
     expect(result.value).toBe("9");
     expect(await expectedAuthSig(publicKey, postedBody!, GATEWAY_AUTHORITY_2)).toBe(true);
   });

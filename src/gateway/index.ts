@@ -247,9 +247,12 @@ export class MolphaGateway {
    * `GET {url}/v1/info` — the gateway's on-chain identity. Throws when the gateway
    * reports a `programId` different from this client's.
    */
-  async fetchGatewayInfo(endpoint: GatewayEndpointInput): Promise<GatewayInfo> {
+  async fetchGatewayInfo(
+    endpoint: GatewayEndpointInput,
+    timeoutMs?: number,
+  ): Promise<GatewayInfo> {
     const { url } = normalizeEndpoint(endpoint);
-    const res = await fetch(`${url}/v1/info`, { method: "GET" });
+    const res = await this.fetchWithTimeout(`${url}/v1/info`, { method: "GET" }, timeoutMs);
     if (!res.ok) {
       throw new GatewayError(`GET /v1/info failed (${res.status})`, res.status);
     }
@@ -388,7 +391,7 @@ export class MolphaGateway {
         try {
           let authSig: Uint8Array = ZERO_AUTH_SIG;
           if (authSigner) {
-            const gateway = await this.resolveGatewayPda(endpoint);
+            const gateway = await this.resolveGatewayPda(endpoint, timeoutMs);
             authSig = await authSigner(
               hashRequestAuth({
                 programId: this.programIdBytes,
@@ -487,10 +490,13 @@ export class MolphaGateway {
   }
 
   /** Gateway PDA bytes for an endpoint, cached per URL. A failed lookup is not cached. */
-  private resolveGatewayPda(endpoint: GatewayEndpoint): Promise<Uint8Array> {
+  private resolveGatewayPda(
+    endpoint: GatewayEndpoint,
+    timeoutMs: number,
+  ): Promise<Uint8Array> {
     let pending = this.gatewayPdas.get(endpoint.url);
     if (!pending) {
-      pending = this.lookupGatewayPda(endpoint).catch((err: unknown) => {
+      pending = this.lookupGatewayPda(endpoint, timeoutMs).catch((err: unknown) => {
         this.gatewayPdas.delete(endpoint.url);
         throw err;
       });
@@ -499,9 +505,13 @@ export class MolphaGateway {
     return pending;
   }
 
-  private async lookupGatewayPda(endpoint: GatewayEndpoint): Promise<Uint8Array> {
+  private async lookupGatewayPda(
+    endpoint: GatewayEndpoint,
+    timeoutMs: number,
+  ): Promise<Uint8Array> {
     const authority =
-      endpoint.gatewayAuthority ?? (await this.fetchGatewayInfo(endpoint)).gatewayAuthority;
+      endpoint.gatewayAuthority ??
+      (await this.fetchGatewayInfo(endpoint, timeoutMs)).gatewayAuthority;
     return deriveGatewayPda(authority, this.programId);
   }
 
@@ -526,15 +536,29 @@ export class MolphaGateway {
     body: unknown,
     timeoutMs: number,
   ): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, {
+    return this.fetchWithTimeout(
+      url,
+      {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      },
+      timeoutMs,
+    );
+  }
+
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs?: number,
+  ): Promise<Response> {
+    if (timeoutMs === undefined) {
+      return fetch(url, init);
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
     } finally {
       clearTimeout(timer);
     }
