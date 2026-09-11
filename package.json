@@ -1,5 +1,6 @@
 {
   "name": "@molpha/sdk",
+  "version": "0.1.0",
   "description": "Molpha Consumer SDK — subscribe, request signed data from the gateway, submit attestations and read on-chain feeds.",
   "license": "MIT",
   "repository": {
