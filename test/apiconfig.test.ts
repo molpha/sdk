@@ -23,6 +23,36 @@ describe("canonicalizeAPIConfig", () => {
       valueTransform: "",
     });
   });
+
+  it("sorts header names so insertion order does not change the hash", () => {
+    const base = {
+      url: "https://api.example.com/v1/finalized/rate",
+      responseParser: "$.rate",
+    };
+    const a = canonicalizeAPIConfig({ ...base, headers: { "Z-Header": "z", "A-Header": "a" } });
+    const b = canonicalizeAPIConfig({ ...base, headers: { "A-Header": "a", "Z-Header": "z" } });
+
+    expect(a).toEqual(b);
+    expect(deriveSourceIdString({ ...base, headers: { "Z-Header": "z", "A-Header": "a" } })).toBe(
+      deriveSourceIdString({ ...base, headers: { "A-Header": "a", "Z-Header": "z" } }),
+    );
+  });
+
+  it("sorts header names by UTF-16 code units, not host locale", () => {
+    const base = {
+      url: "https://api.example.com/v1/finalized/rate",
+      responseParser: "$.rate",
+    };
+    const headers = { "If-Match": "etag", "idempotency-key": "key" };
+    const canonical = canonicalizeAPIConfig({ ...base, headers });
+    const keys = Object.keys(canonical.headers ?? {});
+
+    // Code-unit order: 'I' (73) < 'i' (105), so If-Match before idempotency-key.
+    expect(keys).toEqual(["If-Match", "idempotency-key"]);
+    expect(keys).not.toEqual(
+      ["idempotency-key", "If-Match"].sort((a, b) => a.localeCompare(b, "en")),
+    );
+  });
 });
 
 describe("deriveApiConfigHash", () => {
