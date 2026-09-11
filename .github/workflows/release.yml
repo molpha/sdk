@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -13,7 +14,8 @@ permissions:
   id-token: write
 
 jobs:
-  release:
+  stable-release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,7 +31,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
+          # No registry-url: setup-node writes a placeholder NODE_AUTH_TOKEN that
+          # overrides npm OIDC trusted publishing (npm/cli#8730).
 
       - name: Upgrade npm for trusted publishing
         # Pin to npm 11: changeset publish runs `pnpm publish --no-git-checks`, which
@@ -54,4 +57,83 @@ jobs:
           title: "chore: release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+  dev-snapshot:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          # No registry-url: setup-node writes a placeholder NODE_AUTH_TOKEN that
+          # overrides npm OIDC trusted publishing (npm/cli#8730).
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11.5.2
+
+      - name: Sync baseline from main
+        # The snapshot version is calculated from the current package.json version plus the
+        # pending changesets (useCalculatedVersion: true). Release commits ("chore: release")
+        # that bump package.json and delete consumed changesets only land on `main`, so without
+        # this step `dev` stays anchored to a stale baseline (e.g. 0.1.0) and republishes
+        # already-released changesets, producing snapshots BELOW the real `latest`.
+        # Merging `main` brings package.json up to the released version and prunes changesets
+        # that main already consumed, while keeping genuinely-new changesets on `dev`.
+        # The merge is local to the runner (not pushed); snapshots publish with --no-git-tag.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Ensure a stable release exists
+        # npm assigns the FIRST published version to `latest` regardless of `--tag`.
+        # Guard against a dev snapshot becoming the package's `latest`: require an existing
+        # stable (non-prerelease) `latest`. If missing, cut a stable release from `main` first.
+        run: |
+          name=$(node -p "require('./package.json').name")
+          latest=$(npm view "$name" dist-tags.latest 2>/dev/null || true)
+          if [ -z "$latest" ] || printf '%s' "$latest" | grep -q '-'; then
+            echo "::error::No stable 'latest' release exists yet (found: '${latest:-none}'). Publish a stable release from 'main' before publishing dev snapshots, otherwise the snapshot becomes the package's 'latest' tag."
+            exit 1
+          fi
+
+      - name: Publish dev snapshot
+        # Publishes a prerelease like 0.2.0-dev-20260605120000 on the `dev` dist-tag.
+        # Uses npm publish directly so OIDC env vars reach npm (pnpm publish does not).
+        # Runs in release.yml so the existing npm trusted publisher config applies.
+        run: |
+          pnpm changeset version --snapshot dev
+          pnpm build
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "No new snapshot to publish ($name@$version already on npm or no pending changesets)"
+            exit 0
+          fi
+          npm publish --tag dev
+        env:
           NPM_CONFIG_PROVENANCE: true

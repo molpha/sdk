@@ -50,7 +50,7 @@
     "version-packages": "changeset version",
     "e2e-demo": "tsx scripts/molpha-consumer-e2e-demo.ts",
     "release": "pnpm build && changeset publish",
-    "release:dev": "changeset version --snapshot dev && pnpm build && changeset publish --no-git-tag --tag dev"
+    "release:dev": "changeset version --snapshot dev && pnpm build && npm publish --tag dev"
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
