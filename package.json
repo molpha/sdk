@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Molpha/sdk.git"
+    "url": "https://github.com/molpha/sdk"
   },
   "homepage": "https://github.com/Molpha/sdk#readme",
   "bugs": {
