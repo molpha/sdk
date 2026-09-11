@@ -711,13 +711,20 @@ Versions follow semver and are driven by the nature of each change, not by the b
 
 ### One-time setup
 
-1. Add `NPM_TOKEN` under GitHub repo settings:
+1. Configure npm [trusted publishing](https://docs.npmjs.com/trusted-publishers/) for `@molpha/sdk`:
 
    ```text
-   Settings → Secrets and variables → Actions
+   npmjs.com → @molpha/sdk → Settings → Trusted publishing
    ```
 
-   Use a granular npm automation token with publish access to the `@molpha` scope.
+   Add a trusted publisher for each release workflow:
+
+   | Workflow file       | Branch | Purpose          |
+   | ------------------- | ------ | ---------------- |
+   | `release.yml`       | `main` | Stable releases  |
+   | `release-dev.yml`   | `dev`  | Dev snapshots    |
+
+   Use organization `Molpha`, repository `sdk`, and the exact workflow filename (including `.yml`). No `NPM_TOKEN` secret is required.
 
 2. Publish a stable release from `main` first.
 

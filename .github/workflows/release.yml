@@ -27,9 +27,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@">=11.5.1"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -41,7 +44,7 @@ jobs:
         run: pnpm test
 
       - name: Create Release PR or Publish
-        uses: changesets/action@v1
+        uses: changesets/action@v1.7.0
         with:
           version: pnpm version-packages
           publish: pnpm release
@@ -49,5 +52,4 @@ jobs:
           title: "chore: release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true

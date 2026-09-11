@@ -26,9 +26,13 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for trusted publishing
+        # Trusted publishing requires npm >= 11.5.1 (OIDC auth + provenance).
+        run: npm install -g npm@">=11.5.1"
 
       - name: Sync baseline from main
         # The snapshot version is calculated from the current package.json version plus the
@@ -69,6 +73,8 @@ jobs:
       - name: Publish dev snapshot
         # Publishes a prerelease like 0.2.0-dev-20260605120000 on the `dev` dist-tag.
         # Requires at least one pending changeset; if there are none, nothing is published.
+        # Authenticates via npm OIDC trusted publishing (no NPM_TOKEN).
         run: pnpm release:dev
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
