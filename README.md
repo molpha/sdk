@@ -717,12 +717,11 @@ Versions follow semver and are driven by the nature of each change, not by the b
    npmjs.com → @molpha/sdk → Settings → Trusted publishing
    ```
 
-   Add a trusted publisher for each release workflow:
+   Add a trusted publisher for the release workflow:
 
-   | Workflow file       | Branch | Purpose          |
-   | ------------------- | ------ | ---------------- |
-   | `release.yml`       | `main` | Stable releases  |
-   | `release-dev.yml`   | `dev`  | Dev snapshots    |
+   | Workflow file | Branches       | Purpose                         |
+   | ------------- | -------------- | ------------------------------- |
+   | `release.yml` | `main`, `dev`  | Stable releases + dev snapshots |
 
    Use organization `Molpha`, repository `sdk`, and the exact workflow filename (including `.yml`). No `NPM_TOKEN` secret is required.
 
