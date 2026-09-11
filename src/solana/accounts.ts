@@ -1,27 +1,29 @@
 /**
- * Account fetching, registry-version transition resolution, and remaining-accounts
- * construction.
+ * Account views and remaining-accounts construction for `submit_attestation`.
  */
+import type { Address } from "@solana/kit";
 import { hexToBytes } from "../core/encoding.js";
 import { selectedIndices } from "../core/selection.js";
-import type { DataUpdateResult } from "../core/types.js";
-import { type SolanaAccountMeta, type SolanaAddress, toPublicKey } from "./kit.js";
-import { nodePda, VIRTUAL_INDEX } from "./pdas.js";
+import { type SolanaAccountMeta, toPublicKey } from "./kit.js";
 
-/** The subset of on-chain `RegistryState` the client needs (Anchor camelCase). */
+/** On-chain `RegistryState` (Anchor camelCase): pointer to the current immutable snapshot. */
 export interface RegistryStateView {
   currentVersion: number;
-  previousVersion: number;
-  previousExpiresAt: bigint;
-  /** On-chain selection padding: `signatures_required + redundancy_buffer`. */
+  nextVersion: number;
+}
+
+/**
+ * Immutable, version-addressed `Registry` snapshot. `nodes` holds only the populated
+ * `[..nodeCount]` entries; entry `i` is the `Node` account address for signer bit `i`.
+ */
+export interface RegistryView {
+  version: number;
+  nodeCount: number;
+  /** Selection padding: `min(signaturesRequired + redundancyBuffer, nodeCount)`. */
   redundancyBuffer: number;
-  lastTransitionType:
-    | { none: Record<string, never> }
-    | { add: Record<string, never> }
-    | { removeTail: Record<string, never> }
-    | { removeSwap: Record<string, never> };
-  removedOldIndex: number;
-  movedOldIndex: number;
+  nodes: Address[];
+  /** Unix seconds until which this superseded snapshot still verifies; `0n` while current. */
+  graceActiveUntil: bigint;
 }
 
 /** Set-bit indices of a 32-byte big-endian bitmap (full 256-bit scan). */
@@ -30,58 +32,21 @@ export function bitmapToIndices(signersBitmapHex: string): number[] {
 }
 
 /**
- * Build the registry-index remaining accounts for a submit. Valid only
- * against the current or previous registry version (else thrown client-side).
+ * Signer `Node` accounts for `submit_attestation`, in ascending signers-bitmap bit order.
+ * Bit `i` resolves to `registry.nodes[i]` of the snapshot the round was signed against;
+ * a bit at or beyond `nodeCount` can never verify, so it is rejected client-side.
  */
 export function resolveRemainingAccounts(
-  result: DataUpdateResult,
-  registry: RegistryStateView,
-  programId: SolanaAddress,
+  signersBitmapHex: string,
+  registry: RegistryView,
 ): SolanaAccountMeta[] {
-  const bits = bitmapToIndices(result.signersBitmap);
-
-  const mapIndex = registryIndexMapper(result.registryVersion, registry);
-  return bits.map((bit) => ({
-    pubkey: toPublicKey(nodePda(mapIndex(bit), programId)),
-    isSigner: false,
-    isWritable: false,
-  }));
-}
-
-/** Map a selected node index to its registry-index PDA index for a registry version. */
-export function resolveRegistryIndexForVersion(
-  index: number,
-  registryVersion: number,
-  registry: RegistryStateView,
-): number {
-  return registryIndexMapper(registryVersion, registry)(index);
-}
-
-function registryIndexMapper(
-  registryVersion: number,
-  registry: RegistryStateView,
-): (bit: number) => number {
-  if (registryVersion === registry.currentVersion) {
-    return (bit) => bit; // current version: index == bit
-  }
-  if (registryVersion === registry.previousVersion) {
-    if ("add" in registry.lastTransitionType) {
-      return (bit) => bit;
-    }
-    const isRemoveTail = "removeTail" in registry.lastTransitionType;
-    const isRemoveSwap = "removeSwap" in registry.lastTransitionType;
-    if (!isRemoveTail && !isRemoveSwap) {
+  return bitmapToIndices(signersBitmapHex).map((bit) => {
+    const node = registry.nodes[bit];
+    if (bit >= registry.nodeCount || node === undefined) {
       throw new Error(
-        "InvalidTransitionAccount: previous-version verification requires remove-transition metadata",
+        `InvalidNodeIndex: signer bit ${bit} is outside registry ${registry.version} node_count ${registry.nodeCount}`,
       );
     }
-    return (bit) => {
-      if (bit === registry.removedOldIndex) return VIRTUAL_INDEX;
-      if (isRemoveSwap && bit === registry.movedOldIndex) return registry.removedOldIndex;
-      return bit;
-    };
-  }
-  throw new Error(
-    `InvalidRegistryVersion: ${registryVersion} is neither current (${registry.currentVersion}) nor previous (${registry.previousVersion})`,
-  );
+    return { pubkey: toPublicKey(node), isSigner: false, isWritable: false };
+  });
 }

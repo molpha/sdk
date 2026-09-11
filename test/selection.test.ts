@@ -9,19 +9,19 @@ import {
   selectedIndices,
 } from "../src/core/selection.js";
 
-const feedId = new Uint8Array(32).fill(7);
+const sourceId = new Uint8Array(32).fill(7);
 
 describe("deriveSelectionSeed", () => {
   it("matches the documented construction", () => {
     const expected = keccak_256(
       concatBytes(
         keccak_256(utf8("MOLPHA_SELECTION_V1")),
-        feedId,
+        sourceId,
         u32be(3),
         u64be(1_700_000_000),
       ),
     );
-    expect(deriveSelectionSeed(feedId, 3, 1_700_000_000)).toEqual(expected);
+    expect(deriveSelectionSeed(sourceId, 3, 1_700_000_000)).toEqual(expected);
   });
 });
 
@@ -47,7 +47,7 @@ describe("bitmap bit helpers", () => {
 });
 
 describe("deriveGroupBitmap", () => {
-  const seed = deriveSelectionSeed(feedId, 1, 1234);
+  const seed = deriveSelectionSeed(sourceId, 1, 1234);
 
   it("selects exactly groupSize distinct nodes (no replacement)", () => {
     for (const [nodeCount, groupSize] of [
