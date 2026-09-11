@@ -45,7 +45,7 @@ describe("canonicalizeAPIConfig", () => {
     };
     const headers = { "If-Match": "etag", "idempotency-key": "key" };
     const canonical = canonicalizeAPIConfig({ ...base, headers });
-    const keys = Object.keys(canonical.headers);
+    const keys = Object.keys(canonical.headers ?? {});
 
     // Code-unit order: 'I' (73) < 'i' (105), so If-Match before idempotency-key.
     expect(keys).toEqual(["If-Match", "idempotency-key"]);
