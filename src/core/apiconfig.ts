@@ -6,8 +6,18 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, utf8 } from "./encoding.js";
 import type { APIConfig } from "./types.js";
 
+/** Lexicographic UTF-16 code-unit order — locale-independent, matches gateway/node. */
+function compareCodeUnits(a: string, b: string): number {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const diff = a.charCodeAt(i) - b.charCodeAt(i);
+    if (diff !== 0) return diff;
+  }
+  return a.length - b.length;
+}
+
 function sortHeaders(headers: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(headers).sort(([a], [b]) => a.localeCompare(b)));
+  return Object.fromEntries(Object.entries(headers).sort(([a], [b]) => compareCodeUnits(a, b)));
 }
 
 /** Gateway wire shape — defaults applied before hash / encryption. */
