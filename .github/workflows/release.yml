@@ -32,7 +32,9 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@">=11.5.1"
+        # Pin to npm 11: changeset publish runs `pnpm publish --no-git-checks`, which
+        # pnpm forwards to npm; npm 12 rejects unknown flags (EUNKNOWNCONFIG).
+        run: npm install -g npm@11.5.2
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

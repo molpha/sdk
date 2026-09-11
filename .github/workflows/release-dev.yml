@@ -32,7 +32,9 @@ jobs:
 
       - name: Upgrade npm for trusted publishing
         # Trusted publishing requires npm >= 11.5.1 (OIDC auth + provenance).
-        run: npm install -g npm@">=11.5.1"
+        # Pin to npm 11: changeset publish runs `pnpm publish --no-git-checks`, which
+        # pnpm forwards to npm; npm 12 rejects unknown flags (EUNKNOWNCONFIG).
+        run: npm install -g npm@11.5.2
 
       - name: Sync baseline from main
         # The snapshot version is calculated from the current package.json version plus the
