@@ -108,3 +108,25 @@ function assertUint(value: number, max: number, label: string): void {
     throw new RangeError(`${label} out of range: ${value}`);
   }
 }
+
+/**
+ * Standard base64 (padded, no line breaks). Isomorphic: `btoa` is available in
+ * Node 20+ and every browser, so no `Buffer` is pulled into browser bundles.
+ */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  // Chunked to keep a large payload off the argument stack.
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+/** Accepts padded or unpadded standard base64. */
+export function base64ToBytes(value: string): Uint8Array {
+  const padded = value.length % 4 === 0 ? value : value + "=".repeat(4 - (value.length % 4));
+  const binary = atob(padded);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}

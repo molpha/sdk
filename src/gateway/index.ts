@@ -16,11 +16,20 @@ import type {
   DataUpdateResult,
   Node,
   NodeKeyVerifier,
+  NodesInfo,
   RegistrySelectionConfig,
   Signer,
+  SourcePaymentOptions,
+  UpstreamTerms,
 } from "../core/types.js";
 import { hashRequestAuth } from "./auth.js";
 import { encryptForNodes } from "./encryption.js";
+import {
+  UpstreamPaymentRequiredError,
+  parseUpstreamQuote,
+  probeSource,
+  signSourcePayments,
+} from "./x402.js";
 import {
   addressToBytes,
   deriveGatewayPda,
@@ -34,6 +43,7 @@ import {
 export type { RegistrySelectionConfig } from "../core/types.js";
 export * from "./auth.js";
 export * from "./identity.js";
+export * from "./x402.js";
 
 export interface RequestSignedDataOptions {
   /**
@@ -62,6 +72,17 @@ export interface RequestSignedDataOptions {
    */
   signer?: Signer;
   encrypt?: { secrets: Record<string, string> };
+  /**
+   * Pays an API source that is itself x402-paywalled. The SDK reads the source's
+   * own 402, signs one authorization per node in the round's eligible set, and
+   * sends them with the round as `sourcePayments`.
+   *
+   * Payment goes to the source, never to Molpha: the round still costs exactly
+   * one round of subscription quota. Only authorizations a node actually spends
+   * ever settle, so the redundancy buffer costs nothing when it goes unused.
+   * Without this, a paywalled source throws {@link UpstreamPaymentRequiredError}.
+   */
+  sourcePayment?: SourcePaymentOptions;
   /** Max accepted value age in seconds. Default 60. */
   maxAge?: number;
   /** Each retry re-rolls the timestamp. Default 15. */
@@ -227,8 +248,25 @@ export class MolphaGateway {
 
   /** Tries endpoints in order; returns the first node list it can fetch. */
   async getNodes(): Promise<Node[]> {
-    const data = await this.firstReachableData<{ nodes: Node[] } | Node[]>("/v1/nodes");
-    return Array.isArray(data) ? data : data.nodes;
+    return (await this.getNodesInfo()).nodes;
+  }
+
+  /**
+   * `GET /v1/nodes` — the peer set plus the gateway's view of the registry
+   * selection policy, which sizes the eligible set a paid source must fund.
+   *
+   * The `registry` block is advisory: it is whatever the gateway read from the
+   * chain, and is absent on older gateways or when that read failed. Prefer the
+   * on-chain read (`MolphaSolanaClient.getRegistrySelectionConfig`) whenever a
+   * Solana connection is available — `requestSignedData` already does.
+   */
+  async getNodesInfo(): Promise<NodesInfo> {
+    const data = await this.firstReachableData<NodesInfo | Node[]>("/v1/nodes");
+    if (Array.isArray(data)) return { nodes: data };
+    return {
+      nodes: data.nodes,
+      ...(data.registry ? { registry: data.registry } : {}),
+    };
   }
 
   async isHealthy(): Promise<boolean> {
@@ -297,12 +335,17 @@ export class MolphaGateway {
    * read does not report `nodeCount`). Supply `opts.context` (e.g. from
    * {@link prepareContext}) to reuse cached inputs and skip those fetches — a
    * fully-populated context collapses the call to a single POST round.
+   *
+   * When the API source is itself x402-paywalled, pass `opts.sourcePayment` to
+   * fund it; without that, such a source throws
+   * {@link UpstreamPaymentRequiredError} carrying the gateway's quote.
    */
   async requestSignedData(opts: RequestSignedDataOptions): Promise<DataUpdateResult> {
     const {
       apiConfig,
       signer,
       encrypt,
+      sourcePayment,
       maxAge = 60,
       maxRetries = 15,
       timeoutMs = 5000,
@@ -349,9 +392,38 @@ export class MolphaGateway {
       throw new Error("Round context resolved neither nodeCount nor nodes");
     }
 
+    // A paywalled source is paid by the caller, per node fetch, from their own
+    // wallet. Read the source's terms once, then sign fresh authorizations per
+    // attempt so a retry never reuses a nonce. The registry already tells us the
+    // eligible set size, so no quote round trip is needed in the common case.
+    let terms: UpstreamTerms | null = null;
+    let authorizations = 0;
+    let requoted = false;
+    if (sourcePayment) {
+      terms =
+        sourcePayment.terms ??
+        (await probeSource(apiConfig, {
+          ...(encrypt ? { secrets: encrypt.secrets } : {}),
+          ...(sourcePayment.assetDomain ? { assetDomain: sourcePayment.assetDomain } : {}),
+          timeoutMs,
+        }));
+      if (terms) {
+        authorizations = effectiveSelectionSize(
+          signaturesRequired,
+          redundancyBuffer,
+          nodeCount,
+        );
+      }
+    }
+
     let lastError: unknown;
+    // Each attempt must be its own round: the tuple that identifies a round
+    // includes the timestamp, and a dispatched round cannot be re-dispatched.
+    let lastTimestamp = 0;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const timestamp = Math.floor(Date.now() / 1000);
+      let timestamp = Math.floor(Date.now() / 1000);
+      if (timestamp <= lastTimestamp) timestamp = lastTimestamp + 1;
+      lastTimestamp = timestamp;
 
       const seed = deriveSelectionSeed(sourceIdBytes, registryVersion, timestamp);
       const groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
@@ -375,6 +447,17 @@ export class MolphaGateway {
         encKeyBundle = encryptForNodes(requestApiConfig, encrypt.secrets, selected);
       }
 
+      // Fresh authorizations per attempt: each carries a unique nonce, which is
+      // what keeps one from settling twice.
+      let sourcePayments: string[] | undefined;
+      if (terms && sourcePayment && authorizations > 0) {
+        sourcePayments = await signSourcePayments(
+          terms,
+          sourcePayment.signer,
+          authorizations,
+        );
+      }
+
       const baseBody: Record<string, unknown> = {
         sourceId,
         registryVersion,
@@ -386,7 +469,10 @@ export class MolphaGateway {
         apiConfig: requestApiConfig,
       };
       if (encKeyBundle) baseBody.encKeyBundle = encKeyBundle;
+      if (sourcePayments) baseBody.sourcePayments = sourcePayments;
 
+      /** Set when a relayed source quote makes this attempt's round obsolete. */
+      let requote = false;
       for (const endpoint of this.endpoints) {
         try {
           let authSig: Uint8Array = ZERO_AUTH_SIG;
@@ -409,6 +495,61 @@ export class MolphaGateway {
             body,
             timeoutMs,
           );
+
+          // The API source itself wants paying, so the gateway relays its quote
+          // instead of a fetch failure. Payment is required, just not to Molpha.
+          if (res.status === 402) {
+            const quote = parseUpstreamQuote(
+              await res.json().catch(() => null),
+            );
+            if (!quote) {
+              throw new GatewayError(
+                "Gateway requires payment but returned no upstream source quote",
+                402,
+              );
+            }
+            if (!sourcePayment) throw new UpstreamPaymentRequiredError(quote);
+            // Already funded to the quoted size and still refused: the source
+            // rejected the payment material, which resigning cannot fix.
+            if (terms && requoted && authorizations >= quote.eligibleSetSize) {
+              throw new UpstreamPaymentRequiredError(
+                quote,
+                `Source payment was not accepted for ${quote.resource}: ${quote.error ?? "no detail"}`,
+              );
+            }
+            requoted = true;
+            authorizations = quote.eligibleSetSize;
+            if (!terms) {
+              // Terms we cannot sign are terminal, not transient: surface them
+              // with the quote instead of re-probing once per attempt.
+              try {
+                terms = await probeSource(apiConfig, {
+                  ...(encrypt ? { secrets: encrypt.secrets } : {}),
+                  ...(sourcePayment.assetDomain
+                    ? { assetDomain: sourcePayment.assetDomain }
+                    : {}),
+                  timeoutMs,
+                });
+              } catch (err) {
+                throw new UpstreamPaymentRequiredError(
+                  quote,
+                  `Cannot pay ${quote.resource}: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            }
+            if (!terms) {
+              throw new UpstreamPaymentRequiredError(
+                quote,
+                `Gateway reports ${quote.resource} is paywalled but the source returned no payment terms`,
+              );
+            }
+            // Recover on a fresh timestamp: this round is spent, so the next
+            // attempt is a new round rather than a retry of the failed one.
+            lastError = new UpstreamPaymentRequiredError(quote);
+            requote = true;
+            break;
+          }
+
           const errorDetail = !res.ok ? await parseGatewayErrorDetail(res) : undefined;
           if (res.status === 400 || res.status === 401) {
             throw new GatewayError(
@@ -445,12 +586,19 @@ export class MolphaGateway {
           }
           lastError = new Error(`Gateway returned status: ${json.status}`);
         } catch (err) {
-          if (err instanceof GatewayError && (err.status === 400 || err.status === 401)) {
+          // An unpayable or refused source is terminal — never retried blindly.
+          if (err instanceof UpstreamPaymentRequiredError) throw err;
+          if (
+            err instanceof GatewayError &&
+            (err.status === 400 || err.status === 401 || err.status === 402)
+          ) {
             throw err;
           }
           lastError = err; // timeout / network / identity lookup → next endpoint
         }
       }
+      // A requote invalidates this attempt's body for every endpoint alike.
+      if (requote) continue;
     }
     throw lastError instanceof Error
       ? lastError
