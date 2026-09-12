@@ -109,3 +109,86 @@ export interface DataUpdateResult {
   /** Whether the value was freshly fetched this round. */
   fresh: boolean;
 }
+
+/**
+ * Registry selection policy as advertised by the gateway's `GET /v1/nodes`.
+ *
+ * Advisory only — the authoritative values come from the on-chain registry read
+ * ({@link RegistrySelectionConfig}). Useful to gateway-only callers with no Solana
+ * connection, who otherwise cannot size a paid source's eligible set.
+ */
+export interface RegistryInfo {
+  /** `RegistryState.current_version`. */
+  version: number;
+  nodeCount: number;
+  redundancyBuffer: number;
+}
+
+/** `GET /v1/nodes` payload: the peer set plus the advisory registry policy. */
+export interface NodesInfo {
+  nodes: Node[];
+  /** Absent when the gateway could not read the chain. */
+  registry?: RegistryInfo;
+}
+
+/** EIP-712 domain fields of the token contract that settles a source payment. */
+export interface AssetDomain {
+  name: string;
+  version: string;
+}
+
+/**
+ * Signs a 32-byte EIP-712 digest, returning a 65-byte `r || s || v` signature.
+ * Private keys never leave the caller's process.
+ */
+export interface EvmSigner {
+  /** 0x-prefixed 20-byte address that funds the authorizations. */
+  address: string;
+  signDigest(digest: Uint8Array): Promise<Uint8Array>;
+}
+
+/** A paywalled API source's own payment terms, read from its HTTP 402. */
+export interface UpstreamTerms {
+  x402Version: 1 | 2;
+  /** The source's `accepts` entry, echoed verbatim in the signed payload. */
+  requirements: Record<string, unknown>;
+  /** The source's network id, as it wrote it (CAIP-2 or an x402 v1 name). */
+  network: string;
+  chainId: number;
+  /** Token contract, 0x-prefixed — the EIP-712 verifying contract. */
+  asset: string;
+  payTo: string;
+  /** Price per source call, in token base units. */
+  amount: string;
+  maxTimeoutSeconds: number;
+  domain: AssetDomain;
+  /** The source URL these terms were read from. */
+  resource: string;
+}
+
+/**
+ * The gateway's relayed quote for a paywalled source, from `extensions.upstream`
+ * of a 402 response. It carries no payment terms of its own: the price, recipient
+ * and network come from the source's own 402, which the caller reads directly.
+ */
+export interface UpstreamQuote {
+  resource: string;
+  signaturesRequired: number;
+  redundancyBuffer: number;
+  nodeCount: number;
+  /** Source fetches this round may perform, and so authorizations to sign. */
+  eligibleSetSize: number;
+  supportedX402Versions: number[];
+  /** The source's own rejection detail, when a round hit the paywall the hard way. */
+  error?: string;
+}
+
+/** Pays an API source that is itself x402-paywalled. */
+export interface SourcePaymentOptions {
+  /** Wallet that funds the source calls (see `createEvmSignerFromPrivateKey`). */
+  signer: EvmSigner;
+  /** Terms to use instead of probing the source for its 402. */
+  terms?: UpstreamTerms;
+  /** EIP-712 domain override for sources that omit `extra.name` / `extra.version`. */
+  assetDomain?: AssetDomain;
+}

@@ -370,6 +370,70 @@ Secrets are encrypted into per-node envelopes. The gateway coordinates the round
 
 Private API access is still an active security-sensitive surface. Do not treat encrypted secret delivery as production-ready until gateway/node-side test vectors and validation are complete.
 
+## Paywalled API sources
+
+Some API sources answer an unpaid request with HTTP 402 instead of data. You pay such a
+source directly, from your own wallet on the source's network. Molpha never holds, signs
+for, or converts those funds, and the Molpha side of the round is unchanged: a paid
+source still costs exactly one round of subscription quota.
+
+```ts
+import { createEvmSignerFromPrivateKey } from "@molpha/sdk";
+
+const result = await sdk.gateway.requestSignedData({
+  apiConfig,
+  signaturesRequired,
+  sourcePayment: {
+    signer: createEvmSignerFromPrivateKey(process.env.EVM_PRIVATE_KEY!),
+  },
+});
+```
+
+The SDK fetches the source unpaid to read its terms, signs one EIP-3009 transfer
+authorization per node in the round's eligible set, and sends them as `sourcePayments`.
+Beta signs `exact` payments in USDC on Base and Base Sepolia only; any other network or
+asset is rejected before you sign anything. Private keys stay in your process — pass your
+own `EvmSigner` to keep them in a wallet or KMS instead.
+
+**You pay per node fetch, not per datum.** Independent fetching is the point of the
+protocol, so one round costs up to
+`min(signaturesRequired + redundancyBuffer, nodeCount)` source calls — the same eligible
+set the selection bitmap is drawn from. Only authorizations a node actually spends ever
+settle, so unused ones cost nothing. Sign the whole set anyway: a short set starves buffer
+nodes and makes the round more likely to fail.
+
+Each retry signs fresh authorizations with new nonces, because a dispatched round cannot
+be replayed and a retry is therefore a new round. Authorizations the source already
+settled stay spent if the round then fails; unsettled ones expire worthless. There is no
+refund path and none is needed.
+
+Source payment is per-round access material, like a credential. It never enters
+`sourceId`, so a paid and an unpaid fetch of the same API config share one source
+identity.
+
+### Without a source wallet
+
+A paywalled source with no `sourcePayment` throws `UpstreamPaymentRequiredError`, whose
+`quote` carries the resource, the eligible set size, and the source's own rejection
+detail. This is terminal — the round is never retried blindly.
+
+```ts
+import { UpstreamPaymentRequiredError } from "@molpha/sdk";
+
+try {
+  await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired });
+} catch (err) {
+  if (err instanceof UpstreamPaymentRequiredError) {
+    console.log(`${err.quote.resource} needs ${err.quote.eligibleSetSize} paid fetches`);
+  }
+}
+```
+
+To drive the payment yourself, `probeSource`, `signSourcePayments` and `eligibleSetSize`
+are exported for x402-native agents calling `/v1/x402/execute` with their own client.
+`gateway.getNodesInfo()` reports the gateway's advisory view of the registry policy that
+sizes the eligible set, for callers with no Solana connection.
+
 ## EVM verification
 
 After a gateway round, the same signed result can be verified on EVM chains.
@@ -621,12 +685,15 @@ Current scope:
 - gateway signed-data requests (failover, retries, per-gateway request auth, context cache);
 - Solana attestation submission and feed/registry reads;
 - private API encryption helpers (pre-production);
+- caller-funded x402 payments for paywalled API sources (Base USDC, pre-production);
 - EVM and Starknet verifier argument building;
 - deployed testnet verifier address helpers.
 
 Known limitations:
 
 - private API envelope encryption still needs gateway/node-side test-vector validation;
+- paid-source payments sign `exact` USDC on Base and Base Sepolia only, and are pending
+  end-to-end validation against a live paywalled source;
 - verifier-node registration and admin tooling are intentionally outside this package;
 - production deployments should use authenticated gateway requests;
 - testnet verifier addresses may change between protocol releases.
