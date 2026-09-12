@@ -164,6 +164,26 @@ function decodeEnvelope(headerValue: string | null, body: string): Record<string
 }
 
 /**
+ * Validates caller-supplied terms with the same allowlist and structural checks
+ * as {@link probeSource}. Returns canonical {@link UpstreamTerms} derived from
+ * `terms.requirements`, not the caller's top-level fields.
+ */
+export function validateSuppliedTerms(
+  terms: UpstreamTerms,
+  resource: string,
+  assetDomain?: AssetDomain,
+): UpstreamTerms {
+  return selectTerms(
+    {
+      x402Version: terms.x402Version,
+      accepts: [terms.requirements as Offer],
+    },
+    resource,
+    assetDomain,
+  );
+}
+
+/**
  * Fetch the source unpaid to read its own x402 terms. This is a price fetch,
  * not a data fetch: nodes remain the only fetchers of the value itself.
  * Returns `null` when the source is not paywalled.

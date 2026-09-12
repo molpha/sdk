@@ -29,6 +29,7 @@ import {
   parseUpstreamQuote,
   probeSource,
   signSourcePayments,
+  validateSuppliedTerms,
 } from "./x402.js";
 import {
   addressToBytes,
@@ -400,13 +401,17 @@ export class MolphaGateway {
     let authorizations = 0;
     let requoted = false;
     if (sourcePayment) {
-      terms =
-        sourcePayment.terms ??
-        (await probeSource(apiConfig, {
-          ...(encrypt ? { secrets: encrypt.secrets } : {}),
-          ...(sourcePayment.assetDomain ? { assetDomain: sourcePayment.assetDomain } : {}),
-          timeoutMs,
-        }));
+      terms = sourcePayment.terms
+        ? validateSuppliedTerms(
+            sourcePayment.terms,
+            requestApiConfig.url,
+            sourcePayment.assetDomain,
+          )
+        : await probeSource(apiConfig, {
+            ...(encrypt ? { secrets: encrypt.secrets } : {}),
+            ...(sourcePayment.assetDomain ? { assetDomain: sourcePayment.assetDomain } : {}),
+            timeoutMs,
+          });
       if (terms) {
         authorizations = effectiveSelectionSize(
           signaturesRequired,
