@@ -518,7 +518,13 @@ export class MolphaGateway {
               );
             }
             requoted = true;
-            authorizations = quote.eligibleSetSize;
+            if (quote.eligibleSetSize !== groupSize) {
+              throw new GatewayError(
+                `Gateway upstream quote eligibleSetSize ${quote.eligibleSetSize} does not match this round's selection size ${groupSize} (min(signaturesRequired + redundancyBuffer, nodeCount))`,
+                402,
+              );
+            }
+            authorizations = groupSize;
             if (!terms) {
               // Terms we cannot sign are terminal, not transient: surface them
               // with the quote instead of re-probing once per attempt.
