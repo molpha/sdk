@@ -227,17 +227,16 @@ describe("paywalled API sources", () => {
     expect(mock.rounds[0]!.timestamp).not.toBe(mock.rounds[1]!.timestamp);
   });
 
-  it("adopts a quoted eligible set larger than the local registry view", async () => {
-    const mock = mockFetch({
-      round: (_body, attempt) => (attempt === 1 ? upstreamQuote(5) : completed()),
+  it("rejects an upstream quote whose eligible set exceeds the round selection", async () => {
+    mockFetch({
+      round: () => upstreamQuote(5),
     });
 
-    await new MolphaGateway("http://gw1", registry).requestSignedData(
-      request({ sourcePayment: { signer: evmSigner() } }),
-    );
-
-    expect((mock.rounds[0]!.sourcePayments as string[])).toHaveLength(3);
-    expect((mock.rounds[1]!.sourcePayments as string[])).toHaveLength(5);
+    await expect(
+      new MolphaGateway("http://gw1", registry).requestSignedData(
+        request({ sourcePayment: { signer: evmSigner() } }),
+      ),
+    ).rejects.toThrow(/eligibleSetSize 5 does not match this round's selection size 3/);
   });
 
   it("stops instead of resigning forever against a source that keeps refusing", async () => {
@@ -313,7 +312,15 @@ describe("paywalled API sources", () => {
           signer: evmSigner(),
           terms: {
             x402Version: 2 as const,
-            requirements: { scheme: "exact", network: "base-sepolia" },
+            requirements: {
+              scheme: "exact",
+              network: "base-sepolia",
+              asset: BASE_SEPOLIA_USDC,
+              payTo: "0x2222222222222222222222222222222222222222",
+              amount: "250",
+              maxTimeoutSeconds: 60,
+              extra: { name: "USDC", version: "2" },
+            },
             network: "base-sepolia",
             chainId: 84532,
             asset: BASE_SEPOLIA_USDC,
@@ -332,6 +339,36 @@ describe("paywalled API sources", () => {
       new TextDecoder().decode(base64ToBytes((mock.rounds[0]!.sourcePayments as string[])[0]!)),
     ) as { payload: { authorization: Record<string, string> } };
     expect(payload.payload.authorization.value).toBe("250");
+  });
+
+  it("refuses caller-supplied terms that fail the Base USDC allowlist", async () => {
+    mockFetch({ round: () => completed() });
+
+    const badTerms = {
+      x402Version: 2 as const,
+      requirements: {
+        scheme: "exact",
+        network: "eip155:1",
+        asset: "0x" + "99".repeat(20),
+        payTo: "0x2222222222222222222222222222222222222222",
+        amount: "250",
+        extra: { name: "USDC", version: "2" },
+      },
+      network: "eip155:84532",
+      chainId: 84532,
+      asset: BASE_SEPOLIA_USDC,
+      payTo: "0x2222222222222222222222222222222222222222",
+      amount: "250",
+      maxTimeoutSeconds: 60,
+      domain: { name: "USDC", version: "2" },
+      resource: SOURCE_URL,
+    };
+
+    await expect(
+      new MolphaGateway("http://gw1", registry).requestSignedData(
+        request({ sourcePayment: { signer: evmSigner(), terms: badTerms } }),
+      ),
+    ).rejects.toThrow(/unsupported payment scheme or network/);
   });
 
   it("refuses a source asking for an asset or network the SDK cannot sign", async () => {
