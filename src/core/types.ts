@@ -82,7 +82,7 @@ export interface RegistrySelectionConfig {
 export interface SchnorrSignature {
   /** 32-byte scalar, hex. */
   s: string;
-  /** 20-byte EVM-style commitment address, hex. */
+  /** 20-bytecommitment address, hex. */
   commitmentAddr: string;
   /** 32-byte big-endian signers bitmap, hex. */
   signersBitmap: string;

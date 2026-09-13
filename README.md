@@ -578,33 +578,92 @@ const sepoliaDirect = MOLPHA_VERIFIER_STARKNET_SEPOLIA;
 
 ### Build verifier arguments
 
+The verifier's entrypoint is `verify(attestation: Attestation, max_age: u64) -> (bool, u8)`.
+
 ```ts
 import { buildStarknetVerifierArgs } from "@molpha/sdk";
 
 const result = await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired });
 
-const { dataUpdate, signature } = buildStarknetVerifierArgs(result);
+const { attestation, maxAge } = buildStarknetVerifierArgs(result, { maxAge: 300 });
 ```
 
-The generated objects match the Molpha Starknet verifier interface (the Cairo struct still names the first field `feed_id`; positional calldata is unchanged):
+`maxAge` is required. It is the freshness window in seconds: the verifier reports an older
+attestation as `STALE`. `0` disables the check entirely — pass it only when your contract
+enforces freshness or ordering itself, because a stateless verifier otherwise accepts a
+correctly signed attestation forever.
+
+The generated object matches the Cairo `Attestation` struct. Member order is Cairo `Serde`
+order (and the signed message's order), so it differs from `DataUpdateResult`:
 
 ```ts
-// dataUpdate:
-// {
-//   source_id: u256,
-//   registry_version: u32,
-//   signatures_required: u32,
-//   value: u256,
-//   canonical_timestamp: u64,
-// }
-
-// signature:
-// {
-//   signature: u256,
-//   commitment: felt252, // EVM-style 20-byte address as felt
-//   signers_bitmap: u256,
-// }
+attestation:
+{
+  payload: {
+    value: u256,
+    source_id: u256,
+    registry_version: u32,
+    signatures_required: u8,
+    canonical_timestamp: u64,
+  },
+  signature: {
+    signature: u256,
+    commitment: felt252, // 20-byte address as felt
+    signers_bitmap: u256,
+  },
+}
 ```
+
+The builder range-checks every integer against its Cairo type. Out-of-range calldata never
+reaches `verify`: Cairo `Serde` fails while decoding the arguments and the call reverts
+instead of returning a result code.
+
+### Call `verify` and read the result
+
+`encodeStarknetVerifyCalldata` flattens the arguments into the 13 felts a raw `starknet_call`
+takes, and `parseStarknetVerifyResult` decodes the `(bool, u8)` it returns. Any Starknet
+client works; with `starknet.js`:
+
+```ts
+import { RpcProvider } from "starknet";
+import {
+  buildStarknetVerifierArgs,
+  encodeStarknetVerifyCalldata,
+  parseStarknetVerifyResult,
+} from "@molpha/sdk";
+
+const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
+const args = buildStarknetVerifierArgs(result, { maxAge: 300 });
+
+const response = await provider.callContract({
+  contractAddress: verifierAddress,
+  entrypoint: "verify",
+  calldata: encodeStarknetVerifyCalldata(args),
+});
+
+const { success, code, reason } = parseStarknetVerifyResult(response);
+// { success: true, code: 0, reason: "OK" }
+// { success: false, code: 10, reason: "STALE" }
+```
+
+`verify` never reverts on well-formed calldata; a rejection is a result code. The codes are
+shared with the EVM verifier contract and exported as `VERIFY_CODES`:
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | `OK` | Verified |
+| 2 | `BAD_REGISTRY_VERSION` | `registryVersion` does not exist on this verifier |
+| 3 | `MALFORMED` | Structurally invalid input, or dated in the future when `maxAge != 0` |
+| 4 | `NOT_YET_ACTIVE` | `canonicalTimestamp` predates the registry version's activation |
+| 5 | `VERSION_EXPIRED` | Registry version superseded more than the grace window earlier |
+| 7 | `BAD_QUORUM` | Signers are not within the round's derived selection group |
+| 8 | `BAD_AGGREGATE` | The signers' aggregate key is the point at infinity |
+| 9 | `BAD_SIGNATURE` | The aggregate Schnorr signature does not verify |
+| 10 | `STALE` | Older than `maxAge` |
+
+Codes 1 and 6 are reserved and never returned. Codes are append-only, so
+`parseStarknetVerifyResult` reports a code newer than your SDK as `reason: "UNKNOWN"` rather
+than throwing.
 
 Lower-level helpers are also exported:
 
@@ -612,6 +671,7 @@ Lower-level helpers are also exported:
 import {
   commitmentAddressToStarknetFelt,
   signersBitmapToStarknetUint256,
+  verifyCodeName,
 } from "@molpha/sdk";
 ```
 
@@ -686,7 +746,7 @@ Current scope:
 - Solana attestation submission and feed/registry reads;
 - private API encryption helpers (pre-production);
 - caller-funded x402 payments for paywalled API sources (Base USDC, pre-production);
-- EVM and Starknet verifier argument building;
+- EVM and Starknet verifier argument building, Starknet `verify` calldata encoding and result decoding;
 - deployed testnet verifier address helpers.
 
 Known limitations:
@@ -716,6 +776,9 @@ Solana paths such as selection bitmap and `submit_attestation` remaining-account
 | `result.feedId` / `NodeKeyVerifierArgs.feedId` | `.sourceId` |
 | EVM tuple `feedId`, ABI `jobId` | `sourceId` |
 | Starknet `feed_id` | `source_id` |
+| `buildStarknetVerifierArgs(result)` → `{ dataUpdate, signature }` | `buildStarknetVerifierArgs(result, { maxAge })` → `{ attestation, maxAge }` for `verify(attestation, max_age)` |
+| `StarknetDataUpdate` (`signatures_required: u32`) | `StarknetAttestationPayload` (`signatures_required: u8`, `value` first), nested in `StarknetAttestation` |
+| Starknet `verify` returns `bool` | returns `(bool, u8)` — decode with `parseStarknetVerifyResult` |
 | `resolveRegistryIndexForVersion`, `VIRTUAL_INDEX`, `nodePda(index)` | removed — signer accounts are `registry.nodes[bit]`; `nodePda(owner)` |
 
 ## Develop
