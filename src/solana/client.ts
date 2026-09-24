@@ -10,9 +10,10 @@ import {
   type Idl,
   type Wallet,
 } from "@anchor-lang/core";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 import BN from "bn.js";
 import type { Address } from "@solana/kit";
-import { toFixedBytes } from "../core/encoding.js";
+import { bytesToHex, toFixedBytes } from "../core/encoding.js";
 import {
   normalizeSecp256k1PublicKeyHex,
   secp256k1PublicKeyFromCoordinates,
@@ -76,10 +77,6 @@ export interface PlanInfo {
 export interface SubscriptionInfo {
   owner: Address;
   planType: PlanType;
-  /** USDC base units prepaid on the subscription vault. */
-  prepaidUsdc: bigint;
-  /** Locked subscription price in USDC base units for the current period. */
-  price: bigint;
   /** Unix timestamp (seconds) until which the subscription is valid. */
   validUntil: bigint;
   usedRounds: bigint;
@@ -97,9 +94,10 @@ export interface SubmitResult {
 
 export interface FeedAccount {
   sourceId: number[];
-  /** Stored payload: raw value (`valueKind.value`) or keccak digest (`valueKind.hash`), ≤ 32 bytes. */
+  /** Signed 32-byte value, or the keccak digest of the submitted raw-value preimage. */
   value: Uint8Array | number[];
   valueKind: { value: Record<string, never> } | { hash: Record<string, never> };
+  submitter: Address;
   /** u64 unix seconds. */
   canonicalTimestamp: BN;
   signaturesRequired: number;
@@ -110,14 +108,31 @@ export interface FeedAccount {
 
 /** Anchor-encoded `SubmitAttestationArgs` (camelCase field names). */
 export interface SubmitAttestationArgs {
-  sourceId: number[];
-  registryVersion: number;
-  value: number[];
-  canonicalTimestamp: BN;
-  signaturesRequired: number;
-  aggSigS: number[];
-  commitment: number[];
-  signersBitmap: number[];
+  attestation: {
+    payload: {
+      value: number[];
+      sourceId: number[];
+      registryVersion: number;
+      signaturesRequired: number;
+      canonicalTimestamp: BN;
+    };
+    signature: {
+      aggSigS: number[];
+      commitment: number[];
+      signersBitmap: number[];
+    };
+  };
+  /** Optional preimage when `payload.value` is `keccak256(rawValue)`. */
+  rawValue: Uint8Array | null;
+}
+
+export interface SubmitAttestationOptions {
+  computeUnitLimit?: number;
+  /**
+   * Optional value preimage (maximum 256 bytes). Its keccak256 digest must equal
+   * `result.valuePacked`; the program stores that digest with `valueKind.hash`.
+   */
+  rawValue?: Uint8Array;
 }
 
 interface NodeAccount {
@@ -216,8 +231,6 @@ export class MolphaSolanaClient {
     return {
       owner: toSolanaAddress(account.owner),
       planType: planIdFromVariant(account.planType) as unknown as PlanType,
-      prepaidUsdc: BigInt(account.prepaidUsdc.toString()),
-      price: BigInt(account.price.toString()),
       validUntil: BigInt(account.validUntil.toString()),
       usedRounds: BigInt(account.usedRounds.toString()),
       maxRounds: BigInt(account.maxRounds.toString()),
@@ -325,7 +338,7 @@ export class MolphaSolanaClient {
    */
   async submitAttestation(
     result: DataUpdateResult,
-    opts?: { computeUnitLimit?: number },
+    opts?: SubmitAttestationOptions,
   ): Promise<SubmitResult> {
     const sourceId = toFixedBytes(result.sourceId, 32, "sourceId");
     const submitter = this.wallet;
@@ -335,7 +348,7 @@ export class MolphaSolanaClient {
     const cuIx = setComputeUnitLimit(opts?.computeUnitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT);
 
     const signature = await this.methods
-      .submitAttestation(buildSubmitAttestationArgs(result))
+      .submitAttestation(buildSubmitAttestationArgs(result, opts?.rawValue))
       .accountsPartial({
         submitter,
         registry: registryPda(result.registryVersion, this.programId),
@@ -352,7 +365,7 @@ export class MolphaSolanaClient {
   /** @deprecated Renamed to {@link submitAttestation}. */
   submitDataUpdate(
     result: DataUpdateResult,
-    opts?: { computeUnitLimit?: number },
+    opts?: SubmitAttestationOptions,
   ): Promise<SubmitResult> {
     return this.submitAttestation(result, opts);
   }
@@ -479,18 +492,47 @@ export class MolphaSolanaClient {
   }
 }
 
-/** Build the Anchor `SubmitAttestationArgs` for a gateway result. */
-export function buildSubmitAttestationArgs(result: DataUpdateResult): SubmitAttestationArgs {
+/** Build the current program's nested Anchor `SubmitAttestationArgs` for a gateway result. */
+export function buildSubmitAttestationArgs(
+  result: DataUpdateResult,
+  rawValue?: Uint8Array,
+): SubmitAttestationArgs {
+  const value = toFixedBytes(result.valuePacked, 32, "valuePacked");
+  if (rawValue && rawValue.length > 256) {
+    throw new RangeError(`rawValue must be at most 256 bytes, got ${rawValue.length}`);
+  }
+  if (rawValue && bytesToHex(keccak_256(rawValue)) !== bytesToHex(value)) {
+    throw new Error("rawValue keccak256 digest does not match result.valuePacked");
+  }
   return {
-    sourceId: Array.from(toFixedBytes(result.sourceId, 32, "sourceId")),
-    registryVersion: result.registryVersion,
-    value: Array.from(toFixedBytes(result.valuePacked, 32, "valuePacked")),
-    canonicalTimestamp: new BN(result.timestamp),
-    signaturesRequired: result.signaturesRequired,
-    aggSigS: Array.from(toFixedBytes(result.s, 32, "s")),
-    commitment: Array.from(toFixedBytes(result.commitmentAddr, 20, "commitmentAddr")),
-    signersBitmap: Array.from(toFixedBytes(result.signersBitmap, 32, "signersBitmap")),
+    attestation: {
+      payload: {
+        value: Array.from(value),
+        sourceId: Array.from(toFixedBytes(result.sourceId, 32, "sourceId")),
+        registryVersion: result.registryVersion,
+        signaturesRequired: result.signaturesRequired,
+        canonicalTimestamp: new BN(result.timestamp),
+      },
+      signature: {
+        aggSigS: Array.from(toFixedBytes(result.s, 32, "s")),
+        commitment: Array.from(toFixedBytes(result.commitmentAddr, 20, "commitmentAddr")),
+        signersBitmap: Array.from(toFixedBytes(result.signersBitmap, 32, "signersBitmap")),
+      },
+    },
+    rawValue: rawValue ? toAnchorBytes(rawValue) : null,
   };
+}
+
+/** Browser-safe byte array accepted by Anchor's Buffer-oriented `bytes` Borsh layout. */
+function toAnchorBytes(bytes: Uint8Array): Uint8Array {
+  const out = Uint8Array.from(bytes) as Uint8Array & {
+    copy(target: Uint8Array, targetStart?: number): number;
+  };
+  out.copy = (target, targetStart = 0) => {
+    target.set(out, targetStart);
+    return out.length;
+  };
+  return out;
 }
 
 /** Normalize a confirmed USDC amount (base units) to `bigint`, rejecting non-integers. */

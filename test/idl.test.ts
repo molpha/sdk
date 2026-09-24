@@ -3,6 +3,7 @@
  * `submit_attestation` with the SDK's PDAs and decode the zero-copy `Registry`.
  */
 import { AnchorProvider, Program, Wallet, web3 } from "@anchor-lang/core";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 import { describe, expect, it } from "vitest";
 import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 import { MOLPHA_PROGRAM_ID } from "../src/core/constants.js";
@@ -70,9 +71,8 @@ describe("vendored IDL", () => {
       .instruction();
 
     expect([...ix.data.subarray(0, 8)]).toEqual(SUBMIT_ATTESTATION_DISCRIMINATOR);
-    // 32 source_id + 4 registry_version + 32 value + 8 canonical_timestamp + 1 signatures_required
-    // + 32 agg_sig_s + 20 commitment + 32 signers_bitmap
-    expect(ix.data.length).toBe(8 + 32 + 4 + 32 + 8 + 1 + 32 + 20 + 32);
+    // 161-byte nested attestation + one-byte `None` option tag for raw_value.
+    expect(ix.data.length).toBe(8 + 161 + 1);
 
     const programId = MOLPHA_PROGRAM_ADDRESS;
     const expectedKeys = [
@@ -86,6 +86,25 @@ describe("vendored IDL", () => {
     expect(ix.keys[0]).toMatchObject({ isSigner: true, isWritable: true });
     expect(ix.keys[1]).toMatchObject({ isSigner: false, isWritable: false });
     expect(ix.keys[2]).toMatchObject({ isSigner: false, isWritable: true });
+  });
+
+  it("encodes and validates submit_attestation raw_value", async () => {
+    const { program, provider } = offlineProgram();
+    const rawValue = new TextEncoder().encode("a value longer than the signed word");
+    const hashedResult = {
+      ...result,
+      valuePacked: Buffer.from(keccak_256(rawValue)).toString("hex"),
+    };
+    const args = buildSubmitAttestationArgs(hashedResult, rawValue);
+    const ix = await program.methods
+      .submitAttestation!(args)
+      .accountsPartial({ submitter: provider.wallet.publicKey })
+      .instruction();
+
+    // Some(raw_value): option tag + u32 vector length + bytes.
+    expect(ix.data.length).toBe(8 + 161 + 1 + 4 + rawValue.length);
+    expect(() => buildSubmitAttestationArgs(result, rawValue)).toThrow(/digest does not match/);
+    expect(() => buildSubmitAttestationArgs(hashedResult, new Uint8Array(257))).toThrow(/256/);
   });
 
   it("decodes the zero-copy Registry snapshot", () => {
