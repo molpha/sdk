@@ -13,7 +13,7 @@ import {
   MolphaGateway,
 } from "./gateway/index.js";
 import { MolphaSolanaClient } from "./solana/client.js";
-import type { DataUpdateResult } from "./core/types.js";
+import type { Attestation } from "./core/types.js";
 import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 import { gatewaySignerFromWallet, type MolphaWallet } from "./wallet.js";
 import type { SolanaConnection } from "./solana/kit.js";
@@ -76,7 +76,7 @@ export class MolphaSDK {
    */
   async requestAndSubmit(
     opts: RequestSignedDataOptions,
-  ): Promise<{ result: DataUpdateResult; signature: string; feed: Address }> {
+  ): Promise<{ result: Attestation; signature: string; feed: Address }> {
     const result = await this.gateway.requestSignedData(opts);
     const { signature, feed } = await this.solana.submitAttestation(result);
     return { result, signature, feed };

@@ -34,6 +34,7 @@ const registry: RegistryView = {
   redundancyBuffer: 2,
   nodes: [nodeAddress(0), nodeAddress(1), nodeAddress(2)],
   graceActiveUntil: 0n,
+  activeFrom: 1_700_000_000n,
 };
 
 const keys = (metas: SolanaAccountMeta[]) => metas.map((m) => m.pubkey.toBase58());

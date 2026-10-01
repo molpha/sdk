@@ -2,24 +2,26 @@
  * `MolphaSolanaClient` — consumer on-chain surface only (subscribe, extend,
  * submitAttestation, readFeed/readPlan/readSubscription/readRegistry,
  * getRegistrySelectionConfig, verifyNodeKeysForPrivateApi). Built from an Anchor
- * `Program` over the vendored IDL.
+ * `Program` over the vendored IDL (program `3d01170`, "Epoch settlements").
  */
 import {
   AnchorProvider,
   Program,
+  web3,
   type Idl,
   type Wallet,
 } from "@anchor-lang/core";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import BN from "bn.js";
 import type { Address } from "@solana/kit";
+import { type CoalitionKey, computeCoalitionKey } from "../core/coalition.js";
 import { bytesToHex, toFixedBytes } from "../core/encoding.js";
 import {
   normalizeSecp256k1PublicKeyHex,
   secp256k1PublicKeyFromCoordinates,
 } from "../core/nodeKeys.js";
 import type {
-  DataUpdateResult,
+  Attestation,
   Node,
   NodeKeyVerifierArgs,
   RegistrySelectionConfig,
@@ -36,6 +38,7 @@ import {
   SYSTEM_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
   toSolanaAddress,
+  type SolanaAccountMeta,
   type SolanaAddress,
   type SolanaConnection,
 } from "./kit.js";
@@ -74,12 +77,17 @@ export interface PlanInfo {
   isActive: boolean;
 }
 
+/**
+ * On-chain `Subscription`. The program no longer tracks usage: `used_rounds`,
+ * `prepaid_usdc` and the locked `price` were removed (round quota is counted by the
+ * gateway's off-chain outbox), so there is no on-chain "rounds used" figure to read.
+ */
 export interface SubscriptionInfo {
   owner: Address;
   planType: PlanType;
   /** Unix timestamp (seconds) until which the subscription is valid. */
   validUntil: bigint;
-  usedRounds: bigint;
+  /** Round quota per plan snapshot — enforced by the gateway at admission, not on chain. */
   maxRounds: bigint;
   delegateCount: number;
   maxDelegates: number;
@@ -92,9 +100,15 @@ export interface SubmitResult {
   feed: Address;
 }
 
+/**
+ * On-chain `Feed` (Anchor-decoded). `value` is always the signed
+ * `AttestationPayload.value` (32 bytes): the oracle value itself when `valueKind` is
+ * `value`, or `keccak256(rawValue)` when it is `hash` (the preimage travelled in the
+ * submitting instruction). For a tolerance-mode source it is a two's-complement `int256`
+ * (see `decodeInt256` / `formatInt256Decimal`).
+ */
 export interface FeedAccount {
   sourceId: number[];
-  /** Signed 32-byte value, or the keccak digest of the submitted raw-value preimage. */
   value: Uint8Array | number[];
   valueKind: { value: Record<string, never> } | { hash: Record<string, never> };
   submitter: Address;
@@ -106,7 +120,7 @@ export interface FeedAccount {
   bump: number;
 }
 
-/** Anchor-encoded `SubmitAttestationArgs` (camelCase field names). */
+  /** Anchor-encoded `SubmitAttestationArgs` (camelCase field names). */
 export interface SubmitAttestationArgs {
   attestation: {
     payload: {
@@ -124,13 +138,19 @@ export interface SubmitAttestationArgs {
   };
   /** Optional preimage when `payload.value` is `keccak256(rawValue)`. */
   rawValue: Uint8Array | null;
+  coalitionKey: { x: number[]; y: number[] };
 }
 
 export interface SubmitAttestationOptions {
   computeUnitLimit?: number;
   /**
+   * Precomputed signer coalition key. When omitted, the client fetches signer `Node`
+   * accounts and sums their secp256k1 keys ({@link computeCoalitionKey}).
+   */
+  coalitionKey?: CoalitionKey;
+  /**
    * Optional value preimage (maximum 256 bytes). Its keccak256 digest must equal
-   * `result.valuePacked`; the program stores that digest with `valueKind.hash`.
+   * `attestation.payload.value`; the program stores that digest with `valueKind.hash`.
    */
   rawValue?: Uint8Array;
 }
@@ -232,7 +252,6 @@ export class MolphaSolanaClient {
       owner: toSolanaAddress(account.owner),
       planType: planIdFromVariant(account.planType) as unknown as PlanType,
       validUntil: BigInt(account.validUntil.toString()),
-      usedRounds: BigInt(account.usedRounds.toString()),
       maxRounds: BigInt(account.maxRounds.toString()),
       delegateCount: account.delegateCount,
       maxDelegates: account.maxDelegates,
@@ -332,26 +351,40 @@ export class MolphaSolanaClient {
 
   /**
    * Submit a gateway attestation via `submit_attestation`. The feed account for
-   * `(sourceId, signaturesRequired, submitter)` is created on first use. Signer
-   * `Node` accounts are resolved from the registry snapshot the round was signed
-   * against and passed as remaining accounts.
+   * `(sourceId, signaturesRequired, submitter)` is created on first use.
+   *
+   * Per the program, the instruction takes one read-only `Node` account per signer bit
+   * (ascending bit order, resolved from the registry snapshot the round was signed
+   * against) and a {@link CoalitionKey} argument. Unless `opts.coalitionKey` is given the
+   * SDK fetches those `Node` accounts and sums their secp256k1 keys client-side
+   * (`computeCoalitionKey`); the program only checks the key, so a wrong one fails the
+   * transaction and nothing else.
+   *
+   * `opts.rawValue` is for values longer than 32 bytes: the signed `payload.value` must be
+   * `keccak256(rawValue)`; {@link buildSubmitAttestationArgs} validates that before send.
    */
   async submitAttestation(
-    result: DataUpdateResult,
+    attestation: Attestation,
     opts?: SubmitAttestationOptions,
   ): Promise<SubmitResult> {
-    const sourceId = toFixedBytes(result.sourceId, 32, "sourceId");
+    const { payload, signature: schnorr } = attestation;
+    const sourceId = toFixedBytes(payload.sourceId, 32, "sourceId");
     const submitter = this.wallet;
-    const registry = await this.fetchRegistry(result.registryVersion);
-    const remaining = resolveRemainingAccounts(result.signersBitmap, registry);
-    const feed = feedPda(sourceId, result.signaturesRequired, submitter, this.programId);
+    const registry = await this.fetchRegistry(payload.registryVersion);
+    const remaining = resolveRemainingAccounts(schnorr.signersBitmap, registry);
+    assertSignerCount(remaining.length, payload.signaturesRequired, registry);
+    const coalitionKey =
+      opts?.coalitionKey ?? (await this.computeSignerCoalitionKey(remaining, registry));
+    const feed = feedPda(sourceId, payload.signaturesRequired, submitter, this.programId);
     const cuIx = setComputeUnitLimit(opts?.computeUnitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT);
 
     const signature = await this.methods
-      .submitAttestation(buildSubmitAttestationArgs(result, opts?.rawValue))
+      .submitAttestation(
+        buildSubmitAttestationArgs(attestation, coalitionKey, opts?.rawValue),
+      )
       .accountsPartial({
         submitter,
-        registry: registryPda(result.registryVersion, this.programId),
+        registry: registryPda(payload.registryVersion, this.programId),
         feed,
         protocolConfig: protocolConfigPda(this.programId),
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
@@ -362,12 +395,26 @@ export class MolphaSolanaClient {
     return { signature, feed };
   }
 
-  /** @deprecated Renamed to {@link submitAttestation}. */
-  submitDataUpdate(
-    result: DataUpdateResult,
-    opts?: SubmitAttestationOptions,
-  ): Promise<SubmitResult> {
-    return this.submitAttestation(result, opts);
+  /** Sum of the signers' keys, read from their on-chain `Node` accounts (one batched fetch). */
+  private async computeSignerCoalitionKey(
+    remaining: SolanaAccountMeta[],
+    registry: RegistryView,
+  ): Promise<CoalitionKey> {
+    const accounts: Array<NodeAccount | null> = await this.accounts.node.fetchMultiple(
+      remaining.map((meta) => meta.pubkey),
+    );
+    const keys = accounts.map((account, i) => {
+      if (!account) {
+        throw new Error(
+          `Node account ${remaining[i]!.pubkey.toBase58()} (registry ${registry.version}) does not exist`,
+        );
+      }
+      return {
+        x: nodeCoordinate(account, "secp256k1PubkeyX", "secp256k1_pubkey_x"),
+        y: nodeCoordinate(account, "secp256k1PubkeyY", "secp256k1_pubkey_y"),
+      };
+    });
+    return computeCoalitionKey(keys);
   }
 
   /**
@@ -463,6 +510,7 @@ export class MolphaSolanaClient {
       redundancyBuffer: registry.redundancyBuffer,
       nodes,
       graceActiveUntil: BigInt(registry.graceActiveUntil.toString()),
+      activeFrom: BigInt(registry.activeFrom.toString()),
     };
   }
 
@@ -492,35 +540,66 @@ export class MolphaSolanaClient {
   }
 }
 
-/** Build the current program's nested Anchor `SubmitAttestationArgs` for a gateway result. */
+/**
+ * Build the Anchor `SubmitAttestationArgs` for a gateway result: `{ attestation: { payload,
+ * signature }, rawValue, coalitionKey }`. `coalitionKey` is the affine sum of the signers'
+ * keys (see `computeCoalitionKey`).
+ */
 export function buildSubmitAttestationArgs(
-  result: DataUpdateResult,
-  rawValue?: Uint8Array,
+  attestation: Attestation,
+  coalitionKey: CoalitionKey,
+  rawValue?: Uint8Array | null,
 ): SubmitAttestationArgs {
-  const value = toFixedBytes(result.valuePacked, 32, "valuePacked");
+  const { payload, signature } = attestation;
+  const value = toFixedBytes(payload.value, 32, "payload.value");
   if (rawValue && rawValue.length > 256) {
     throw new RangeError(`rawValue must be at most 256 bytes, got ${rawValue.length}`);
   }
   if (rawValue && bytesToHex(keccak_256(rawValue)) !== bytesToHex(value)) {
-    throw new Error("rawValue keccak256 digest does not match result.valuePacked");
+    throw new Error("rawValue keccak256 digest does not match attestation.payload.value");
   }
   return {
     attestation: {
       payload: {
-        value: Array.from(value),
-        sourceId: Array.from(toFixedBytes(result.sourceId, 32, "sourceId")),
-        registryVersion: result.registryVersion,
-        signaturesRequired: result.signaturesRequired,
-        canonicalTimestamp: new BN(result.timestamp),
+        value: Array.from(toFixedBytes(payload.value, 32, "payload.value")),
+        sourceId: Array.from(toFixedBytes(payload.sourceId, 32, "sourceId")),
+        registryVersion: payload.registryVersion,
+        signaturesRequired: payload.signaturesRequired,
+        canonicalTimestamp: new BN(payload.canonicalTimestamp),
       },
       signature: {
-        aggSigS: Array.from(toFixedBytes(result.s, 32, "s")),
-        commitment: Array.from(toFixedBytes(result.commitmentAddr, 20, "commitmentAddr")),
-        signersBitmap: Array.from(toFixedBytes(result.signersBitmap, 32, "signersBitmap")),
+        aggSigS: Array.from(toFixedBytes(signature.s, 32, "signature.s")),
+        commitment: Array.from(toFixedBytes(signature.commitmentAddr, 20, "signature.commitmentAddr")),
+        signersBitmap: Array.from(toFixedBytes(signature.signersBitmap, 32, "signature.signersBitmap")),
       },
     },
     rawValue: rawValue ? toAnchorBytes(rawValue) : null,
+    coalitionKey: {
+      x: Array.from(toFixedBytes(coalitionKey.x, 32, "coalitionKey.x")),
+      y: Array.from(toFixedBytes(coalitionKey.y, 32, "coalitionKey.y")),
+    },
   };
+}
+
+/**
+ * Mirror the program's signer-count bounds (`verify_attestation_core`):
+ * `signaturesRequired <= popcount <= signaturesRequired + redundancyBuffer`.
+ */
+function assertSignerCount(
+  signerCount: number,
+  signaturesRequired: number,
+  registry: RegistryView,
+): void {
+  if (signerCount < signaturesRequired) {
+    throw new Error(
+      `QuorumBelowThreshold: ${signerCount} signers < signaturesRequired ${signaturesRequired}`,
+    );
+  }
+  if (signerCount > signaturesRequired + registry.redundancyBuffer) {
+    throw new Error(
+      `CreditedExceedsSelection: ${signerCount} signers > signaturesRequired ${signaturesRequired} + redundancy buffer ${registry.redundancyBuffer} of registry ${registry.version}`,
+    );
+  }
 }
 
 /** Browser-safe byte array accepted by Anchor's Buffer-oriented `bytes` Borsh layout. */

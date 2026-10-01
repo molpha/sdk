@@ -4,7 +4,7 @@
  * `setRedundancyBuffer`) and `Ownable` plumbing are deliberately left out.
  *
  * Mirrors `IVerifier.sol` in `molpha-core-contracts`. Struct member order is ABI-significant
- * and equals the signed message order, so it is not the order of `DataUpdateResult`.
+ * and equals the signed message order, so it is not the flat gateway field order on `Attestation`.
  */
 export const MOLPHA_VERIFIER_ABI = [
   {

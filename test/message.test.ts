@@ -11,12 +11,12 @@ import {
 import {
   MESSAGE_PREFIX,
   attestationMessageHash,
-  attestationMessageHashFromResult,
+  attestationMessageHashFromAttestation,
 } from "../src/core/message.js";
-import type { DataUpdateResult } from "../src/core/types.js";
+import type { Attestation } from "../src/core/types.js";
 
 /**
- * Shared fixture: `molpha-verifier/tests/fixtures/mod.rs`, pinned on EVM by
+ * Shared fixture: Rust `tests/fixtures/mod.rs`, Go `internal/round/message_test.go`, and EVM
  * `MessageFormatSpec.t.sol::test_constructMessage_matchesRustAndSdkSharedVector`.
  */
 const VECTOR = {
@@ -80,7 +80,7 @@ describe("MESSAGE_PREFIX", () => {
 });
 
 describe("attestationMessageHash", () => {
-  it("matches the cross-VM fixture", () => {
+  it("matches the immutable Rust and Go golden vector", () => {
     expect(bytesToHex(attestationMessageHash(VECTOR))).toBe(EXPECTED);
   });
 
@@ -88,19 +88,19 @@ describe("attestationMessageHash", () => {
     expect(bytesToHex(attestationMessageHash(fields))).toBe(expected);
   });
 
-  it("follows abi.encodePacked(prefix, bytes32 value, bytes32 sourceId, u32, u8, u64, u256)", () => {
-    const expected = keccak_256(
-      concatBytes(
-        MESSAGE_PREFIX,
-        hexToBytes(VECTOR.value),
-        hexToBytes(VECTOR.sourceId),
-        u32be(VECTOR.registryVersion),
-        Uint8Array.of(VECTOR.signaturesRequired),
-        u64be(VECTOR.canonicalTimestamp),
-        hexToBytes(VECTOR.signersBitmap),
-      ),
+  it("encodes the 141-byte preimage in protocol order", () => {
+    const preimage = concatBytes(
+      MESSAGE_PREFIX,
+      hexToBytes(VECTOR.value),
+      hexToBytes(VECTOR.sourceId),
+      u32be(VECTOR.registryVersion),
+      Uint8Array.of(VECTOR.signaturesRequired),
+      u64be(VECTOR.canonicalTimestamp),
+      hexToBytes(VECTOR.signersBitmap),
     );
-    expect(attestationMessageHash(VECTOR)).toEqual(expected);
+    expect(preimage).toHaveLength(141);
+    expect(bytesToHex(keccak_256(preimage))).toBe(EXPECTED);
+    expect(attestationMessageHash(VECTOR)).toEqual(keccak_256(preimage));
   });
 
   it("accepts bytes or hex, with or without 0x", () => {
@@ -139,6 +139,9 @@ describe("attestationMessageHash", () => {
     expect(() => attestationMessageHash({ ...VECTOR, sourceId: "aa".repeat(31) })).toThrow();
     expect(() => attestationMessageHash({ ...VECTOR, value: "aa".repeat(33) })).toThrow();
     expect(() => attestationMessageHash({ ...VECTOR, signersBitmap: "aa" })).toThrow();
+    expect(() => attestationMessageHash({ ...VECTOR, signaturesRequired: 256 })).toThrow();
+    expect(() => attestationMessageHash({ ...VECTOR, signaturesRequired: -1 })).toThrow();
+    expect(() => attestationMessageHash({ ...VECTOR, signaturesRequired: 1.5 })).toThrow();
   });
 
   it("rejects a signaturesRequired that does not fit the signed u8", () => {
@@ -148,20 +151,24 @@ describe("attestationMessageHash", () => {
   });
 });
 
-describe("attestationMessageHashFromResult", () => {
-  it("hashes the signed fields of a gateway result", () => {
-    const result: DataUpdateResult = {
-      sourceId: VECTOR.sourceId,
+describe("attestationMessageHashFromAttestation", () => {
+  it("hashes the signed fields of a gateway attestation", () => {
+    const attestation: Attestation = {
+      payload: {
+        sourceId: VECTOR.sourceId,
+        value: VECTOR.value,
+        canonicalTimestamp: VECTOR.canonicalTimestamp,
+        registryVersion: VECTOR.registryVersion,
+        signaturesRequired: VECTOR.signaturesRequired,
+      },
+      signature: {
+        signersBitmap: VECTOR.signersBitmap,
+        s: "cc".repeat(32),
+        commitmentAddr: "dd".repeat(20),
+      },
       value: "1",
-      valuePacked: VECTOR.value,
-      timestamp: VECTOR.canonicalTimestamp,
-      registryVersion: VECTOR.registryVersion,
-      signaturesRequired: VECTOR.signaturesRequired,
-      signersBitmap: VECTOR.signersBitmap,
-      s: "cc".repeat(32),
-      commitmentAddr: "dd".repeat(20),
       fresh: true,
     };
-    expect(bytesToHex(attestationMessageHashFromResult(result))).toBe(EXPECTED);
+    expect(bytesToHex(attestationMessageHashFromAttestation(attestation))).toBe(EXPECTED);
   });
 });

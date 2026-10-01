@@ -33,11 +33,12 @@ export const registryPda = (version: number, programId: SolanaAddress): Address 
   pda([SEED_REGISTRY, u32le(version)], programId);
 
 /**
- * Owner-keyed `Node` account: `["molpha_node", owner]`. Registry snapshots store these
- * addresses directly in `nodes[i]`, so consumers rarely need to derive them.
+ * Authority-keyed `Node` account: `["molpha_node", authority]` (`Node.authority`). Registry
+ * snapshots store these addresses directly in `nodes[i]`, so consumers rarely need to
+ * derive them.
  */
-export const nodePda = (owner: SolanaAddress, programId: SolanaAddress): Address =>
-  pda([SEED_NODE, addressBytes(owner)], programId);
+export const nodePda = (authority: SolanaAddress, programId: SolanaAddress): Address =>
+  pda([SEED_NODE, addressBytes(authority)], programId);
 
 /** Bonded gateway account: `["molpha_gateway", gatewayAuthority]` — the `gateway` bound into `RequestAuth`. */
 export const gatewayPda = (authority: SolanaAddress, programId: SolanaAddress): Address =>

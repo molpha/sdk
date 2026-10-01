@@ -4,4 +4,4 @@
  */
 
 /** Molpha program id (`idl/molpha.json` → `address`). Asserted equal in `test/gateway-auth.test.ts`. */
-export const MOLPHA_PROGRAM_ID = "MoLFnEbuMS5gWnXNfUMLAYSqRM3eQZKWRzjeMQfqbT3";
+export const MOLPHA_PROGRAM_ID = "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt";

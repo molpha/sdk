@@ -1,5 +1,10 @@
 /**
  * Account views and remaining-accounts construction for `submit_attestation`.
+ *
+ * `submit_attestation` (program 3d01170, `utils/attestation.rs::verify_attestation_core`)
+ * takes exactly one `Node` account per set signer bit, read-only, in ascending bit order
+ * (`remaining_accounts.len() == popcount(signersBitmap)`); the verifier requires
+ * `account == registry.nodes[bit]` and reads each signer's secp256k1 key from it.
  */
 import type { Address } from "@solana/kit";
 import { hexToBytes } from "../core/encoding.js";
@@ -24,6 +29,8 @@ export interface RegistryView {
   nodes: Address[];
   /** Unix seconds until which this superseded snapshot still verifies; `0n` while current. */
   graceActiveUntil: bigint;
+  /** Inclusive creation time (unix seconds): a version cannot verify a round dated before it existed. */
+  activeFrom: bigint;
 }
 
 /** Set-bit indices of a 32-byte big-endian bitmap (full 256-bit scan). */

@@ -11,6 +11,6 @@ Align the Solana client and vendored IDL with the latest Molpha program.
 
 **Added**
 
-- `submitAttestation` and `submitDataUpdate` accept an optional `rawValue` preimage, validate its
+- `submitAttestation` accepts an optional `rawValue` preimage, validate its
   size and keccak digest client-side, and submit it using the program's hashed-value flow.
 - `FeedAccount.submitter` reflects the submitter now stored in the on-chain feed account.

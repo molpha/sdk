@@ -45,6 +45,39 @@ export interface APIConfig {
   responseParser: string;
   /** Optional expression applied to the parsed value before packing. */
   valueTransform?: string;
+  /**
+   * Median tolerance mode. Part of the `sourceId`; OMIT it for exact mode. See
+   * {@link AggregationConfig}.
+   */
+  aggregation?: AggregationConfig;
+}
+
+/** Numeric encoding of a tolerance-mode value: a signed `int256` scaled by `10^decimals`. */
+export interface NumericConfig {
+  type: "int256";
+  /** Fractional digits, `0..255` (u8). The parsed decimal is scaled by `10^decimals`, rounded half to even. */
+  decimals: number;
+}
+
+/**
+ * Median tolerance aggregation. Instead of requiring every signer to fetch the identical
+ * value, the selected nodes exchange signed observations, drop stale ones (`maxAgeMs`) and
+ * those further than `maxDeviationBps` from the lower median, and sign the lower median of
+ * `signaturesRequired` surviving observations. The signed value is a signed `int256`
+ * (`encodeInt256Decimal`, `decodeInt256`, `formatInt256Decimal`).
+ *
+ * The whole object is hashed into the `sourceId` in exactly this key order. Requires
+ * `signaturesRequired >= 3`. `mode: "exact"` is rejected: exact mode is expressed by
+ * omitting `aggregation`.
+ */
+export interface AggregationConfig {
+  mode: "tolerance";
+  rule: "median";
+  /** u32. Allowed deviation from the lower median, in basis points. */
+  maxDeviationBps: number;
+  /** Positive integer (u64 on the node, ≤ 2^53-1 here). Max observation age, in milliseconds. */
+  maxAgeMs: number;
+  numeric: NumericConfig;
 }
 
 /** ECDH-wrapped API config payload sent to selected nodes. */
@@ -88,24 +121,28 @@ export interface SchnorrSignature {
   signersBitmap: string;
 }
 
-/** A completed gateway round, ready to submit on-chain. */
-export interface DataUpdateResult {
+/** Signed oracle attestation payload (cross-VM `AttestationPayload`). */
+export interface AttestationPayload {
+  /** 32-byte packed value, hex — the bytes covered by the signature. */
+  value: string;
   /** 32-byte source id, hex (`deriveSourceId(apiConfig)`). */
   sourceId: string;
-  /** Human-readable value. */
-  value: string;
-  /** 32-byte packed value, hex — the bytes covered by the signature. */
-  valuePacked: string;
-  /** canonicalTimestamp (seconds). */
-  timestamp: number;
   registryVersion: number;
   signaturesRequired: number;
-  /** 32-byte big-endian bitmap, hex. */
-  signersBitmap: string;
-  /** 32-byte scalar, hex. */
-  s: string;
-  /** 20-byte commitment address, hex. */
-  commitmentAddr: string;
+  /** Unix seconds (u64). */
+  canonicalTimestamp: number;
+}
+
+/**
+ * Threshold-signed oracle attestation from a completed gateway round, ready to submit on-chain.
+ * Matches the cross-VM `Attestation` (`payload` + `signature`). `value` and `fresh` are gateway
+ * metadata and are not part of the signed struct.
+ */
+export interface Attestation {
+  payload: AttestationPayload;
+  signature: SchnorrSignature;
+  /** Human-readable value (not signed). */
+  value: string;
   /** Whether the value was freshly fetched this round. */
   fresh: boolean;
 }

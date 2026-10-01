@@ -1,5 +1,5 @@
 {
-  "address": "MoLFnEbuMS5gWnXNfUMLAYSqRM3eQZKWRzjeMQfqbT3",
+  "address": "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt",
   "metadata": {
     "name": "molpha",
     "version": "0.1.0",
@@ -386,34 +386,20 @@
       "args": []
     },
     {
-      "name": "close_round_replay",
+      "name": "close_epoch",
       "discriminator": [
-        224,
-        114,
-        152,
-        221,
-        47,
-        237,
-        193,
-        126
+        13,
+        87,
+        7,
+        133,
+        109,
+        14,
+        83,
+        25
       ],
       "accounts": [
         {
-          "name": "gateway",
-          "docs": [
-            "Gateway the round was settled through; part of the marker seeds."
-          ]
-        },
-        {
-          "name": "rent_receiver",
-          "writable": true
-        },
-        {
-          "name": "round_replay",
-          "docs": [
-            "The seeds bind the marker to `gateway`: without them, a marker settled through one gateway",
-            "could be closed against another and its rent paid to the wrong authority."
-          ],
+          "name": "epoch_state",
           "writable": true,
           "pda": {
             "seeds": [
@@ -427,27 +413,170 @@
                   104,
                   97,
                   95,
-                  114,
+                  101,
+                  112,
                   111,
-                  117,
-                  110,
-                  100
+                  99,
+                  104
                 ]
               },
               {
-                "kind": "account",
-                "path": "gateway"
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "open_epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
               },
               {
-                "kind": "account",
-                "path": "round_replay.round_id",
-                "account": "RoundReplayMarker"
+                "kind": "arg",
+                "path": "open_epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_payer",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "open_epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_ticket_marker",
+      "discriminator": [
+        26,
+        65,
+        122,
+        188,
+        125,
+        132,
+        159,
+        107
+      ],
+      "accounts": [
+        {
+          "name": "ticket_marker",
+          "writable": true
+        },
+        {
+          "name": "submitter",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "credit_epoch_rewards",
+      "discriminator": [
+        212,
+        185,
+        139,
+        96,
+        103,
+        248,
+        140,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
               }
             ]
           }
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "slots",
+          "type": {
+            "vec": "u16"
+          }
+        }
+      ]
     },
     {
       "name": "deactivate_gateway",
@@ -889,6 +1018,147 @@
       "args": []
     },
     {
+      "name": "finalize_epoch",
+      "discriminator": [
+        159,
+        93,
+        117,
+        217,
+        63,
+        44,
+        249,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "target",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "next",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch.saturating_add(1)"
+              }
+            ]
+          }
+        },
+        {
+          "name": "successor",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch.saturating_add(2)"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "initialize",
       "discriminator": [
         175,
@@ -1110,6 +1380,82 @@
                 89
               ]
             }
+          }
+        },
+        {
+          "name": "epoch0",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch1",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
           }
         },
         {
@@ -1826,449 +2172,6 @@
       ]
     },
     {
-      "name": "settle_subscription_round",
-      "discriminator": [
-        172,
-        131,
-        103,
-        246,
-        197,
-        245,
-        65,
-        210
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true,
-          "relations": [
-            "gateway"
-          ]
-        },
-        {
-          "name": "config",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  111,
-                  108,
-                  112,
-                  104,
-                  97,
-                  95,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "registry",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  111,
-                  108,
-                  112,
-                  104,
-                  97,
-                  95,
-                  114,
-                  101,
-                  103,
-                  105,
-                  115,
-                  116,
-                  114,
-                  121
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "attestation.payload.registry_version"
-              }
-            ]
-          }
-        },
-        {
-          "name": "subscription",
-          "writable": true
-        },
-        {
-          "name": "treasury",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "path": "config"
-              },
-              {
-                "kind": "account",
-                "path": "token_program"
-              },
-              {
-                "kind": "account",
-                "path": "config.usdc_mint",
-                "account": "ProtocolConfig"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                140,
-                151,
-                37,
-                143,
-                78,
-                36,
-                137,
-                241,
-                187,
-                61,
-                16,
-                41,
-                20,
-                142,
-                13,
-                131,
-                11,
-                90,
-                19,
-                153,
-                218,
-                255,
-                16,
-                132,
-                4,
-                142,
-                123,
-                216,
-                219,
-                233,
-                248,
-                89
-              ]
-            }
-          }
-        },
-        {
-          "name": "consumer_delegate",
-          "writable": true,
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  111,
-                  108,
-                  112,
-                  104,
-                  97,
-                  95,
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "subscription.owner",
-                "account": "Subscription"
-              },
-              {
-                "kind": "arg",
-                "path": "consumer_authority"
-              }
-            ]
-          }
-        },
-        {
-          "name": "gateway",
-          "writable": true
-        },
-        {
-          "name": "round_replay",
-          "writable": true
-        },
-        {
-          "name": "instructions_sysvar",
-          "address": "Sysvar1nstructions1111111111111111111111111"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        }
-      ],
-      "args": [
-        {
-          "name": "attestation",
-          "type": {
-            "defined": {
-              "name": "Attestation"
-            }
-          }
-        },
-        {
-          "name": "consumer_authority",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
-      "name": "settle_x402_round",
-      "discriminator": [
-        19,
-        84,
-        17,
-        46,
-        196,
-        5,
-        241,
-        86
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true,
-          "relations": [
-            "gateway"
-          ]
-        },
-        {
-          "name": "config",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  111,
-                  108,
-                  112,
-                  104,
-                  97,
-                  95,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "registry",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  111,
-                  108,
-                  112,
-                  104,
-                  97,
-                  95,
-                  114,
-                  101,
-                  103,
-                  105,
-                  115,
-                  116,
-                  114,
-                  121
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "attestation.payload.registry_version"
-              }
-            ]
-          }
-        },
-        {
-          "name": "gateway",
-          "writable": true
-        },
-        {
-          "name": "gateway_usdc",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "path": "authority"
-              },
-              {
-                "kind": "account",
-                "path": "token_program"
-              },
-              {
-                "kind": "account",
-                "path": "config.usdc_mint",
-                "account": "ProtocolConfig"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                140,
-                151,
-                37,
-                143,
-                78,
-                36,
-                137,
-                241,
-                187,
-                61,
-                16,
-                41,
-                20,
-                142,
-                13,
-                131,
-                11,
-                90,
-                19,
-                153,
-                218,
-                255,
-                16,
-                132,
-                4,
-                142,
-                123,
-                216,
-                219,
-                233,
-                248,
-                89
-              ]
-            }
-          }
-        },
-        {
-          "name": "treasury",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "path": "config"
-              },
-              {
-                "kind": "account",
-                "path": "token_program"
-              },
-              {
-                "kind": "account",
-                "path": "config.usdc_mint",
-                "account": "ProtocolConfig"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                140,
-                151,
-                37,
-                143,
-                78,
-                36,
-                137,
-                241,
-                187,
-                61,
-                16,
-                41,
-                20,
-                142,
-                13,
-                131,
-                11,
-                90,
-                19,
-                153,
-                218,
-                255,
-                16,
-                132,
-                4,
-                142,
-                123,
-                216,
-                219,
-                233,
-                248,
-                89
-              ]
-            }
-          }
-        },
-        {
-          "name": "round_replay",
-          "writable": true
-        },
-        {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "attestation",
-          "type": {
-            "defined": {
-              "name": "Attestation"
-            }
-          }
-        },
-        {
-          "name": "args",
-          "type": {
-            "defined": {
-              "name": "SettleX402RoundArgs"
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "slash_offence",
       "discriminator": [
         108,
@@ -2796,6 +2699,185 @@
       ]
     },
     {
+      "name": "submit_ticket",
+      "discriminator": [
+        180,
+        57,
+        11,
+        108,
+        162,
+        36,
+        145,
+        150
+      ],
+      "accounts": [
+        {
+          "name": "submitter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "attestation.payload.registry_version"
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "gateway",
+          "docs": [
+            "Gateway whose authority signed the round dispatch."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  103,
+                  97,
+                  116,
+                  101,
+                  119,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "gateway.authority",
+                "account": "Gateway"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket_marker",
+          "writable": true
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "attestation",
+          "type": {
+            "defined": {
+              "name": "Attestation"
+            }
+          }
+        },
+        {
+          "name": "roster_slots",
+          "type": {
+            "vec": "u16"
+          }
+        },
+        {
+          "name": "coalition_key",
+          "type": {
+            "defined": {
+              "name": "CoalitionKey"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "subscribe",
       "discriminator": [
         254,
@@ -3010,6 +3092,143 @@
               "name": "PlanType"
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "sweep_treasury_revenue",
+      "discriminator": [
+        72,
+        190,
+        138,
+        104,
+        78,
+        128,
+        112,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "open_epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "open_epoch",
+          "type": "u64"
         }
       ]
     },
@@ -3571,6 +3790,126 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "withdraw_protocol_reserve",
+      "discriminator": [
+        68,
+        111,
+        180,
+        79,
+        228,
+        72,
+        116,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -3585,6 +3924,19 @@
         38,
         38,
         247
+      ]
+    },
+    {
+      "name": "EpochState",
+      "discriminator": [
+        191,
+        63,
+        139,
+        237,
+        144,
+        12,
+        223,
+        210
       ]
     },
     {
@@ -3692,19 +4044,6 @@
       ]
     },
     {
-      "name": "RoundReplayMarker",
-      "discriminator": [
-        189,
-        232,
-        25,
-        7,
-        112,
-        5,
-        195,
-        190
-      ]
-    },
-    {
       "name": "Secp256k1KeyClaim",
       "discriminator": [
         128,
@@ -3728,6 +4067,19 @@
         132,
         98,
         33
+      ]
+    },
+    {
+      "name": "TicketMarker",
+      "discriminator": [
+        1,
+        117,
+        194,
+        234,
+        146,
+        15,
+        115,
+        255
       ]
     }
   ],
@@ -3769,6 +4121,58 @@
         213,
         14,
         92
+      ]
+    },
+    {
+      "name": "EpochClosed",
+      "discriminator": [
+        21,
+        4,
+        48,
+        56,
+        29,
+        169,
+        77,
+        42
+      ]
+    },
+    {
+      "name": "EpochCreated",
+      "discriminator": [
+        191,
+        150,
+        240,
+        63,
+        59,
+        212,
+        233,
+        124
+      ]
+    },
+    {
+      "name": "EpochFinalized",
+      "discriminator": [
+        109,
+        54,
+        231,
+        81,
+        101,
+        249,
+        145,
+        107
+      ]
+    },
+    {
+      "name": "EpochRewardCredited",
+      "discriminator": [
+        12,
+        42,
+        166,
+        244,
+        196,
+        241,
+        134,
+        186
       ]
     },
     {
@@ -3847,19 +4251,6 @@
         134,
         46,
         240
-      ]
-    },
-    {
-      "name": "NodeLivelinessPenalized",
-      "discriminator": [
-        206,
-        204,
-        205,
-        149,
-        115,
-        28,
-        68,
-        11
       ]
     },
     {
@@ -3967,6 +4358,19 @@
       ]
     },
     {
+      "name": "ProtocolReserveWithdrawn",
+      "discriminator": [
+        116,
+        158,
+        232,
+        233,
+        174,
+        58,
+        218,
+        183
+      ]
+    },
+    {
       "name": "RegistryUpdated",
       "discriminator": [
         152,
@@ -3980,6 +4384,19 @@
       ]
     },
     {
+      "name": "RevenueSwept",
+      "discriminator": [
+        57,
+        110,
+        215,
+        130,
+        155,
+        53,
+        55,
+        28
+      ]
+    },
+    {
       "name": "RewardsClaimed",
       "discriminator": [
         75,
@@ -3990,32 +4407,6 @@
         112,
         88,
         121
-      ]
-    },
-    {
-      "name": "RoundReplayClosed",
-      "discriminator": [
-        85,
-        29,
-        108,
-        196,
-        52,
-        246,
-        205,
-        24
-      ]
-    },
-    {
-      "name": "RoundSettled",
-      "discriminator": [
-        249,
-        225,
-        66,
-        54,
-        157,
-        200,
-        234,
-        222
       ]
     },
     {
@@ -4045,16 +4436,42 @@
       ]
     },
     {
-      "name": "X402RoundSettled",
+      "name": "TicketMarkerClosed",
       "discriminator": [
-        10,
-        248,
-        170,
-        86,
-        212,
-        116,
-        202,
-        240
+        109,
+        122,
+        80,
+        119,
+        203,
+        4,
+        131,
+        160
+      ]
+    },
+    {
+      "name": "TicketRosterOverflow",
+      "discriminator": [
+        147,
+        69,
+        132,
+        24,
+        191,
+        8,
+        117,
+        185
+      ]
+    },
+    {
+      "name": "TicketSubmitted",
+      "discriminator": [
+        190,
+        48,
+        169,
+        171,
+        61,
+        217,
+        169,
+        249
       ]
     }
   ],
@@ -4146,408 +4563,423 @@
     },
     {
       "code": 6017,
-      "name": "InvalidOwnerUsdc",
-      "msg": "owner_usdc token account mismatch"
-    },
-    {
-      "code": 6018,
       "name": "InvalidSignature",
       "msg": "Invalid aggregate signature"
     },
     {
-      "code": 6019,
+      "code": 6018,
       "name": "GroupBitmapDerivationFailed",
       "msg": "Could not derive group bitmap"
     },
     {
-      "code": 6020,
+      "code": 6019,
       "name": "InvalidSignersBitmap",
       "msg": "Signers bitmap contains out-of-range indices"
     },
     {
-      "code": 6021,
+      "code": 6020,
       "name": "PlanNotActive",
       "msg": "plan exists but is_active is false"
     },
     {
-      "code": 6022,
+      "code": 6021,
       "name": "InvalidPlanParams",
       "msg": "invalid plan quorum or signer parameters"
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "InvalidDelegateLimits",
       "msg": "invalid delegate limit parameters"
     },
     {
-      "code": 6024,
+      "code": 6023,
       "name": "DelegateCannotBeOwner",
       "msg": "delegate cannot be the owner"
     },
     {
-      "code": 6025,
-      "name": "DelegateAccountRequired",
-      "msg": "delegate account required for non-owner action"
-    },
-    {
-      "code": 6026,
-      "name": "UnexpectedDelegateAccount",
-      "msg": "delegate account must not be supplied for owner action"
-    },
-    {
-      "code": 6027,
-      "name": "DelegateDataRequestLimitReached",
-      "msg": "delegate data_requests_used >= max_data_requests"
-    },
-    {
-      "code": 6028,
+      "code": 6024,
       "name": "DelegateCapReached",
       "msg": "subscription delegate_count >= plan.max_delegates"
     },
     {
-      "code": 6029,
+      "code": 6025,
       "name": "InvalidRegistrationSalt",
       "msg": "registration_salt must not be zero"
     },
     {
-      "code": 6030,
+      "code": 6026,
       "name": "InsufficientSigners",
       "msg": "popcount(signers_bitmap) < signatures_required"
     },
     {
-      "code": 6031,
-      "name": "SignaturesExceedSubscriptionMax",
-      "msg": "signatures_required exceeds subscription.max_signers"
-    },
-    {
-      "code": 6032,
+      "code": 6027,
       "name": "SignaturesBelowMinSigners",
       "msg": "signatures_required is below protocol min_signers"
     },
     {
-      "code": 6033,
+      "code": 6028,
       "name": "SignersNotSubsetOfSelection",
       "msg": "Signer bits outside selection bitmap"
     },
     {
-      "code": 6034,
+      "code": 6029,
       "name": "InvalidAggregateSignature",
       "msg": "PoP-Schnorr aggregate verification failed"
     },
     {
-      "code": 6035,
+      "code": 6030,
       "name": "FeedNotNewer",
       "msg": "canonical_timestamp <= feed.canonical_timestamp"
     },
     {
-      "code": 6036,
+      "code": 6031,
       "name": "SignaturesRequiredMismatch",
       "msg": "signatures_required does not match feed.signatures_required"
     },
     {
-      "code": 6037,
+      "code": 6032,
       "name": "MissingSignerAccount",
       "msg": "Missing or mis-ordered signer slot version account"
     },
     {
-      "code": 6038,
+      "code": 6033,
       "name": "SubscriptionNotActive",
       "msg": "subscription has expired"
     },
     {
-      "code": 6039,
-      "name": "ConsumerSigInvalid",
-      "msg": "consumer Ed25519 signature missing or invalid"
-    },
-    {
-      "code": 6040,
+      "code": 6034,
       "name": "QuorumBelowThreshold",
       "msg": "popcount(signers_bitmap) < signatures_required"
     },
     {
-      "code": 6041,
+      "code": 6035,
       "name": "GatewayNotActive",
       "msg": "gateway is not active"
     },
     {
-      "code": 6042,
-      "name": "UnauthorizedGatewayAuthority",
-      "msg": "caller is not gateway.authority or protocol_config.authority"
-    },
-    {
-      "code": 6043,
-      "name": "SubscriptionInactiveOrExhausted",
-      "msg": "subscription inactive or round quota exhausted"
-    },
-    {
-      "code": 6044,
+      "code": 6036,
       "name": "NothingToClaim",
       "msg": "no claimable rewards"
     },
     {
-      "code": 6045,
+      "code": 6037,
       "name": "InvalidWithdrawalState",
       "msg": "account is not in a state that permits withdrawal"
     },
     {
-      "code": 6046,
+      "code": 6038,
       "name": "NothingToWithdraw",
       "msg": "withdrawable balance is zero"
     },
     {
-      "code": 6047,
+      "code": 6039,
       "name": "WithdrawalCooldownActive",
       "msg": "withdrawal cooldown has not elapsed"
     },
     {
-      "code": 6048,
+      "code": 6040,
       "name": "WithdrawalArithmeticOverflow",
       "msg": "withdrawal deadline arithmetic overflow"
     },
     {
-      "code": 6049,
+      "code": 6041,
       "name": "InvalidWithdrawalCooldown",
       "msg": "withdrawal cooldown must be positive and fit a slot deadline"
     },
     {
-      "code": 6050,
+      "code": 6042,
       "name": "InvalidInstructionsSysvar",
       "msg": "instructions sysvar account is invalid"
     },
     {
-      "code": 6051,
-      "name": "UnauthorisedConsumer",
-      "msg": "consumer authority is not the delegate authority"
-    },
-    {
-      "code": 6052,
-      "name": "InvalidCreditNodeAccount",
-      "msg": "mismatched or missing credited node account"
-    },
-    {
-      "code": 6053,
-      "name": "InvalidMissedNodeAccount",
-      "msg": "mismatched or missing missed node account"
-    },
-    {
-      "code": 6054,
-      "name": "AmountMismatch",
-      "msg": "computed price does not match the gateway-signed amount"
-    },
-    {
-      "code": 6055,
-      "name": "InsufficientGatewayFloat",
-      "msg": "gateway USDC float balance below computed price"
-    },
-    {
-      "code": 6056,
-      "name": "PaymentRefTooLong",
-      "msg": "payment_ref exceeds 64 bytes"
-    },
-    {
-      "code": 6057,
+      "code": 6043,
       "name": "CreditedExceedsSelection",
       "msg": "credited signer count exceeds signatures_required + redundancy_buffer"
     },
     {
-      "code": 6058,
+      "code": 6044,
       "name": "InvalidRawValue",
       "msg": "raw value exceeds Feed::MAX_VALUE_LEN or does not match the hash of the attestation value"
     },
     {
-      "code": 6059,
+      "code": 6045,
       "name": "EquivocationSameStatement",
       "msg": "equivocation requires two attestations for one duty with different values"
     },
     {
-      "code": 6060,
+      "code": 6046,
       "name": "NotEquivocation",
       "msg": "attestations do not sign different values for one duty"
     },
     {
-      "code": 6061,
+      "code": 6047,
       "name": "EvidenceHashMismatch",
       "msg": "recomputed evidence hash does not match the supplied evidence_hash"
     },
     {
-      "code": 6062,
+      "code": 6048,
       "name": "GuiltySetEmpty",
       "msg": "intersection of the two signer bitmaps is empty"
     },
     {
-      "code": 6063,
+      "code": 6049,
       "name": "NodeTombstoned",
       "msg": "node is permanently tombstoned"
     },
     {
-      "code": 6064,
+      "code": 6050,
       "name": "NodeNotFrozen",
       "msg": "node is not Frozen"
     },
     {
-      "code": 6065,
+      "code": 6051,
       "name": "NodeStillFrozen",
       "msg": "node is still inside its freeze window"
     },
     {
-      "code": 6066,
+      "code": 6052,
       "name": "NodeAlreadyInRegistry",
       "msg": "node is already present in the current registry"
     },
     {
-      "code": 6067,
-      "name": "LivelinessAboveThreshold",
-      "msg": "node liveliness score is not below the freeze threshold"
-    },
-    {
-      "code": 6068,
+      "code": 6053,
       "name": "SignersFullySelected",
       "msg": "every signer was within the derived selection - no unsolicited signer"
     },
     {
-      "code": 6069,
+      "code": 6054,
       "name": "NothingToPunish",
       "msg": "every guilty node is already tombstoned"
     },
     {
-      "code": 6070,
+      "code": 6055,
       "name": "NonceCommitmentMismatch",
       "msg": "attestations do not share an aggregate nonce commitment"
     },
     {
-      "code": 6071,
+      "code": 6056,
       "name": "RegistryVersionMismatch",
       "msg": "attestations have different registry versions, or one older than the feed's"
     },
     {
-      "code": 6072,
+      "code": 6057,
       "name": "NonceReuseSameMessage",
       "msg": "attestations sign the same message"
     },
     {
-      "code": 6073,
+      "code": 6058,
       "name": "PreferEquivocation",
       "msg": "same duty with different values is equivocation - file it as one"
     },
     {
-      "code": 6074,
+      "code": 6059,
       "name": "AttestationTooStale",
       "msg": "canonical_timestamp is older than now - max_settlement_delay_seconds"
     },
     {
-      "code": 6075,
+      "code": 6060,
       "name": "AttestationInFuture",
       "msg": "canonical_timestamp is further ahead of cluster time than the allowed drift"
     },
     {
-      "code": 6076,
+      "code": 6061,
       "name": "InvalidMaxReceiptDelay",
       "msg": "max_settlement_delay_seconds must be positive and fit a timestamp deadline"
     },
     {
-      "code": 6077,
+      "code": 6062,
       "name": "TreasuryInsolvent",
       "msg": "treasury balance cannot back the protocol's reward liability"
     },
     {
-      "code": 6078,
+      "code": 6063,
       "name": "InvalidChallengerBounty",
       "msg": "challenger_bounty_bps must not exceed 10000"
     },
     {
-      "code": 6079,
+      "code": 6064,
       "name": "RewardLiabilityUnderflow",
       "msg": "reward liability underflow"
     },
     {
-      "code": 6080,
+      "code": 6065,
       "name": "DepositVaultUnderfunded",
       "msg": "node deposit vault does not cover the recorded total deposits"
     },
     {
-      "code": 6081,
+      "code": 6066,
       "name": "TranscriptContextsEqual",
       "msg": "both transcripts carry the same (b, c) challenge pair"
     },
     {
-      "code": 6082,
+      "code": 6067,
       "name": "NonCanonicalScalar",
       "msg": "scalar is zero or not below the secp256k1 curve order"
     },
     {
-      "code": 6083,
+      "code": 6068,
       "name": "MerkleProofTooDeep",
       "msg": "merkle proof exceeds the maximum accepted depth"
     },
     {
-      "code": 6084,
+      "code": 6069,
       "name": "InvalidMerkleProof",
       "msg": "merkle proof does not connect the leaf to the signed batch root"
     },
     {
-      "code": 6085,
+      "code": 6070,
       "name": "InvalidBatchSignature",
       "msg": "commitment batch signature does not verify against the node key"
     },
     {
-      "code": 6086,
+      "code": 6071,
       "name": "InvalidPartialSignature",
       "msg": "partial signature does not satisfy the nonce equation"
     },
     {
-      "code": 6087,
+      "code": 6072,
       "name": "InvalidNoncePoint",
       "msg": "committed nonce is not a valid secp256k1 point"
     },
     {
-      "code": 6088,
+      "code": 6073,
       "name": "InvalidMinimumNodeDeposit",
       "msg": "minimum node deposit must be positive"
     },
     {
-      "code": 6089,
-      "name": "InvalidLivelinessFreezeThreshold",
-      "msg": "liveliness freeze threshold must be between 1 and 10000"
-    },
-    {
-      "code": 6090,
-      "name": "InvalidLivelinessPenalty",
-      "msg": "liveliness penalty per miss must be between 1 and 10000"
-    },
-    {
-      "code": 6091,
-      "name": "InvalidLivelinessRecovery",
-      "msg": "liveliness recovery per sign must be between 1 and 10000"
-    },
-    {
-      "code": 6092,
+      "code": 6074,
       "name": "InvalidRoundPrice",
       "msg": "base price plus rewards for the maximum signer count must fit u64"
     },
     {
-      "code": 6093,
+      "code": 6075,
       "name": "RewardOverflow",
       "msg": "reward or reward liability arithmetic overflowed"
     },
     {
+      "code": 6076,
+      "name": "UnexpectedSignerAccounts",
+      "msg": "signer account list must contain exactly one account per signer"
+    },
+    {
+      "code": 6077,
+      "name": "InvalidCoalitionKey",
+      "msg": "coalition key is not the sum of the signer keys"
+    },
+    {
+      "code": 6078,
+      "name": "InvalidEpochLength",
+      "msg": "epoch_len_seconds is outside the allowed bounds"
+    },
+    {
+      "code": 6079,
+      "name": "InvalidTicketGrace",
+      "msg": "ticket_grace_seconds must be positive and shorter than the epoch"
+    },
+    {
+      "code": 6080,
+      "name": "InvalidTicketTarget",
+      "msg": "target_tickets_per_epoch is outside the allowed bounds"
+    },
+    {
+      "code": 6081,
+      "name": "InvalidAvailabilityFloor",
+      "msg": "availability floor must not exceed 10000 bps and needs a positive sample minimum"
+    },
+    {
+      "code": 6082,
+      "name": "InvalidProtocolFee",
+      "msg": "protocol_fee_bps must not exceed 10000"
+    },
+    {
+      "code": 6083,
+      "name": "EpochNotOpen",
+      "msg": "epoch is not open at the current cluster time"
+    },
+    {
+      "code": 6084,
+      "name": "TicketWindowClosed",
+      "msg": "epoch no longer accepts tickets"
+    },
+    {
+      "code": 6085,
+      "name": "RoundOutsideEpoch",
+      "msg": "canonical_timestamp is outside the epoch window"
+    },
+    {
+      "code": 6086,
+      "name": "NotATicket",
+      "msg": "round does not fall under the epoch ticket threshold"
+    },
+    {
+      "code": 6087,
+      "name": "DispatchSigInvalid",
+      "msg": "gateway dispatch signature missing or invalid"
+    },
+    {
+      "code": 6088,
+      "name": "InvalidRosterSlot",
+      "msg": "roster slot hint does not match the epoch roster"
+    },
+    {
+      "code": 6089,
+      "name": "TicketCapReached",
+      "msg": "epoch ticket cap reached"
+    },
+    {
+      "code": 6090,
+      "name": "TicketMarkerNotExpired",
+      "msg": "ticket marker is still inside its epoch ticket window"
+    },
+    {
+      "code": 6091,
+      "name": "EpochNotFinalizable",
+      "msg": "epoch ticket window has not ended"
+    },
+    {
+      "code": 6092,
+      "name": "EpochNotFinalized",
+      "msg": "epoch is not finalized"
+    },
+    {
+      "code": 6093,
+      "name": "InvalidEpochSequence",
+      "msg": "next epoch account does not follow the finalized epoch"
+    },
+    {
       "code": 6094,
-      "name": "RoundReplayNotExpired",
-      "msg": "round replay marker is still inside the maximum settlement window"
+      "name": "NothingToCredit",
+      "msg": "roster slot has no weight or was already credited"
     },
     {
       "code": 6095,
-      "name": "InvalidRoundReplayAccount",
-      "msg": "round replay marker does not match the supplied round identity"
+      "name": "EpochNotClosable",
+      "msg": "epoch still has uncredited nodes or is inside its evidence window"
     },
     {
       "code": 6096,
-      "name": "InvalidRentReceiver",
-      "msg": "rent receiver must be the gateway authority that paid for the marker"
+      "name": "NothingToSweep",
+      "msg": "treasury holds no unswept income"
     },
     {
       "code": 6097,
-      "name": "UnexpectedSignerAccounts",
-      "msg": "signer account list must contain exactly one account per signer"
+      "name": "InsufficientProtocolReserve",
+      "msg": "amount exceeds the protocol reserve"
+    },
+    {
+      "code": 6098,
+      "name": "AvailabilityAboveFloor",
+      "msg": "node availability is not below the epoch payout floor"
+    },
+    {
+      "code": 6099,
+      "name": "InactivityAlreadyPunished",
+      "msg": "node was already frozen during this epoch"
+    },
+    {
+      "code": 6100,
+      "name": "InvalidRentReceiver",
+      "msg": "rent receiver must be the account that paid for the closed account"
     }
   ],
   "types": [
@@ -4636,6 +5068,43 @@
       }
     },
     {
+      "name": "CoalitionKey",
+      "docs": [
+        "Affine coalition key `Σ X_i = (x, y)`, big-endian: an untrusted verification input.",
+        "",
+        "Supplying it lets the verifier check its Jacobian sum against the key instead of normalizing",
+        "the sum with a field inversion (see [`CoalitionAccumulator::compressed_pubkey_with_key`]).",
+        "It is a property of the point, not of the verifier's arithmetic: any secp256k1 library",
+        "computes it as the plain sum of the signers' public keys, in any order.",
+        "",
+        "Not part of the signed message or the cross-VM [`crate::Attestation`]; carry it next to the",
+        "attestation, e.g. in Solana instruction data."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "CommitmentReuseEvidence",
       "type": {
         "kind": "struct",
@@ -4653,6 +5122,29 @@
             "type": {
               "defined": {
                 "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "coalition_key_a",
+            "docs": [
+              "Affine sum of `attestation_a`'s signer keys. A verification input, not evidence: it is",
+              "left out of [`Evidence::hash`], so the case PDA derives from the attestations alone."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
+            }
+          },
+          {
+            "name": "coalition_key_b",
+            "docs": [
+              "Affine sum of `attestation_b`'s signer keys; see `coalition_key_a`."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
               }
             }
           }
@@ -4712,7 +5204,8 @@
     {
       "name": "Delegate",
       "docs": [
-        "Owner-scoped delegate authorization with persistent request quotas."
+        "Owner-scoped delegate authorization. `max_data_requests` is enforced by the gateway at",
+        "admission, not on chain."
       ],
       "type": {
         "kind": "struct",
@@ -4727,10 +5220,6 @@
           },
           {
             "name": "max_data_requests",
-            "type": "u64"
-          },
-          {
-            "name": "data_requests_used",
             "type": "u64"
           },
           {
@@ -4817,6 +5306,330 @@
       }
     },
     {
+      "name": "EpochClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "residual",
+            "type": "u64"
+          },
+          {
+            "name": "rolled_into",
+            "type": "u64"
+          },
+          {
+            "name": "closed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "start",
+            "type": "i64"
+          },
+          {
+            "name": "end",
+            "type": "i64"
+          },
+          {
+            "name": "ticket_grace",
+            "type": "i64"
+          },
+          {
+            "name": "tau",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "pool",
+            "type": "u64"
+          },
+          {
+            "name": "tickets",
+            "type": "u32"
+          },
+          {
+            "name": "roster_len",
+            "type": "u16"
+          },
+          {
+            "name": "weight_total",
+            "type": "u64"
+          },
+          {
+            "name": "weighted_count",
+            "type": "u16"
+          },
+          {
+            "name": "finalized_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochRewardCredited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "weight",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "forfeited",
+            "docs": [
+              "The node was tombstoned; its share stays in the epoch residual."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochState",
+      "docs": [
+        "One epoch of the reward pool: its window, pinned ticket threshold, swept income and the",
+        "per-node participation counters fed by tickets.",
+        "",
+        "Counters are keyed by an epoch-local roster of `Node` PDAs rather than by registry position,",
+        "because registry positions move between versions (swap-remove) while one epoch spans several.",
+        "The roster fills lazily as tickets name nodes for the first time.",
+        "",
+        "PDA: `[SEED_PREFIX, epoch.to_le_bytes()]`. Layout has no implicit padding."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "start",
+            "docs": [
+              "Inclusive window start (unix seconds). Equals the previous epoch's `end`."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "end",
+            "docs": [
+              "Exclusive window end (unix seconds)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "ticket_grace",
+            "docs": [
+              "Snapshot of `ticket_grace_seconds` at creation."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "tau",
+            "docs": [
+              "A round is a ticket when the big-endian `u64` prefix of its ticket hash is below this."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "pool",
+            "docs": [
+              "USDC swept into this epoch while it was open."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "docs": [
+              "Sum of payouts credited to nodes."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "weight_total",
+            "docs": [
+              "`Σ weight(slot)`, frozen at finalization."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "tickets",
+            "type": "u32"
+          },
+          {
+            "name": "sum_signed",
+            "docs": [
+              "`Σ signed`, maintained per ticket."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "sum_selected",
+            "docs": [
+              "`Σ selected`, maintained per ticket."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "docs": [
+              "Snapshot: availability floor relative to the network inclusion rate, in bps."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "min_samples",
+            "docs": [
+              "Snapshot: samples below which the availability floor does not apply."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "roster_len",
+            "type": "u16"
+          },
+          {
+            "name": "weighted_count",
+            "docs": [
+              "Roster slots with non-zero weight, frozen at finalization."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "credited_count",
+            "docs": [
+              "Weighted slots already processed by `credit_epoch_rewards`."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "finalized",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "rent_payer",
+            "docs": [
+              "Receives this account's rent when the epoch is closed."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "credited",
+            "docs": [
+              "Bitmap over roster slots already credited."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "signed",
+            "type": {
+              "array": [
+                "u16",
+                256
+              ]
+            }
+          },
+          {
+            "name": "selected",
+            "type": {
+              "array": [
+                "u16",
+                256
+              ]
+            }
+          },
+          {
+            "name": "roster",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                256
+              ]
+            }
+          },
+          {
+            "name": "min_signers",
+            "docs": [
+              "Snapshot of the admission quorum floor for rounds counted in this epoch."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "EquivocationEvidence",
       "type": {
         "kind": "struct",
@@ -4834,6 +5647,29 @@
             "type": {
               "defined": {
                 "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "coalition_key_a",
+            "docs": [
+              "Affine sum of `attestation_a`'s signer keys. A verification input, not evidence: it is",
+              "left out of [`Evidence::hash`], so the case PDA derives from the attestations alone."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
+            }
+          },
+          {
+            "name": "coalition_key_b",
+            "docs": [
+              "Affine sum of `attestation_b`'s signer keys; see `coalition_key_a`."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
               }
             }
           }
@@ -4980,7 +5816,9 @@
       "docs": [
         "Protocol-authorized gateway identified by its Solana authority.",
         "",
-        "Holds endpoint metadata and activation status. Keyed by the gateway's authority key."
+        "Holds endpoint metadata and activation status. Keyed by the gateway's authority key, which",
+        "signs the round dispatches tickets must carry. Gateways hold no funds: x402 payers pay the",
+        "protocol treasury directly."
       ],
       "type": {
         "kind": "struct",
@@ -5087,12 +5925,25 @@
     {
       "name": "InactivityEvidence",
       "docs": [
-        "Identifies a node in the current registry; inactivity is proven from its on-chain state.",
-        "A later inactivity episode after reinstatement uses a new registry version and case hash."
+        "A node whose availability in a finalized epoch fell below that epoch's payout floor.",
+        "",
+        "Proven from the epoch's own counters; `registry_version` / `node_index` locate the node in the",
+        "current registry so it can be removed. The case hash covers only `(epoch, roster_slot)`, so a",
+        "node can be punished at most once per epoch, including after reinstatement.",
+        "",
+        "Remaining accounts: `[node, epoch_state]`."
       ],
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "roster_slot",
+            "type": "u16"
+          },
           {
             "name": "registry_version",
             "type": "u32"
@@ -5134,18 +5985,6 @@
             "type": "u16"
           },
           {
-            "name": "liveliness_freeze_threshold",
-            "type": "u16"
-          },
-          {
-            "name": "liveliness_penalty_per_miss",
-            "type": "u16"
-          },
-          {
-            "name": "liveliness_recovery_per_sign",
-            "type": "u16"
-          },
-          {
             "name": "usdc_mint",
             "type": "pubkey"
           },
@@ -5156,6 +5995,30 @@
           {
             "name": "min_signers",
             "type": "u8"
+          },
+          {
+            "name": "epoch_len_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_grace_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "target_tickets_per_epoch",
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_availability_samples",
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
           }
         ]
       }
@@ -5218,10 +6081,6 @@
           {
             "name": "claimable_rewards",
             "type": "u64"
-          },
-          {
-            "name": "liveliness_score",
-            "type": "u16"
           },
           {
             "name": "registered_at",
@@ -5323,26 +6182,6 @@
           {
             "name": "updated_at",
             "type": "i64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "NodeLivelinessPenalized",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "node",
-            "type": "pubkey"
-          },
-          {
-            "name": "round_replay",
-            "type": "pubkey"
-          },
-          {
-            "name": "score",
-            "type": "u16"
           }
         ]
       }
@@ -5965,13 +6804,17 @@
           },
           {
             "name": "reward_per_signature",
+            "docs": [
+              "Published x402 pricing input: `x402_round_base + (k + b) · reward_per_signature`.",
+              "Not read on chain; payouts come from the epoch pool."
+            ],
             "type": "u64"
           },
           {
             "name": "max_settlement_delay_seconds",
             "docs": [
-              "Max age in seconds of `canonical_timestamp` relative to cluster time at",
-              "attestation/settlement ingress. Bounds the offline selection-grind space."
+              "Max age in seconds of `canonical_timestamp` relative to cluster time at attestation",
+              "ingress, and the grace period of a superseded registry version."
             ],
             "type": "u64"
           },
@@ -5988,31 +6831,81 @@
             "type": "u64"
           },
           {
-            "name": "liveliness_freeze_threshold",
-            "type": "u16"
-          },
-          {
-            "name": "liveliness_penalty_per_miss",
-            "type": "u16"
-          },
-          {
-            "name": "liveliness_recovery_per_sign",
-            "type": "u16"
-          },
-          {
             "name": "x402_round_base",
+            "docs": [
+              "Published x402 pricing input; see `reward_per_signature`."
+            ],
             "type": "u64"
           },
           {
             "name": "reward_liability",
             "docs": [
-              "Sum of every `Node.claimable_rewards`. The treasury must always hold at least this much"
+              "Sum of every `Node.claimable_rewards`."
             ],
             "type": "u64"
           },
           {
             "name": "min_signers",
+            "docs": [
+              "Current feed-admission floor; copied into each new epoch for ticket verification."
+            ],
             "type": "u8"
+          },
+          {
+            "name": "epoch_len_seconds",
+            "docs": [
+              "Length of epochs created from now on."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "ticket_grace_seconds",
+            "docs": [
+              "Late-ticket window after an epoch ends, for epochs created from now on."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "target_tickets_per_epoch",
+            "docs": [
+              "Ticket count per epoch the threshold controller aims for."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "docs": [
+              "Payout floor relative to the network inclusion rate, in bps, for new epochs."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "min_availability_samples",
+            "docs": [
+              "Selections below which the availability floor does not apply, for new epochs."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "docs": [
+              "Share of all swept income kept by the protocol; the rest joins the epoch pool."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "pool_liability",
+            "docs": [
+              "Sum of `pool - paid` over every epoch not yet closed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "protocol_reserved",
+            "docs": [
+              "Protocol fees and slashing proceeds held in the treasury."
+            ],
+            "type": "u64"
           },
           {
             "name": "bump",
@@ -6047,24 +6940,36 @@
             "type": "u64"
           },
           {
-            "name": "liveliness_freeze_threshold",
-            "type": "u16"
-          },
-          {
-            "name": "liveliness_penalty_per_miss",
-            "type": "u16"
-          },
-          {
-            "name": "liveliness_recovery_per_sign",
-            "type": "u16"
-          },
-          {
             "name": "x402_round_base",
             "type": "u64"
           },
           {
             "name": "min_signers",
             "type": "u8"
+          },
+          {
+            "name": "epoch_len_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_grace_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "target_tickets_per_epoch",
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_availability_samples",
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
           }
         ]
       }
@@ -6104,6 +7009,26 @@
           },
           {
             "name": "initialized_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolReserveWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "withdrawn_at",
             "type": "i64"
           }
         ]
@@ -6310,6 +7235,13 @@
           {
             "name": "grace_active_until",
             "type": "i64"
+          },
+          {
+            "name": "active_from",
+            "docs": [
+              "Inclusive creation time. A version cannot verify a round dated before it existed."
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -6405,6 +7337,34 @@
       }
     },
     {
+      "name": "RevenueSwept",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "gross",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee",
+            "type": "u64"
+          },
+          {
+            "name": "pool_share",
+            "type": "u64"
+          },
+          {
+            "name": "swept_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "RewardsClaimed",
       "type": {
         "kind": "struct",
@@ -6419,129 +7379,6 @@
           },
           {
             "name": "claimed_at",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "RoundReplayClosed",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "round_replay",
-            "type": "pubkey"
-          },
-          {
-            "name": "round_id",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "gateway",
-            "type": "pubkey"
-          },
-          {
-            "name": "rent_receiver",
-            "type": "pubkey"
-          },
-          {
-            "name": "canonical_timestamp",
-            "type": "u64"
-          },
-          {
-            "name": "closed_at",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "RoundReplayMarker",
-      "docs": [
-        "Per-settlement marker that makes settlement idempotent by PDA creation.",
-        "",
-        "PDA: `[SEED_PREFIX, gateway, round_id]`. It only has to outlive its round's freshness window:",
-        "once `timestamp + MAX_SETTLEMENT_DELAY_CAP_SECONDS` has passed, no configuration can make the",
-        "round settleable again, and `close_round_replay` returns the rent to the gateway authority."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "round_id",
-            "docs": [
-              "Seed component; stored so `close_round_replay` can re-derive the PDA and bind the marker",
-              "to the gateway whose authority paid for it."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "timestamp",
-            "docs": [
-              "The settled round's `canonical_timestamp` (not the settlement time): freshness is judged",
-              "against it, so it is what bounds when the round can no longer be re-admitted."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "RoundSettled",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "gateway",
-            "type": "pubkey"
-          },
-          {
-            "name": "source_id",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "canonical_timestamp",
-            "type": "u64"
-          },
-          {
-            "name": "signers_bitmap",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "reward_per_signature",
-            "type": "u64"
-          },
-          {
-            "name": "recorded_slot",
-            "type": "u64"
-          },
-          {
-            "name": "recorded_at",
             "type": "i64"
           }
         ]
@@ -6605,41 +7442,6 @@
       }
     },
     {
-      "name": "SettleX402RoundArgs",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "payer_id",
-            "docs": [
-              "Rail-scoped payer identity for PDA seeds; not derivable on-chain."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "payment_rail",
-            "type": "u16"
-          },
-          {
-            "name": "payment_ref",
-            "docs": [
-              "Attested off-chain payment reference; not verified on-chain."
-            ],
-            "type": "bytes"
-          }
-        ]
-      }
-    },
-    {
       "name": "SubmitAttestationArgs",
       "type": {
         "kind": "struct",
@@ -6661,6 +7463,20 @@
             ],
             "type": {
               "option": "bytes"
+            }
+          },
+          {
+            "name": "coalition_key",
+            "docs": [
+              "Affine sum of the signers' secp256k1 keys (`molpha_verifier::coalition_key`, or any",
+              "library's point sum over their `Node` accounts). Unsigned and untrusted: the verifier",
+              "checks it projectively against its own sum instead of inverting. A wrong key only fails",
+              "the instruction."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
             }
           }
         ]
@@ -6720,11 +7536,10 @@
             "type": "i64"
           },
           {
-            "name": "used_rounds",
-            "type": "u64"
-          },
-          {
             "name": "max_rounds",
+            "docs": [
+              "Round quota per plan snapshot. Enforced by the gateway at admission, not on chain."
+            ],
             "type": "u64"
           },
           {
@@ -6771,6 +7586,128 @@
       }
     },
     {
+      "name": "TicketMarker",
+      "docs": [
+        "Existence marker for a submitted ticket; blocks resubmitting the same round.",
+        "",
+        "PDA: `[SEED_PREFIX, ticket_id]`. Once the round's epoch stops accepting tickets the round can",
+        "never be submitted again, so the marker becomes closable and returns its rent."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "closable_after",
+            "docs": [
+              "The round's epoch ticket deadline (`end + ticket_grace`)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "submitter",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketMarkerClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket_marker",
+            "type": "pubkey"
+          },
+          {
+            "name": "submitter",
+            "type": "pubkey"
+          },
+          {
+            "name": "closed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketRosterOverflow",
+      "docs": [
+        "Selected nodes left uncounted because the epoch roster was full."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "uncounted",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketSubmitted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "gateway",
+            "docs": [
+              "Gateway PDA whose authority signed the round dispatch."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "submitter",
+            "type": "pubkey"
+          },
+          {
+            "name": "registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "signers_bitmap",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "UnsolicitedSigningEvidence",
       "type": {
         "kind": "struct",
@@ -6780,6 +7717,19 @@
             "type": {
               "defined": {
                 "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "coalition_key",
+            "docs": [
+              "Affine sum of the attestation's signer keys, intruders included. A verification input,",
+              "not evidence: it is left out of [`Evidence::hash`], so the case PDA derives from the",
+              "attestation alone."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
               }
             }
           }
@@ -6812,24 +7762,39 @@
             "type": "u16"
           },
           {
-            "name": "liveliness_freeze_threshold",
-            "type": "u16"
-          },
-          {
-            "name": "liveliness_penalty_per_miss",
-            "type": "u16"
-          },
-          {
-            "name": "liveliness_recovery_per_sign",
-            "type": "u16"
-          },
-          {
             "name": "x402_round_base",
             "type": "u64"
           },
           {
             "name": "min_signers",
             "type": "u8"
+          },
+          {
+            "name": "epoch_len_seconds",
+            "docs": [
+              "Epoch parameters apply to epochs created after this update, never to existing ones."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "ticket_grace_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "target_tickets_per_epoch",
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_availability_samples",
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
           }
         ]
       }
@@ -6851,65 +7816,6 @@
           {
             "name": "port",
             "type": "u16"
-          }
-        ]
-      }
-    },
-    {
-      "name": "X402RoundSettled",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "payer_id",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "payment_rail",
-            "type": "u16"
-          },
-          {
-            "name": "price",
-            "type": "u64"
-          },
-          {
-            "name": "source_id",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "canonical_timestamp",
-            "type": "u64"
-          },
-          {
-            "name": "gateway",
-            "type": "pubkey"
-          },
-          {
-            "name": "signers_bitmap",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "recorded_slot",
-            "type": "u64"
-          },
-          {
-            "name": "recorded_at",
-            "type": "i64"
           }
         ]
       }

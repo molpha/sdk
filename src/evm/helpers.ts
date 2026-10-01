@@ -16,14 +16,14 @@ import {
   toFixedBytes,
   u256beFromBigInt,
 } from "../core/encoding.js";
-import type { DataUpdateResult } from "../core/types.js";
+import type { Attestation } from "../core/types.js";
 import { VERIFY_CODES, verifyCodeName, type VerifyCodeName } from "../core/verifyCodes.js";
 
 /**
  * `IVerifier.AttestationPayload` — the signed half of an attestation.
  *
  * Member order is the order of the signed message preimage and of the ABI tuple, so it is
- * load bearing — it is not the order of `DataUpdateResult`.
+ * load bearing — it is not the flat gateway field order on {@link Attestation}.
  */
 export interface EvmAttestationPayload {
   /** `bytes32` packed value. */
@@ -128,7 +128,7 @@ export function signersBitmapToUint256(value: string): bigint {
   return bigIntFromBytesBe(bytes);
 }
 
-/** Decimal string form of the signers bitmap — useful for JSON logging or legacy tooling. */
+/** Decimal string form of the signers bitmap — useful for JSON logging. */
 export function signersBitmapToDecimal(value: string): string {
   return signersBitmapToUint256(value).toString();
 }
@@ -172,21 +172,22 @@ function word(value: string, bytes: number, label: string): Uint8Array {
  * ```
  */
 export function buildEvmVerifierArgs(
-  result: DataUpdateResult,
+  attestation: Attestation,
   options: BuildEvmVerifierArgsOptions,
 ): EvmVerifierArgs {
+  const { payload: signed, signature: sig } = attestation;
   const payload: EvmAttestationPayload = {
-    value: toFixedHex(result.valuePacked, 32, "valuePacked"),
-    sourceId: toFixedHex(result.sourceId, 32, "sourceId"),
-    registryVersion: assertUint(result.registryVersion, U32_MAX, "registryVersion"),
-    signaturesRequired: assertUint(result.signaturesRequired, U8_MAX, "signaturesRequired"),
-    canonicalTimestamp: assertBigUint(result.timestamp, U64_MAX, "timestamp"),
+    value: toFixedHex(signed.value, 32, "payload.value"),
+    sourceId: toFixedHex(signed.sourceId, 32, "sourceId"),
+    registryVersion: assertUint(signed.registryVersion, U32_MAX, "registryVersion"),
+    signaturesRequired: assertUint(signed.signaturesRequired, U8_MAX, "signaturesRequired"),
+    canonicalTimestamp: assertBigUint(signed.canonicalTimestamp, U64_MAX, "canonicalTimestamp"),
   };
 
   const signature: EvmSchnorrSignature = {
-    signature: toFixedHex(result.s, 32, "signature"),
-    commitment: toFixedHex(result.commitmentAddr, 20, "commitment"),
-    signersBitmap: signersBitmapToUint256(result.signersBitmap),
+    signature: toFixedHex(sig.s, 32, "signature"),
+    commitment: toFixedHex(sig.commitmentAddr, 20, "commitment"),
+    signersBitmap: signersBitmapToUint256(sig.signersBitmap),
   };
 
   return {

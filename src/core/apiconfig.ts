@@ -3,6 +3,7 @@
  * gateway/node verification: `sourceId = keccak256(JSON.stringify(canonical apiConfig))`.
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
+import { canonicalizeAggregation } from "./aggregation.js";
 import { bytesToHex, utf8 } from "./encoding.js";
 import type { APIConfig } from "./types.js";
 
@@ -20,15 +21,27 @@ function sortHeaders(headers: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(headers).sort(([a], [b]) => compareCodeUnits(a, b)));
 }
 
-/** Gateway wire shape — defaults applied before hash / encryption. */
+/**
+ * Gateway wire shape — defaults applied before hash / encryption.
+ *
+ * Keys are emitted in the fixed order `url`, `method`, `headers`, `responseParser`,
+ * `valueTransform`, `aggregation`; `aggregation` is present only for tolerance mode and its
+ * nested keys are rebuilt in canonical order (`canonicalizeAggregation`), so no extra or
+ * reordered input key can reach the hash. A config without `aggregation` hashes exactly as
+ * before.
+ *
+ * @throws {AggregationConfigError} if `aggregation` is invalid (including `mode: "exact"`).
+ */
 export function canonicalizeAPIConfig(apiConfig: APIConfig): APIConfig {
   const headers = apiConfig.headers ?? {};
+  const aggregation = canonicalizeAggregation(apiConfig.aggregation);
   return {
     url: apiConfig.url,
     method: apiConfig.method ?? "GET",
     headers: Object.keys(headers).length === 0 ? headers : sortHeaders(headers),
     responseParser: apiConfig.responseParser,
     valueTransform: apiConfig.valueTransform ?? "",
+    ...(aggregation ? { aggregation } : {}),
   };
 }
 
@@ -46,6 +59,3 @@ export function deriveSourceId(apiConfig: APIConfig): Uint8Array {
 export function deriveSourceIdString(apiConfig: APIConfig): string {
   return bytesToHex(deriveSourceId(apiConfig));
 }
-
-/** @deprecated Renamed to {@link deriveSourceId}; identical bytes. */
-export const deriveApiConfigHash = deriveSourceId;
