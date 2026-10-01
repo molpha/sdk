@@ -295,7 +295,13 @@ A gateway response is a coordination result, not proof of settlement or of on-ch
 const { signature, feed } = await sdk.solana.submitAttestation(result);
 ```
 
-`submit_attestation` takes `{ attestation: { payload, signature }, rawValue, coalitionKey }` plus one read-only `Node` account per signer (ascending signer-bit order, resolved from the registry snapshot the round was signed against). The SDK builds all of it: it fetches the signer `Node` accounts in one batched read, sums their secp256k1 keys into the affine **coalition key** (`computeCoalitionKey`), and checks the program's signer-count bounds before sending. The coalition key is unsigned instruction data that the program checks projectively against its own sum, so a wrong key only fails the transaction. Pass `{ coalitionKey }` to skip the `Node` fetch when you already hold it, or `{ rawValue }` for a value longer than 32 bytes (the signed value must then be `keccak256(rawValue)` and the feed stores it as `valueKind.hash`).
+`submit_attestation` takes `{ attestation: { payload, signature }, rawValue, coalitionKey }` plus one read-only `Node` account per signer (ascending signer-bit order, resolved from the registry snapshot the round was signed against). The SDK builds all of it: it fetches the signer `Node` accounts in one batched read, sums their secp256k1 keys into the affine **coalition key** (`computeCoalitionKey`), and checks the program's signer-count bounds before sending. The coalition key is unsigned instruction data that the program checks projectively against its own sum, so a wrong key only fails the transaction. Pass `{ coalitionKey }` to skip the `Node` fetch when you already hold it.
+
+If the signed 32-byte value is the keccak digest of a longer preimage, pass `{ rawValue }` (up to 256 bytes). The SDK verifies the digest before sending:
+
+```ts
+const { signature, feed } = await sdk.solana.submitAttestation(result, { rawValue });
+```
 
 Then read the feed this wallet wrote for that source and quorum:
 
@@ -514,51 +520,47 @@ Supported network ids (selection helpers only): `evm-sepolia`, `arbitrum-sepolia
 
 ### Build verifier arguments
 
+The verifier's entrypoint is
+`verify(Attestation attestation, uint64 maxAge) returns (bool success, uint8 code)`.
+
 ```ts
 import { buildEvmVerifierArgs } from "@molpha/sdk";
 
 const result = await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired });
 
-const { dataUpdate, signature } = buildEvmVerifierArgs(result);
+const { attestation, maxAge } = buildEvmVerifierArgs(result, { maxAge: 300 });
 ```
 
-The generated tuples match the Molpha EVM verifier ABI:
+`maxAge` is required. It is the freshness window in seconds: the verifier reports an older
+attestation as `STALE`, and one dated after `block.timestamp` as `MALFORMED`. `0` disables the
+check entirely — pass it only when your contract enforces freshness or ordering itself, because
+a stateless verifier otherwise accepts a correctly signed attestation forever.
+
+The generated object matches the Solidity `IVerifier.Attestation` struct, using viem's
+primitive types so it passes straight into `readContract` or an ethers `Contract`. Member
+order is ABI order (and the signed message's order), so it differs from `DataUpdateResult`:
 
 ```ts
-// dataUpdate:
-// [bytes32 sourceId,
-//  uint32 registryVersion,
-//  uint32 signaturesRequired,
-//  bytes32 valuePacked,
-//  uint64 timestamp]
-
-// signature:
-// [bytes32 s,
-//  address commitment,
-//  uint256 signersBitmap]
+attestation:
+{
+  payload: {
+    value: `0x${string}`,          // bytes32 (result.valuePacked)
+    sourceId: `0x${string}`,       // bytes32
+    registryVersion: number,       // uint32
+    signaturesRequired: number,    // uint8
+    canonicalTimestamp: bigint,    // uint64 (result.timestamp)
+  },
+  signature: {
+    signature: `0x${string}`,      // bytes32 (result.s)
+    commitment: `0x${string}`,     // address (result.commitmentAddr)
+    signersBitmap: bigint,         // uint256
+  },
+}
+maxAge: bigint                     // uint64
 ```
 
-Note: the deployed contract's source names the first struct field `jobId`; the SDK ABI names it `sourceId` (component names do not affect encoding) and the value is the 32-byte source id.
-
-### ethers
-
-```ts
-import { Contract } from "ethers";
-import {
-  buildEvmVerifierArgs,
-  MOLPHA_VERIFIER_ADDRESS,
-} from "@molpha/sdk";
-
-const verifier = new Contract(
-  MOLPHA_VERIFIER_ADDRESS,
-  abi,
-  signer,
-);
-
-const { dataUpdate, signature } = buildEvmVerifierArgs(result);
-
-await verifier.verify(dataUpdate, signature);
-```
+The builder range-checks every integer against its Solidity type. Out-of-range calldata never
+reaches `verify`: the ABI decoder reverts on it instead of returning a result code.
 
 ### viem
 
@@ -568,35 +570,69 @@ import {
   buildEvmVerifierArgs,
   MOLPHA_VERIFIER_ABI,
   MOLPHA_VERIFIER_ADDRESS,
+  parseEvmVerifyResult,
 } from "@molpha/sdk";
 
-const client = createPublicClient({
-  chain,
-  transport: http(),
-});
+const client = createPublicClient({ chain, transport: http() });
+const { attestation, maxAge } = buildEvmVerifierArgs(result, { maxAge: 300 });
 
-const { dataUpdate, signature } = buildEvmVerifierArgs(result);
-
-await client.readContract({
+const returned = await client.readContract({
   address: MOLPHA_VERIFIER_ADDRESS,
   abi: MOLPHA_VERIFIER_ABI,
   functionName: "verify",
-  args: [
-    {
-      sourceId: dataUpdate[0],
-      registryVersion: dataUpdate[1],
-      signaturesRequired: dataUpdate[2],
-      value: dataUpdate[3],
-      canonicalTimestamp: BigInt(dataUpdate[4]),
-    },
-    {
-      signature: signature[0],
-      commitment: signature[1],
-      signersBitmap: signature[2],
-    },
-  ],
+  args: [attestation, maxAge],
 });
+
+const { success, code, reason } = parseEvmVerifyResult(returned);
+// { success: true, code: 0, reason: "OK" }
+// { success: false, code: 10, reason: "STALE" }
 ```
+
+### ethers
+
+```ts
+import { Contract } from "ethers";
+import {
+  buildEvmVerifierArgs,
+  MOLPHA_VERIFIER_ABI,
+  MOLPHA_VERIFIER_ADDRESS,
+  parseEvmVerifyResult,
+} from "@molpha/sdk";
+
+const verifier = new Contract(MOLPHA_VERIFIER_ADDRESS, MOLPHA_VERIFIER_ABI, provider);
+const { attestation, maxAge } = buildEvmVerifierArgs(result, { maxAge: 300 });
+
+const { success, code, reason } = parseEvmVerifyResult(await verifier.verify(attestation, maxAge));
+```
+
+### Raw `eth_call`
+
+`encodeEvmVerifyCalldata` produces the full calldata (selector `0x67e2907b` plus nine static
+words), and `parseEvmVerifyResult` also accepts the raw 64-byte return data:
+
+```ts
+import { buildEvmVerifierArgs, encodeEvmVerifyCalldata, parseEvmVerifyResult } from "@molpha/sdk";
+
+const args = buildEvmVerifierArgs(result, { maxAge: 300 });
+const returnData = await provider.call({ to: verifierAddress, data: encodeEvmVerifyCalldata(args) });
+
+const { success, code, reason } = parseEvmVerifyResult(returnData);
+```
+
+`verify` never reverts; a rejection is a result code from the shared `VERIFY_CODES` table (see
+[the Starknet section](#call-verify-and-read-the-result) for the full list). The EVM verifier
+returns `MALFORMED` for a zero `signaturesRequired`, a zero or out-of-range signature scalar, a
+zero commitment, or fewer set bitmap bits than `signaturesRequired`. `parseEvmVerifyResult`
+throws when `success` and `code` disagree, which means the call did not reach a Molpha verifier
+of this interface.
+
+### Registry reads
+
+`MOLPHA_VERIFIER_ABI` also covers every read-only registry view — `getRegistryVersion`,
+`getTotalNodes`, `redundancyBuffer`, `getRegistryRoot` / `getRegistryPointer` (current or per
+version), `activatesAt`, `retiredAt`, `isLatestVersion`, `nodeStatus`, `isNode` — and the
+`InvalidRegistryVersion` error the per-version views revert with. Owner-only mutators are not
+included.
 
 Lower-level helpers are also exported for manual integrations:
 
@@ -809,7 +845,7 @@ Current scope:
 - Solana attestation submission and feed/registry reads;
 - private API encryption helpers (pre-production);
 - caller-funded x402 payments for paywalled API sources (Base USDC, pre-production);
-- EVM and Starknet verifier argument building, Starknet `verify` calldata encoding and result decoding;
+- EVM and Starknet verifier argument building, `verify` calldata encoding and result decoding;
 - deployed testnet verifier address helpers.
 
 Known limitations:
@@ -820,6 +856,33 @@ Known limitations:
 - verifier-node registration and admin tooling are intentionally outside this package;
 - production deployments should use authenticated gateway requests;
 - testnet verifier addresses may change between protocol releases.
+
+Solana paths such as selection bitmap and `submit_attestation` remaining-accounts resolution are aligned with the Molpha program version vendored in this repo (`MoLFnEbuMS5gWnXNfUMLAYSqRM3eQZKWRzjeMQfqbT3`, not yet deployed).
+
+## Migrating from 0.1.x
+
+| Before | After |
+|---|---|
+| `deriveFeedId(owner, apiConfigHash, sigReq)` / `deriveFeedIdString` | removed — use `deriveSourceId(apiConfig)` / `deriveSourceIdString` |
+| `deriveApiConfigHash(apiConfig)` | `deriveSourceId(apiConfig)` (old name kept as a deprecated alias, same bytes) |
+| `requestSignedData({ feedId, ... })` | `requestSignedData({ apiConfig, signaturesRequired, ... })` — `sourceId` is derived from `apiConfig` |
+| `prepareContext(feedId)` | `prepareContext()` |
+| `requestAndSubmit(feedId, opts)` | `requestAndSubmit(opts)` |
+| `authMessage(feedId, timestamp)` (sha256) | `hashRequestAuth({ programId, gateway, sourceId, signaturesRequired, timestamp })` (keccak) |
+| `endpoints: string[]` | `endpoints: (string \| { url, gatewayAuthority })[]` |
+| `submitDataUpdate(result)` | `submitAttestation(result)` (deprecated alias kept); returns `{ signature, feed }` |
+| `readFeed(feedId)` | `readFeed(sourceId, signaturesRequired, submitter?)` |
+| `result.feedId` / `NodeKeyVerifierArgs.feedId` | `.sourceId` |
+| EVM tuple `feedId`, ABI `jobId` | `sourceId` |
+| Starknet `feed_id` | `source_id` |
+| `buildStarknetVerifierArgs(result)` → `{ dataUpdate, signature }` | `buildStarknetVerifierArgs(result, { maxAge })` → `{ attestation, maxAge }` for `verify(attestation, max_age)` |
+| `StarknetDataUpdate` (`signatures_required: u32`) | `StarknetAttestationPayload` (`signatures_required: u8`, `value` first), nested in `StarknetAttestation` |
+| Starknet `verify` returns `bool` | returns `(bool, u8)` — decode with `parseStarknetVerifyResult` |
+| `buildEvmVerifierArgs(result)` → `{ dataUpdate, signature }` tuples | `buildEvmVerifierArgs(result, { maxAge })` → `{ attestation, maxAge }` for `verify(attestation, maxAge)` |
+| `EvmDataUpdateTuple` / `EvmSchnorrSignatureTuple` (positional) | `EvmAttestationPayload` / `EvmSchnorrSignature` objects (`value` first, `signaturesRequired: uint8`, `canonicalTimestamp: bigint`), nested in `EvmAttestation` |
+| EVM `verify(DataUpdate, SchnorrSignature)` returns `bool` | `verify(Attestation, uint64)` returns `(bool, uint8)` — decode with `parseEvmVerifyResult` |
+| `attestationMessageHash`: `sourceId ‖ u32 rv ‖ u32 sigReq ‖ bitmap ‖ value ‖ u64 ts` | `value ‖ sourceId ‖ u32 rv ‖ u8 sigReq ‖ u64 ts ‖ bitmap` (what nodes sign and every verifier checks) |
+| `resolveRegistryIndexForVersion`, `VIRTUAL_INDEX`, `nodePda(index)` | removed — signer accounts are `registry.nodes[bit]`; `nodePda(owner)` |
 
 ## Develop
 

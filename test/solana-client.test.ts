@@ -3,6 +3,7 @@
  * shape, with the Anchor account / method namespaces stubbed (no RPC).
  */
 import { AnchorProvider, Program, Wallet, web3 } from "@anchor-lang/core";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 import { describe, expect, it, vi } from "vitest";
 import { bytesToHex, hexToBytes } from "../src/core/encoding.js";
 import type { DataUpdateResult } from "../src/core/types.js";
@@ -128,7 +129,12 @@ describe("MolphaSolanaClient.submitAttestation", () => {
 
   it("forwards rawValue for hashed values", async () => {
     const { client, captured } = harness();
-    await client.submitAttestation(result, { rawValue: new Uint8Array([1, 2, 3]) });
+    const rawValue = new Uint8Array([1, 2, 3]);
+    const hashedResult = {
+      ...result,
+      valuePacked: bytesToHex(keccak_256(rawValue)),
+    };
+    await client.submitAttestation(hashedResult, { rawValue });
     expect(Buffer.from(captured.args.rawValue).toString("hex")).toBe("010203");
   });
 

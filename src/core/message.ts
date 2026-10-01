@@ -10,7 +10,7 @@
  * The preimage is 141 bytes. Widths follow the Rust, Solidity, Solana, and node encoders.
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { concatBytes, toFixedBytes, u32be, u64be, utf8 } from "./encoding.js";
+import { concatBytes, toFixedBytes, u8, u32be, u64be, utf8 } from "./encoding.js";
 import type { DataUpdateResult } from "./types.js";
 
 /** `keccak256("MOLPHA_MESSAGE_V1")` domain separator. */
@@ -20,7 +20,7 @@ export interface AttestationMessageFields {
   /** 32-byte source id (hex or bytes). */
   sourceId: string | Uint8Array;
   registryVersion: number;
-  /** Encoded as one byte in the message. */
+  /** Encoded as a single byte (`uint8`); throws `RangeError` outside `0..255`. */
   signaturesRequired: number;
   /** 32-byte big-endian signers bitmap (hex or bytes). */
   signersBitmap: string | Uint8Array;
@@ -41,7 +41,7 @@ export function attestationMessageHash(fields: AttestationMessageFields): Uint8A
       toFixedBytes(fields.value, 32, "value"),
       toFixedBytes(fields.sourceId, 32, "sourceId"),
       u32be(fields.registryVersion),
-      Uint8Array.of(fields.signaturesRequired),
+      u8(fields.signaturesRequired),
       u64be(fields.canonicalTimestamp),
       toFixedBytes(fields.signersBitmap, 32, "signersBitmap"),
     ),

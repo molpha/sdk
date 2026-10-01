@@ -11,10 +11,11 @@ import {
   type Idl,
   type Wallet,
 } from "@anchor-lang/core";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 import BN from "bn.js";
 import type { Address } from "@solana/kit";
 import { type CoalitionKey, computeCoalitionKey } from "../core/coalition.js";
-import { toFixedBytes } from "../core/encoding.js";
+import { bytesToHex, toFixedBytes } from "../core/encoding.js";
 import {
   normalizeSecp256k1PublicKeyHex,
   secp256k1PublicKeyFromCoordinates,
@@ -108,11 +109,9 @@ export interface SubmitResult {
  */
 export interface FeedAccount {
   sourceId: number[];
-  /** 32 bytes. */
   value: Uint8Array | number[];
   valueKind: { value: Record<string, never> } | { hash: Record<string, never> };
-  /** Wallet that submitted the first attestation; part of the feed PDA seeds. */
-  submitter: InstanceType<typeof web3.PublicKey>;
+  submitter: Address;
   /** u64 unix seconds. */
   canonicalTimestamp: BN;
   signaturesRequired: number;
@@ -121,33 +120,34 @@ export interface FeedAccount {
   bump: number;
 }
 
-/** Anchor-encoded `AttestationPayload` (camelCase field names). */
-export interface AttestationPayloadArgs {
-  value: number[];
-  sourceId: number[];
-  registryVersion: number;
-  signaturesRequired: number;
-  canonicalTimestamp: BN;
-}
-
-/** Anchor-encoded `SchnorrSignature` (camelCase field names). */
-export interface SchnorrSignatureArgs {
-  aggSigS: number[];
-  commitment: number[];
-  signersBitmap: number[];
-}
-
-/** Anchor-encoded `SubmitAttestationArgs` (camelCase field names). */
+  /** Anchor-encoded `SubmitAttestationArgs` (camelCase field names). */
 export interface SubmitAttestationArgs {
-  attestation: { payload: AttestationPayloadArgs; signature: SchnorrSignatureArgs };
-  /**
-   * Preimage of `attestation.payload.value` for values longer than 32 bytes (≤ 256 bytes):
-   * the signed value must then equal `keccak256(rawValue)` and the feed stores it as
-   * `valueKind.hash`. `null` when the signed value is the value itself.
-   */
-  rawValue: Buffer | null;
-  /** Affine sum of the signers' secp256k1 keys; unsigned and checked projectively on chain. */
+  attestation: {
+    payload: {
+      value: number[];
+      sourceId: number[];
+      registryVersion: number;
+      signaturesRequired: number;
+      canonicalTimestamp: BN;
+    };
+    signature: {
+      aggSigS: number[];
+      commitment: number[];
+      signersBitmap: number[];
+    };
+  };
+  /** Optional preimage when `payload.value` is `keccak256(rawValue)`. */
+  rawValue: Uint8Array | null;
   coalitionKey: { x: number[]; y: number[] };
+}
+
+export interface SubmitAttestationOptions {
+  computeUnitLimit?: number;
+  /**
+   * Optional value preimage (maximum 256 bytes). Its keccak256 digest must equal
+   * `result.valuePacked`; the program stores that digest with `valueKind.hash`.
+   */
+  rawValue?: Uint8Array;
 }
 
 interface NodeAccount {
@@ -356,7 +356,7 @@ export class MolphaSolanaClient {
    * transaction and nothing else.
    *
    * `opts.rawValue` is for values longer than 32 bytes: the signed `valuePacked` must be
-   * `keccak256(rawValue)`; the SDK checks nothing about it, the program does.
+   * `keccak256(rawValue)`; {@link buildSubmitAttestationArgs} validates that before send.
    */
   async submitAttestation(
     result: DataUpdateResult,
@@ -552,6 +552,13 @@ export function buildSubmitAttestationArgs(
   coalitionKey: CoalitionKey,
   rawValue?: Uint8Array | null,
 ): SubmitAttestationArgs {
+  const value = toFixedBytes(result.valuePacked, 32, "valuePacked");
+  if (rawValue && rawValue.length > 256) {
+    throw new RangeError(`rawValue must be at most 256 bytes, got ${rawValue.length}`);
+  }
+  if (rawValue && bytesToHex(keccak_256(rawValue)) !== bytesToHex(value)) {
+    throw new Error("rawValue keccak256 digest does not match result.valuePacked");
+  }
   return {
     attestation: {
       payload: {
@@ -567,7 +574,7 @@ export function buildSubmitAttestationArgs(
         signersBitmap: Array.from(toFixedBytes(result.signersBitmap, 32, "signersBitmap")),
       },
     },
-    rawValue: rawValue ? Buffer.from(rawValue) : null,
+    rawValue: rawValue ? toAnchorBytes(rawValue) : null,
     coalitionKey: {
       x: Array.from(toFixedBytes(coalitionKey.x, 32, "coalitionKey.x")),
       y: Array.from(toFixedBytes(coalitionKey.y, 32, "coalitionKey.y")),
@@ -594,6 +601,18 @@ function assertSignerCount(
       `CreditedExceedsSelection: ${signerCount} signers > signaturesRequired ${signaturesRequired} + redundancy buffer ${registry.redundancyBuffer} of registry ${registry.version}`,
     );
   }
+}
+
+/** Browser-safe byte array accepted by Anchor's Buffer-oriented `bytes` Borsh layout. */
+function toAnchorBytes(bytes: Uint8Array): Uint8Array {
+  const out = Uint8Array.from(bytes) as Uint8Array & {
+    copy(target: Uint8Array, targetStart?: number): number;
+  };
+  out.copy = (target, targetStart = 0) => {
+    target.set(out, targetStart);
+    return out.length;
+  };
+  return out;
 }
 
 /** Normalize a confirmed USDC amount (base units) to `bigint`, rejecting non-integers. */

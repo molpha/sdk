@@ -5,6 +5,7 @@
  */
 import { AnchorProvider, BN, Program, Wallet, web3 } from "@anchor-lang/core";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 import { describe, expect, it } from "vitest";
 import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 import { MOLPHA_PROGRAM_ID } from "../src/core/constants.js";
@@ -127,8 +128,12 @@ describe("vendored IDL", () => {
   it("encodes raw_value as Some(bytes) for hashed values", async () => {
     const { program, provider } = offlineProgram();
     const rawValue = new Uint8Array(40).fill(0xab);
+    const hashedResult = {
+      ...result,
+      valuePacked: Buffer.from(keccak_256(rawValue)).toString("hex"),
+    };
     const ix = await program.methods
-      .submitAttestation!(buildSubmitAttestationArgs(result, COALITION_KEY, rawValue))
+      .submitAttestation!(buildSubmitAttestationArgs(hashedResult, COALITION_KEY, rawValue))
       .accountsPartial({ submitter: provider.wallet.publicKey })
       .instruction();
     const body = ix.data.subarray(8);
@@ -138,7 +143,26 @@ describe("vendored IDL", () => {
     expect(ix.data.length).toBe(8 + 161 + 1 + 4 + 40 + 64);
   });
 
-  it("decodes the zero-copy Registry snapshot (8_224 bytes incl. discriminator)", () => {
+  it("encodes and validates submit_attestation raw_value", async () => {
+    const { program, provider } = offlineProgram();
+    const rawValue = new TextEncoder().encode("a value longer than the signed word");
+    const hashedResult = {
+      ...result,
+      valuePacked: Buffer.from(keccak_256(rawValue)).toString("hex"),
+    };
+    const args = buildSubmitAttestationArgs(hashedResult, COALITION_KEY, rawValue);
+    const ix = await program.methods
+      .submitAttestation!(args)
+      .accountsPartial({ submitter: provider.wallet.publicKey })
+      .instruction();
+
+    // Some(raw_value): option tag + u32 vector length + bytes.
+    expect(ix.data.length).toBe(8 + 161 + 1 + 4 + rawValue.length + 64);
+    expect(() => buildSubmitAttestationArgs(result, COALITION_KEY, rawValue)).toThrow(/digest does not match/);
+    expect(() => buildSubmitAttestationArgs(hashedResult, COALITION_KEY, new Uint8Array(257))).toThrow(/256/);
+  });
+
+  it("decodes the zero-copy Registry snapshot", () => {
     const { program } = offlineProgram();
     // version 4 + node_count 2 + redundancy_buffer 1 + bump 1, nodes 256 * 32, then two i64s.
     const body = Buffer.alloc(8216);

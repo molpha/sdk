@@ -7,6 +7,7 @@ import {
   hexToBytes,
   toFixedBytes,
   u256beFromBigInt,
+  u8,
   u32be,
   u32le,
   u64be,
@@ -43,7 +44,15 @@ describe("encoding", () => {
     expect(bigIntFromBytesBe(word)).toBe(v);
   });
 
+  it("u8", () => {
+    expect(Array.from(u8(0))).toEqual([0]);
+    expect(Array.from(u8(255))).toEqual([255]);
+  });
+
   it("rejects out-of-range values", () => {
+    expect(() => u8(256)).toThrow();
+    expect(() => u8(-1)).toThrow();
+    expect(() => u8(1.5)).toThrow();
     expect(() => u32be(-1)).toThrow();
     expect(() => u32be(0x1_0000_0000)).toThrow();
     expect(() => u64be(2n ** 64n)).toThrow();

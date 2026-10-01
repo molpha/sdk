@@ -27,6 +27,12 @@ export function hexToBytes(hex: string): Uint8Array {
 /** Hex with a leading `0x`. */
 export const bytesToHex0x = (bytes: Uint8Array): string => "0x" + bytesToHex(bytes);
 
+/** u8 → 1 byte. Range-checked: `Uint8Array.of` would silently wrap an out-of-range value. */
+export function u8(value: number): Uint8Array {
+  assertUint(value, 0xff, "u8");
+  return Uint8Array.of(value);
+}
+
 /** Big-endian u32 → 4 bytes. */
 export function u32be(value: number): Uint8Array {
   assertUint(value, 0xffffffff, "u32");
