@@ -1,9 +1,11 @@
 /**
  * `MolphaGateway` — isomorphic HTTP client with multi-endpoint failover.
  */
+import { assertAggregationQuorum, canonicalizeAggregation } from "../core/aggregation.js";
 import { canonicalizeAPIConfig, deriveSourceId } from "../core/apiconfig.js";
 import { MOLPHA_PROGRAM_ID } from "../core/constants.js";
 import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
+import { formatInt256Decimal } from "../core/int256.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
 import {
   deriveGroupBitmap,
@@ -12,6 +14,7 @@ import {
   selectedIndices,
 } from "../core/selection.js";
 import type {
+  AggregationConfig,
   APIConfig,
   DataUpdateResult,
   Node,
@@ -53,7 +56,11 @@ export interface RequestSignedDataOptions {
    * same config (including `{{secret.*}}` placeholders) every time.
    */
   apiConfig: APIConfig;
-  /** Requested quorum (u8, ≥ the protocol `min_signers`). */
+  /**
+   * Requested quorum (u8, ≥ the protocol `min_signers`). Median tolerance mode
+   * (`apiConfig.aggregation`) additionally requires `>= 3`; lower values are rejected
+   * before any request is made.
+   */
   signaturesRequired: number;
   /**
    * Solana pubkey (base58) of the subscription owner.
@@ -157,6 +164,10 @@ interface GatewaySignedDataResponse {
 
 interface GatewaySignedData {
   sourceId?: string;
+  /** Echo of the canonical apiConfig hash; equals `sourceId`. */
+  configHash?: string;
+  /** Echo of the request's tolerance policy; present only for tolerance rounds (newer gateways). */
+  aggregation?: unknown;
   value?: string;
   valuePacked?: string;
   timestamp?: number;
@@ -363,7 +374,10 @@ export class MolphaGateway {
       );
     }
 
+    // Validates `aggregation` (rejects `mode: "exact"`, unsupported rules, bad numbers) as
+    // part of canonicalization; tolerance additionally needs a quorum of at least 3.
     const requestApiConfig = canonicalizeAPIConfig(apiConfig);
+    assertAggregationQuorum(requestApiConfig.aggregation, signaturesRequired);
     const sourceIdBytes = deriveSourceId(requestApiConfig);
     const sourceId = bytesToHex(sourceIdBytes);
 
@@ -593,6 +607,9 @@ export class MolphaGateway {
               timestamp,
               signaturesRequired,
               bitmap,
+              ...(requestApiConfig.aggregation
+                ? { aggregation: requestApiConfig.aggregation }
+                : {}),
             });
           }
           lastError = new Error(`Gateway returned status: ${json.status}`);
@@ -843,6 +860,11 @@ function normalizeHex(value: string): string {
  * message); `timestamp`, `registryVersion` and `signersBitmap` are taken from the
  * response because a non-fresh (cached) attestation legitimately carries the earlier
  * round's values.
+ *
+ * Tolerance mode: the signing set is chosen by the nodes after the observation exchange,
+ * so `signersBitmap`, the signature fields and the packed value must all come from the
+ * response (the request's selection bitmap is not a substitute), and `value` is rendered
+ * from the signed `valuePacked` at the source's `decimals` rather than trusted as sent.
  */
 function toResult(
   data: GatewaySignedData,
@@ -852,11 +874,17 @@ function toResult(
     timestamp: number;
     signaturesRequired: number;
     bitmap: Uint8Array;
+    aggregation?: AggregationConfig;
   },
 ): DataUpdateResult {
   if (data.sourceId !== undefined && normalizeHex(data.sourceId) !== ctx.sourceId) {
     throw new GatewayError(
       `Gateway response sourceId ${data.sourceId} does not match the requested ${ctx.sourceId}`,
+    );
+  }
+  if (data.configHash !== undefined && normalizeHex(data.configHash) !== ctx.sourceId) {
+    throw new GatewayError(
+      `Gateway response configHash ${data.configHash} does not match the requested sourceId ${ctx.sourceId}`,
     );
   }
   if (
@@ -867,9 +895,44 @@ function toResult(
       `Gateway response signaturesRequired ${data.signaturesRequired} does not match the requested ${ctx.signaturesRequired}`,
     );
   }
+  if (data.aggregation !== undefined && data.aggregation !== null) {
+    let echoed: AggregationConfig | undefined;
+    try {
+      echoed = canonicalizeAggregation(data.aggregation as AggregationConfig);
+    } catch (err) {
+      throw new GatewayError(
+        `Gateway response carries an invalid aggregation echo: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (!ctx.aggregation) {
+      throw new GatewayError(
+        "Gateway response carries an aggregation, but the request was exact mode (no aggregation)",
+      );
+    }
+    if (JSON.stringify(echoed) !== JSON.stringify(ctx.aggregation)) {
+      throw new GatewayError(
+        `Gateway response aggregation ${JSON.stringify(echoed)} does not match the requested ${JSON.stringify(ctx.aggregation)}`,
+      );
+    }
+  }
+  let value = data.value ?? "";
+  if (ctx.aggregation) {
+    for (const field of ["valuePacked", "signersBitmap", "s", "commitmentAddr"] as const) {
+      if (!data[field]) {
+        throw new GatewayError(`Gateway tolerance response is missing ${field}`);
+      }
+    }
+    try {
+      value = formatInt256Decimal(data.valuePacked!, ctx.aggregation.numeric.decimals);
+    } catch (err) {
+      throw new GatewayError(
+        `Gateway tolerance response valuePacked is not an int256 word: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
   return {
     sourceId: ctx.sourceId,
-    value: data.value ?? "",
+    value,
     valuePacked: data.valuePacked ?? "",
     timestamp: data.timestamp ?? ctx.timestamp,
     registryVersion: data.registryVersion ?? ctx.registryVersion,

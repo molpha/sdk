@@ -768,3 +768,236 @@ describe("MolphaGateway.requestSignedData private API encryption node key verifi
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
+  const aggregation = {
+    mode: "tolerance" as const,
+    rule: "median" as const,
+    maxDeviationBps: 50,
+    maxAgeMs: 2000,
+    numeric: { type: "int256" as const, decimals: 8 },
+  };
+  const toleranceConfig = { ...apiConfig, aggregation };
+  const TOLERANCE_SOURCE_ID = deriveSourceIdString(toleranceConfig);
+  // 42150.12345678 at 8 decimals, as a signed int256 word.
+  const PACKED = "00".repeat(26) + "03d56250474e";
+
+  const toleranceResponse = (extra: Record<string, unknown> = {}) =>
+    jsonResponse({
+      status: "completed",
+      data: {
+        sourceId: TOLERANCE_SOURCE_ID,
+        configHash: TOLERANCE_SOURCE_ID,
+        value: "stale-display-value",
+        valuePacked: PACKED,
+        signersBitmap: "00".repeat(31) + "0e",
+        s: "aa".repeat(32),
+        commitmentAddr: "bb".repeat(20),
+        signaturesRequired: 3,
+        fresh: true,
+        ...extra,
+      },
+    });
+
+  it("derives the sourceId from the aggregation and forwards it in the canonical apiConfig", async () => {
+    let postedBody: Record<string, unknown> | undefined;
+    globalThis.fetch = mockFetch({
+      execute: (_url, body) => {
+        postedBody = body;
+        return toleranceResponse();
+      },
+    }) as unknown as typeof fetch;
+
+    const gw = new MolphaGateway("http://gw1", registry);
+    const result = await gw.requestSignedData({
+      ...baseRequest,
+      signaturesRequired: 3,
+      apiConfig: {
+        ...apiConfig,
+        // Deliberately shuffled input: the wire form must still be canonical.
+        aggregation: {
+          numeric: { decimals: 8, type: "int256" },
+          maxAgeMs: 2000,
+          maxDeviationBps: 50,
+          rule: "median",
+          mode: "tolerance",
+        } as typeof aggregation,
+      },
+    });
+
+    expect(TOLERANCE_SOURCE_ID).not.toBe(SOURCE_ID);
+    expect(postedBody?.sourceId).toBe(TOLERANCE_SOURCE_ID);
+    expect(JSON.stringify(postedBody?.apiConfig)).toBe(
+      '{"url":"http://api","method":"GET","headers":{},"responseParser":"$.price","valueTransform":"",' +
+        '"aggregation":{"mode":"tolerance","rule":"median","maxDeviationBps":50,"maxAgeMs":2000,"numeric":{"type":"int256","decimals":8}}}',
+    );
+    expect(result.sourceId).toBe(TOLERANCE_SOURCE_ID);
+  });
+
+  it("omits aggregation from the wire body for exact mode", async () => {
+    let postedBody: Record<string, unknown> | undefined;
+    globalThis.fetch = mockFetch({
+      execute: (_url, body) => {
+        postedBody = body;
+        return completed();
+      },
+    }) as unknown as typeof fetch;
+    await new MolphaGateway("http://gw1", registry).requestSignedData(baseRequest);
+    expect(postedBody?.apiConfig).not.toHaveProperty("aggregation");
+  });
+
+  it("rejects signaturesRequired < 3 client-side, before any request", async () => {
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    const gw = new MolphaGateway("http://gw1", registry);
+    for (const signaturesRequired of [1, 2]) {
+      await expect(
+        gw.requestSignedData({ ...baseRequest, signaturesRequired, apiConfig: toleranceConfig }),
+      ).rejects.toThrow(/tolerance aggregation requires signaturesRequired >= 3/);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects mode "exact" and unsupported rules before any request', async () => {
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    const gw = new MolphaGateway("http://gw1", registry);
+    await expect(
+      gw.requestSignedData({
+        ...baseRequest,
+        signaturesRequired: 3,
+        apiConfig: { ...apiConfig, aggregation: { ...aggregation, mode: "exact" } as never },
+      }),
+    ).rejects.toThrow(/mode "exact" is not accepted/);
+    await expect(
+      gw.requestSignedData({
+        ...baseRequest,
+        signaturesRequired: 3,
+        apiConfig: { ...apiConfig, aggregation: { ...aggregation, rule: "mean" } as never },
+      }),
+    ).rejects.toThrow(/unsupported aggregation.rule/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("renders value from the signed valuePacked at the source's decimals", async () => {
+    globalThis.fetch = mockFetch({ execute: () => toleranceResponse() }) as unknown as typeof fetch;
+    const result = await new MolphaGateway("http://gw1", registry).requestSignedData({
+      ...baseRequest,
+      signaturesRequired: 3,
+      apiConfig: toleranceConfig,
+    });
+    expect(result.value).toBe("42150.12345678");
+    expect(result.valuePacked).toBe(PACKED);
+    // The final signing set comes from the response, not the request's selection bitmap.
+    expect(result.signersBitmap).toBe("00".repeat(31) + "0e");
+  });
+
+  it("renders negative values", async () => {
+    globalThis.fetch = mockFetch({
+      execute: () => toleranceResponse({ valuePacked: "ff".repeat(31) + "9c" }), // -100 @ 8dp
+    }) as unknown as typeof fetch;
+    const result = await new MolphaGateway("http://gw1", registry).requestSignedData({
+      ...baseRequest,
+      signaturesRequired: 3,
+      apiConfig: toleranceConfig,
+    });
+    expect(result.value).toBe("-0.000001");
+  });
+
+  it("requires the signed fields in a tolerance response", async () => {
+    for (const missing of ["valuePacked", "signersBitmap", "s", "commitmentAddr"]) {
+      globalThis.fetch = mockFetch({
+        execute: () => toleranceResponse({ [missing]: undefined }),
+      }) as unknown as typeof fetch;
+      await expect(
+        new MolphaGateway("http://gw1", registry).requestSignedData({
+          ...baseRequest,
+          signaturesRequired: 3,
+          apiConfig: toleranceConfig,
+          maxRetries: 1,
+        }),
+      ).rejects.toThrow(new RegExp(`missing ${missing}`));
+    }
+  });
+
+  it("rejects a gateway that derived a different identity (e.g. dropped aggregation)", async () => {
+    globalThis.fetch = mockFetch({
+      execute: () => toleranceResponse({ sourceId: SOURCE_ID, configHash: SOURCE_ID }),
+    }) as unknown as typeof fetch;
+    await expect(
+      new MolphaGateway("http://gw1", registry).requestSignedData({
+        ...baseRequest,
+        signaturesRequired: 3,
+        apiConfig: toleranceConfig,
+        maxRetries: 1,
+      }),
+    ).rejects.toThrow(/does not match the requested/);
+
+    globalThis.fetch = mockFetch({
+      execute: () => toleranceResponse({ configHash: SOURCE_ID }),
+    }) as unknown as typeof fetch;
+    await expect(
+      new MolphaGateway("http://gw1", registry).requestSignedData({
+        ...baseRequest,
+        signaturesRequired: 3,
+        apiConfig: toleranceConfig,
+        maxRetries: 1,
+      }),
+    ).rejects.toThrow(/configHash .* does not match/);
+  });
+
+  it("checks the gateway's aggregation echo against the request", async () => {
+    const request = () =>
+      new MolphaGateway("http://gw1", registry).requestSignedData({
+        ...baseRequest,
+        signaturesRequired: 3,
+        apiConfig: toleranceConfig,
+        maxRetries: 1,
+      });
+
+    globalThis.fetch = mockFetch({
+      execute: () => toleranceResponse({ aggregation }),
+    }) as unknown as typeof fetch;
+    await expect(request()).resolves.toMatchObject({ value: "42150.12345678" });
+
+    globalThis.fetch = mockFetch({
+      execute: () => toleranceResponse({ aggregation: { ...aggregation, maxDeviationBps: 51 } }),
+    }) as unknown as typeof fetch;
+    await expect(request()).rejects.toThrow(/aggregation .* does not match the requested/);
+
+    // An exact request must not come back as a tolerance round.
+    globalThis.fetch = mockFetch({
+      execute: () => completed({ aggregation }),
+    }) as unknown as typeof fetch;
+    await expect(
+      new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, maxRetries: 1 }),
+    ).rejects.toThrow(/request was exact mode/);
+  });
+
+  it("encrypts the tolerance config and the plaintext hashes to the sourceId", async () => {
+    let postedBody: Record<string, unknown> | undefined;
+    globalThis.fetch = mockFetch({
+      execute: (_url, body) => {
+        postedBody = body;
+        return toleranceResponse();
+      },
+    }) as unknown as typeof fetch;
+    const config = toleranceConfig;
+    const gw = new MolphaGateway("http://gw1", registry, undefined, {
+      allowUnverifiedNodeKeysForPrivateApi: true,
+      defaultSubscriptionOwner: SUBSCRIPTION_OWNER,
+    });
+    await expect(
+      gw.requestSignedData({
+        signaturesRequired: 3,
+        apiConfig: config,
+        encrypt: { secrets: {} },
+        context: { registryVersion: 1, redundancyBuffer: 2, nodes: encryptedNodes },
+        maxRetries: 1,
+      }),
+    ).resolves.toMatchObject({ sourceId: TOLERANCE_SOURCE_ID });
+    expect(postedBody?.sourceId).toBe(deriveSourceIdString(config));
+    expect((postedBody?.apiConfig as Record<string, unknown>).aggregation).toEqual(aggregation);
+    expect(postedBody?.encKeyBundle).toBeDefined();
+  });
+});

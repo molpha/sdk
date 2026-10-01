@@ -3,11 +3,11 @@
  * (Solana program, EVM `VerifierLib.constructMessage`, Starknet) recomputes:
  *
  *   message = keccak256(
- *     keccak256("MOLPHA_MESSAGE_V1") || sourceId || u32be(registryVersion) ||
- *     u32be(signaturesRequired) || signersBitmap || value || u64be(canonicalTimestamp)
+ *     keccak256("MOLPHA_MESSAGE_V1") || value || sourceId || u32be(registryVersion) ||
+ *     u8(signaturesRequired) || u64be(canonicalTimestamp) || signersBitmap
  *   )
  *
- * Widths follow Solidity `abi.encodePacked`: `bytes32, uint32, uint32, uint256, bytes32, uint64`.
+ * The preimage is 141 bytes. Widths follow the Rust, Solidity, Solana, and node encoders.
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { concatBytes, toFixedBytes, u32be, u64be, utf8 } from "./encoding.js";
@@ -20,7 +20,7 @@ export interface AttestationMessageFields {
   /** 32-byte source id (hex or bytes). */
   sourceId: string | Uint8Array;
   registryVersion: number;
-  /** Encoded as `uint32` in the message even though the program stores a `u8`. */
+  /** Encoded as one byte in the message. */
   signaturesRequired: number;
   /** 32-byte big-endian signers bitmap (hex or bytes). */
   signersBitmap: string | Uint8Array;
@@ -32,15 +32,18 @@ export interface AttestationMessageFields {
 
 /** Compute the attestation message hash (32 bytes). */
 export function attestationMessageHash(fields: AttestationMessageFields): Uint8Array {
+  if (!Number.isInteger(fields.signaturesRequired) || fields.signaturesRequired < 0 || fields.signaturesRequired > 255) {
+    throw new RangeError(`signaturesRequired out of u8 range: ${fields.signaturesRequired}`);
+  }
   return keccak_256(
     concatBytes(
       MESSAGE_PREFIX,
+      toFixedBytes(fields.value, 32, "value"),
       toFixedBytes(fields.sourceId, 32, "sourceId"),
       u32be(fields.registryVersion),
-      u32be(fields.signaturesRequired),
-      toFixedBytes(fields.signersBitmap, 32, "signersBitmap"),
-      toFixedBytes(fields.value, 32, "value"),
+      Uint8Array.of(fields.signaturesRequired),
       u64be(fields.canonicalTimestamp),
+      toFixedBytes(fields.signersBitmap, 32, "signersBitmap"),
     ),
   );
 }

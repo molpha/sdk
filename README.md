@@ -45,10 +45,12 @@ Every signed attestation commits to the same message across chains:
 
 ```text
 message = keccak256(
-  keccak256("MOLPHA_MESSAGE_V1") || sourceId || u32be(registryVersion) ||
-  u32be(signaturesRequired) || signersBitmap || value || u64be(canonicalTimestamp)
+  keccak256("MOLPHA_MESSAGE_V1") || value || sourceId || u32be(registryVersion) ||
+  u8(signaturesRequired) || u64be(canonicalTimestamp) || signersBitmap
 )
 ```
+
+The preimage is 141 bytes (32 + 32 + 32 + 4 + 1 + 8 + 32).
 
 `attestationMessageHash` / `attestationMessageHashFromResult` recompute it client-side.
 
@@ -223,8 +225,7 @@ import { web3 } from "@anchor-lang/core";
 import {
   MolphaSDK,
   PlanType,
-  deriveApiConfigHash,
-  deriveFeedIdString,
+  deriveSourceIdString,
 } from "@molpha/sdk";
 import { walletFromKeypairFile } from "@molpha/sdk/utils";
 
@@ -268,6 +269,8 @@ const apiConfig = {
 const sourceId = deriveSourceIdString(apiConfig); // 64 hex chars, no 0x
 ```
 
+The canonical JSON has the fixed key order `url`, `method`, `headers` (sorted by UTF-16 code units, `{}` if empty), `responseParser`, `valueTransform` and, for [tolerance mode](#median-tolerance-mode), a trailing `aggregation`. The key is omitted for exact mode, so existing five-field configs keep their `sourceId`.
+
 The gateway, the Solana program and the EVM/Starknet verifiers all recompute `sourceId` from the same canonical config, so pass the same `apiConfig` (including `{{secret.*}}` placeholders) every time. `signaturesRequired` is **not** part of `sourceId`: on Solana a feed account is keyed by `(sourceId, signaturesRequired, submitter)`, so the same source can be tracked at different quorums.
 
 ### 3. Request signed data from the gateway
@@ -284,17 +287,25 @@ The gateway round uses the current on-chain registry version. Selected verifier 
 
 The returned `DataUpdateResult` includes `sourceId`, the signed value, canonical timestamp, registry version, required quorum, signer bitmap, and aggregate signature. `signaturesRequired` must be at least the protocol's `min_signers` (currently 3) or the chain rejects the submit.
 
+A gateway response is a coordination result, not proof of settlement or of on-chain verification. Consumers still decide freshness, source, quorum and replay policy.
+
 ### 4. Submit on Solana
 
 ```ts
 const { signature, feed } = await sdk.solana.submitAttestation(result);
 ```
 
+`submit_attestation` takes `{ attestation: { payload, signature }, rawValue, coalitionKey }` plus one read-only `Node` account per signer (ascending signer-bit order, resolved from the registry snapshot the round was signed against). The SDK builds all of it: it fetches the signer `Node` accounts in one batched read, sums their secp256k1 keys into the affine **coalition key** (`computeCoalitionKey`), and checks the program's signer-count bounds before sending. The coalition key is unsigned instruction data that the program checks projectively against its own sum, so a wrong key only fails the transaction. Pass `{ coalitionKey }` to skip the `Node` fetch when you already hold it, or `{ rawValue }` for a value longer than 32 bytes (the signed value must then be `keccak256(rawValue)` and the feed stores it as `valueKind.hash`).
+
 Then read the feed this wallet wrote for that source and quorum:
 
 ```ts
 const feedState = await sdk.solana.readFeed(result.sourceId, signaturesRequired);
 ```
+
+`FeedAccount.value` is the 32 signed bytes (`valueKind.value`) or their keccak preimage hash (`valueKind.hash`); `submitter` is the wallet that created the feed.
+
+The subscription read no longer exposes usage. The program dropped `used_rounds` / `prepaid_usdc` / `price` from `Subscription`; round quota is counted by the gateway's off-chain outbox, so `SubscriptionInfo` carries only `owner`, `planType`, `validUntil`, `maxRounds`, `delegateCount`, `maxDelegates`, `maxSigners`.
 
 ### One-call request + submit
 
@@ -345,6 +356,54 @@ refresh the context when the on-chain registry changes. The SDK derives the
 selection from the on-chain `nodeCount` and refuses a cached node list whose length
 disagrees with it. The same `context` field is accepted by `requestAndSubmit`.
 
+## Median tolerance mode
+
+By default every signing node must observe the identical value. For noisy numeric sources
+(prices), add an `aggregation` object and the selected nodes instead exchange signed
+observations, drop stale ones and outliers, and sign the **lower median** of
+`signaturesRequired` surviving observations:
+
+```ts
+const apiConfig = {
+  url: "https://api.example.com/price",
+  responseParser: "$.price",
+  aggregation: {
+    mode: "tolerance",
+    rule: "median",
+    maxDeviationBps: 50, // u32: allowed distance from the lower median, in bps
+    maxAgeMs: 2000, // > 0: max observation age in milliseconds
+    numeric: { type: "int256", decimals: 8 }, // value = round-half-even(price * 10^8)
+  },
+};
+
+const { result } = await sdk.requestAndSubmit({ apiConfig, signaturesRequired: 5 });
+```
+
+Rules (the node is the reference; the SDK rejects violations before any request is made, with `AggregationConfigError`):
+
+- `aggregation` is part of the `sourceId` and is **omitted** for exact mode. `mode: "exact"` is rejected because it would change the identity.
+- Only `rule: "median"` and `numeric.type: "int256"` are supported. `decimals` is `0..255`, `maxDeviationBps` a u32, `maxAgeMs` a positive integer.
+- Tolerance needs `signaturesRequired >= 3`.
+- The nested object is rebuilt in canonical order (`mode`, `rule`, `maxDeviationBps`, `maxAgeMs`, `numeric{type, decimals}`); extra or reordered keys on your input never reach the hash. For the config above, `sourceId` hashes exactly `{"url":...,"method":"GET","headers":{},"responseParser":"$.price","valueTransform":"","aggregation":{"mode":"tolerance","rule":"median","maxDeviationBps":50,"maxAgeMs":2000,"numeric":{"type":"int256","decimals":8}}}` (pinned against the node's Go test `TestAggregationSourceIdentity`).
+- The signed value is a signed `int256` (two's-complement `bytes32`). For tolerance results `DataUpdateResult.value` is rendered from the signed `valuePacked` at the source's `decimals`, and `signersBitmap` / signature fields must come from the response, since the nodes choose the final signing set after the observation exchange.
+- The gateway must forward `aggregation` to the nodes. If it derives a different identity, the response's `sourceId` / `configHash` will not match and the SDK throws; a gateway that echoes `aggregation` in its response must echo the requested policy.
+
+Helpers for the signed value (mirror the node's `new/tolerance` package):
+
+```ts
+import {
+  encodeInt256Decimal, // ("42150.12345678", 8) -> 32-byte Uint8Array, round half to even, bounds-checked
+  decodeInt256, //        bytes32 (Uint8Array | hex) -> bigint
+  formatInt256Decimal, // bytes32 or bigint, decimals -> "42150.12345678" (trailing zeros trimmed)
+  encodeInt256, //        bigint -> bytes32
+  INT256_MIN,
+  INT256_MAX,
+} from "@molpha/sdk";
+
+const feedState = await sdk.solana.readFeed(result.sourceId, 5);
+const price = formatInt256Decimal(Uint8Array.from(feedState!.value), 8);
+```
+
 ## Private APIs and encrypted secrets
 
 Sources can use private APIs without sending plaintext secrets to the gateway.
@@ -366,7 +425,7 @@ const result = await sdk.gateway.requestSignedData({
 
 `MolphaSDK` wires `verifyNodeKeys` to `solana.verifyNodeKeysForPrivateApi`, which authenticates gateway node encryption keys against the on-chain `Node` accounts of the round's registry snapshot (`registry.nodes[index]`) before secrets are encrypted.
 
-Secrets are encrypted into per-node envelopes. The gateway coordinates the round but should not receive plaintext API credentials.
+Secrets are encrypted into per-node envelopes. The gateway coordinates the round but should not receive plaintext API credentials. The encrypted plaintext is the canonical config (including `aggregation`) with secrets substituted.
 
 Private API access is still an active security-sensitive surface. Do not treat encrypted secret delivery as production-ready until gateway/node-side test vectors and validation are complete.
 
@@ -685,7 +744,9 @@ A Molpha attestation is valid only if the verifier can confirm:
 - the signer bitmap is a subset of the deterministic selection for `(sourceId, registryVersion, canonicalTimestamp)`;
 - the aggregate Schnorr signature over `attestationMessageHash(...)` is valid;
 - the timestamp is within the accepted freshness bounds;
-- on Solana, the signer `Node` accounts passed as remaining accounts are exactly `registry.nodes[bit]` for every set bit.
+- on Solana, the signer `Node` accounts passed as remaining accounts are exactly `registry.nodes[bit]` for every set bit, and the supplied coalition key matches the sum of their keys.
+
+A valid signature does not replace consumer policy: freshness, source, quorum and replay checks remain the consumer's responsibility.
 
 Solana verification finalizes feed state via `submit_attestation`. EVM and Starknet verification are stateless and return whether the signed Molpha attestation is valid for the deployed verifier registry.
 
@@ -700,6 +761,8 @@ import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "@molpha/sdk";
 ```
 
 Override `idl` and `programId` when targeting another deployment.
+
+The vendored IDL is `anchor idl build -p molpha` output for `molpha-solana-program` `3d01170` ("Epoch settlements (#47)").
 
 Keep the vendored IDL aligned with the deployed program. Mismatched IDL/program versions can produce invalid account derivations, decoding errors, or failed instruction simulation.
 
@@ -757,29 +820,6 @@ Known limitations:
 - verifier-node registration and admin tooling are intentionally outside this package;
 - production deployments should use authenticated gateway requests;
 - testnet verifier addresses may change between protocol releases.
-
-Solana paths such as selection bitmap and `submit_attestation` remaining-accounts resolution are aligned with the Molpha program version vendored in this repo (`MoLFnEbuMS5gWnXNfUMLAYSqRM3eQZKWRzjeMQfqbT3`, not yet deployed).
-
-## Migrating from 0.1.x
-
-| Before | After |
-|---|---|
-| `deriveFeedId(owner, apiConfigHash, sigReq)` / `deriveFeedIdString` | removed — use `deriveSourceId(apiConfig)` / `deriveSourceIdString` |
-| `deriveApiConfigHash(apiConfig)` | `deriveSourceId(apiConfig)` (old name kept as a deprecated alias, same bytes) |
-| `requestSignedData({ feedId, ... })` | `requestSignedData({ apiConfig, signaturesRequired, ... })` — `sourceId` is derived from `apiConfig` |
-| `prepareContext(feedId)` | `prepareContext()` |
-| `requestAndSubmit(feedId, opts)` | `requestAndSubmit(opts)` |
-| `authMessage(feedId, timestamp)` (sha256) | `hashRequestAuth({ programId, gateway, sourceId, signaturesRequired, timestamp })` (keccak) |
-| `endpoints: string[]` | `endpoints: (string \| { url, gatewayAuthority })[]` |
-| `submitDataUpdate(result)` | `submitAttestation(result)` (deprecated alias kept); returns `{ signature, feed }` |
-| `readFeed(feedId)` | `readFeed(sourceId, signaturesRequired, submitter?)` |
-| `result.feedId` / `NodeKeyVerifierArgs.feedId` | `.sourceId` |
-| EVM tuple `feedId`, ABI `jobId` | `sourceId` |
-| Starknet `feed_id` | `source_id` |
-| `buildStarknetVerifierArgs(result)` → `{ dataUpdate, signature }` | `buildStarknetVerifierArgs(result, { maxAge })` → `{ attestation, maxAge }` for `verify(attestation, max_age)` |
-| `StarknetDataUpdate` (`signatures_required: u32`) | `StarknetAttestationPayload` (`signatures_required: u8`, `value` first), nested in `StarknetAttestation` |
-| Starknet `verify` returns `bool` | returns `(bool, u8)` — decode with `parseStarknetVerifyResult` |
-| `resolveRegistryIndexForVersion`, `VIRTUAL_INDEX`, `nodePda(index)` | removed — signer accounts are `registry.nodes[bit]`; `nodePda(owner)` |
 
 ## Develop
 

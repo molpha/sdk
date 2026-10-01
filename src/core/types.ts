@@ -45,6 +45,39 @@ export interface APIConfig {
   responseParser: string;
   /** Optional expression applied to the parsed value before packing. */
   valueTransform?: string;
+  /**
+   * Median tolerance mode. Part of the `sourceId`; OMIT it for exact mode. See
+   * {@link AggregationConfig}.
+   */
+  aggregation?: AggregationConfig;
+}
+
+/** Numeric encoding of a tolerance-mode value: a signed `int256` scaled by `10^decimals`. */
+export interface NumericConfig {
+  type: "int256";
+  /** Fractional digits, `0..255` (u8). The parsed decimal is scaled by `10^decimals`, rounded half to even. */
+  decimals: number;
+}
+
+/**
+ * Median tolerance aggregation. Instead of requiring every signer to fetch the identical
+ * value, the selected nodes exchange signed observations, drop stale ones (`maxAgeMs`) and
+ * those further than `maxDeviationBps` from the lower median, and sign the lower median of
+ * `signaturesRequired` surviving observations. The signed value is a signed `int256`
+ * (`encodeInt256Decimal`, `decodeInt256`, `formatInt256Decimal`).
+ *
+ * The whole object is hashed into the `sourceId` in exactly this key order. Requires
+ * `signaturesRequired >= 3`. `mode: "exact"` is rejected: exact mode is expressed by
+ * omitting `aggregation`.
+ */
+export interface AggregationConfig {
+  mode: "tolerance";
+  rule: "median";
+  /** u32. Allowed deviation from the lower median, in basis points. */
+  maxDeviationBps: number;
+  /** Positive integer (u64 on the node, ≤ 2^53-1 here). Max observation age, in milliseconds. */
+  maxAgeMs: number;
+  numeric: NumericConfig;
 }
 
 /** ECDH-wrapped API config payload sent to selected nodes. */
