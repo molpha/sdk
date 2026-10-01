@@ -104,7 +104,9 @@ export function formatInt256Decimal(value: Uint8Array | string | bigint, decimal
   let digits = (negative ? -n : n).toString();
   while (digits.length <= decimals) digits = "0" + digits;
   const point = digits.length - decimals;
-  const fraction = digits.slice(point).replace(/0+$/, "");
+  let fracEnd = digits.length;
+  while (fracEnd > point && digits[fracEnd - 1] === "0") fracEnd--;
+  const fraction = digits.slice(point, fracEnd);
   const text = fraction === "" ? digits.slice(0, point) : `${digits.slice(0, point)}.${fraction}`;
   return negative ? `-${text}` : text;
 }

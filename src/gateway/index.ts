@@ -16,7 +16,7 @@ import {
 import type {
   AggregationConfig,
   APIConfig,
-  DataUpdateResult,
+  Attestation,
   Node,
   NodeKeyVerifier,
   NodesInfo,
@@ -352,7 +352,7 @@ export class MolphaGateway {
    * fund it; without that, such a source throws
    * {@link UpstreamPaymentRequiredError} carrying the gateway's quote.
    */
-  async requestSignedData(opts: RequestSignedDataOptions): Promise<DataUpdateResult> {
+  async requestSignedData(opts: RequestSignedDataOptions): Promise<Attestation> {
     const {
       apiConfig,
       signer,
@@ -855,7 +855,7 @@ function normalizeHex(value: string): string {
 }
 
 /**
- * Shape the gateway payload into a `DataUpdateResult`. `sourceId` and
+ * Shape the gateway payload into an {@link Attestation}. `sourceId` and
  * `signaturesRequired` must echo the request (they key the feed and the signed
  * message); `timestamp`, `registryVersion` and `signersBitmap` are taken from the
  * response because a non-fresh (cached) attestation legitimately carries the earlier
@@ -876,7 +876,7 @@ function toResult(
     bitmap: Uint8Array;
     aggregation?: AggregationConfig;
   },
-): DataUpdateResult {
+): Attestation {
   if (data.sourceId !== undefined && normalizeHex(data.sourceId) !== ctx.sourceId) {
     throw new GatewayError(
       `Gateway response sourceId ${data.sourceId} does not match the requested ${ctx.sourceId}`,
@@ -931,15 +931,19 @@ function toResult(
     }
   }
   return {
-    sourceId: ctx.sourceId,
+    payload: {
+      sourceId: ctx.sourceId,
+      value: data.valuePacked ?? "",
+      canonicalTimestamp: data.timestamp ?? ctx.timestamp,
+      registryVersion: data.registryVersion ?? ctx.registryVersion,
+      signaturesRequired: ctx.signaturesRequired,
+    },
+    signature: {
+      signersBitmap: data.signersBitmap ?? bytesToHex(ctx.bitmap),
+      s: data.s ?? "",
+      commitmentAddr: data.commitmentAddr ?? "",
+    },
     value,
-    valuePacked: data.valuePacked ?? "",
-    timestamp: data.timestamp ?? ctx.timestamp,
-    registryVersion: data.registryVersion ?? ctx.registryVersion,
-    signaturesRequired: ctx.signaturesRequired,
-    signersBitmap: data.signersBitmap ?? bytesToHex(ctx.bitmap),
-    s: data.s ?? "",
-    commitmentAddr: data.commitmentAddr ?? "",
     fresh: data.fresh ?? true,
   };
 }

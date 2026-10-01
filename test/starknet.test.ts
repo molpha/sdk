@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DataUpdateResult } from "../src/core/types.js";
+import type { Attestation } from "../src/core/types.js";
 import { VERIFY_CODES, verifyCodeName } from "../src/core/verifyCodes.js";
 import {
   MOLPHA_VERIFIER_STARKNET_ADDRESSES,
@@ -14,16 +14,20 @@ import {
   signersBitmapToStarknetUint256,
 } from "../src/starknet/helpers.js";
 
-const SAMPLE_RESULT: DataUpdateResult = {
-  sourceId: "aa".repeat(32),
+const SAMPLE_RESULT: Attestation = {
+  payload: {
+    sourceId: "aa".repeat(32),
+    value: "bb".repeat(32),
+    canonicalTimestamp: 1_700_000_000,
+    registryVersion: 2,
+    signaturesRequired: 3,
+  },
+  signature: {
+    signersBitmap: "00".repeat(31) + "01",
+    s: "cc".repeat(32),
+    commitmentAddr: "dd".repeat(20),
+  },
   value: "100",
-  valuePacked: "bb".repeat(32),
-  timestamp: 1_700_000_000,
-  registryVersion: 2,
-  signaturesRequired: 3,
-  signersBitmap: "00".repeat(31) + "01",
-  s: "cc".repeat(32),
-  commitmentAddr: "dd".repeat(20),
   fresh: true,
 };
 
@@ -31,16 +35,20 @@ const SAMPLE_RESULT: DataUpdateResult = {
  * The EVM golden vector (`molpha-core-contracts/test/fixtures/fixture.json`): a 12-node round
  * the Solidity and Rust verifiers both accept.
  */
-const EVM_FIXTURE_RESULT: DataUpdateResult = {
-  sourceId: "93893838ba3cf2a46fc061b4c3acfba3435fa61b0c29017fe78280146255b604",
+const EVM_FIXTURE_RESULT: Attestation = {
+  payload: {
+    sourceId: "93893838ba3cf2a46fc061b4c3acfba3435fa61b0c29017fe78280146255b604",
+    value: "c6d8f1c0fdb8997313cbc4bc43b46af78589ba4bb9036707097db8b33879d6c6",
+    canonicalTimestamp: 1_700_034_927,
+    registryVersion: 12,
+    signaturesRequired: 5,
+  },
+  signature: {
+    signersBitmap: "00".repeat(30) + "07f0",
+    s: "9f52f4fd6b2f82086803269007cbda35cf024c40af57160b7472817e2691ef73",
+    commitmentAddr: "aff31ae9e8f7624c9f8c149f1f12bb00f1606c10",
+  },
   value: "",
-  valuePacked: "c6d8f1c0fdb8997313cbc4bc43b46af78589ba4bb9036707097db8b33879d6c6",
-  timestamp: 1_700_034_927,
-  registryVersion: 12,
-  signaturesRequired: 5,
-  signersBitmap: "00".repeat(30) + "07f0",
-  s: "9f52f4fd6b2f82086803269007cbda35cf024c40af57160b7472817e2691ef73",
-  commitmentAddr: "aff31ae9e8f7624c9f8c149f1f12bb00f1606c10",
   fresh: true,
 };
 
@@ -90,7 +98,7 @@ describe("Starknet verifier argument helpers", () => {
     expect(signersBitmapToStarknetUint256("00".repeat(31) + "01")).toBe(1n);
   });
 
-  it("builds the nested Attestation from a DataUpdateResult, in Cairo member order", () => {
+  it("builds the nested Attestation from an SDK Attestation, in Cairo member order", () => {
     const { attestation, maxAge } = buildStarknetVerifierArgs(SAMPLE_RESULT, { maxAge: 300 });
 
     expect(attestation).toEqual({
@@ -123,16 +131,27 @@ describe("Starknet verifier argument helpers", () => {
   });
 
   it("rejects integers that would fail Cairo Serde and revert before verify runs", () => {
-    const build = (patch: Partial<DataUpdateResult>, maxAge = 0) =>
-      buildStarknetVerifierArgs({ ...SAMPLE_RESULT, ...patch }, { maxAge });
+    const build = (
+      payloadPatch: Partial<Attestation["payload"]> = {},
+      signaturePatch: Partial<Attestation["signature"]> = {},
+      maxAge = 0,
+    ) =>
+      buildStarknetVerifierArgs(
+        {
+          ...SAMPLE_RESULT,
+          payload: { ...SAMPLE_RESULT.payload, ...payloadPatch },
+          signature: { ...SAMPLE_RESULT.signature, ...signaturePatch },
+        },
+        { maxAge },
+      );
 
     expect(() => build({ signaturesRequired: 256 })).toThrow(/signaturesRequired/);
     expect(() => build({ registryVersion: 2 ** 32 })).toThrow(/registryVersion/);
     expect(() => build({ registryVersion: -1 })).toThrow(/registryVersion/);
-    expect(() => build({ timestamp: 1.5 })).toThrow(/timestamp/);
-    expect(() => build({}, -1)).toThrow(/maxAge/);
-    expect(() => build({}, Number.NaN)).toThrow(/maxAge/);
-    expect(() => build({ commitmentAddr: "dd".repeat(21) })).toThrow(/commitment/);
+    expect(() => build({ canonicalTimestamp: 1.5 })).toThrow(/canonicalTimestamp/);
+    expect(() => build({}, {}, -1)).toThrow(/maxAge/);
+    expect(() => build({}, {}, Number.NaN)).toThrow(/maxAge/);
+    expect(() => build({}, { commitmentAddr: "dd".repeat(21) })).toThrow(/commitment/);
   });
 });
 
@@ -145,7 +164,13 @@ describe("encodeStarknetVerifyCalldata", () => {
   it("places max_age last and splits u256 values low limb first", () => {
     const calldata = encodeStarknetVerifyCalldata(
       buildStarknetVerifierArgs(
-        { ...SAMPLE_RESULT, signersBitmap: "00".repeat(15) + "01" + "00".repeat(15) + "02" },
+        {
+          ...SAMPLE_RESULT,
+          signature: {
+            ...SAMPLE_RESULT.signature,
+            signersBitmap: "00".repeat(15) + "01" + "00".repeat(15) + "02",
+          },
+        },
         { maxAge: 3600 },
       ),
     );

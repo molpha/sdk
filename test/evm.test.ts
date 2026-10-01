@@ -2,8 +2,8 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { decodeFunctionResult, encodeFunctionData, toFunctionSelector } from "viem";
 import { describe, expect, it } from "vitest";
 import { bytesToHex, utf8 } from "../src/core/encoding.js";
-import { attestationMessageHashFromResult } from "../src/core/message.js";
-import type { DataUpdateResult } from "../src/core/types.js";
+import { attestationMessageHashFromAttestation } from "../src/core/message.js";
+import type { Attestation } from "../src/core/types.js";
 import { VERIFY_CODES } from "../src/core/verifyCodes.js";
 import { MOLPHA_VERIFIER_ABI } from "../src/evm/abi.js";
 import { MOLPHA_VERIFIER_ADDRESS } from "../src/evm/constants.js";
@@ -16,16 +16,20 @@ import {
   toFixedHex,
 } from "../src/evm/helpers.js";
 
-const SAMPLE_RESULT: DataUpdateResult = {
-  sourceId: "aa".repeat(32),
+const SAMPLE_RESULT: Attestation = {
+  payload: {
+    sourceId: "aa".repeat(32),
+    value: "bb".repeat(32),
+    canonicalTimestamp: 1_700_000_000,
+    registryVersion: 2,
+    signaturesRequired: 3,
+  },
+  signature: {
+    signersBitmap: "00".repeat(31) + "01",
+    s: "cc".repeat(32),
+    commitmentAddr: "dd".repeat(20),
+  },
   value: "100",
-  valuePacked: "bb".repeat(32),
-  timestamp: 1_700_000_000,
-  registryVersion: 2,
-  signaturesRequired: 3,
-  signersBitmap: "00".repeat(31) + "01",
-  s: "cc".repeat(32),
-  commitmentAddr: "dd".repeat(20),
   fresh: true,
 };
 
@@ -34,17 +38,21 @@ const SAMPLE_RESULT: DataUpdateResult = {
  * buffer-2 registry at version 12 where `Verifier.verify(attestation, 0)` returns `(true, 0)`
  * (`AttestationFixtureJson.t.sol`).
  */
-const EVM_FIXTURE_RESULT: DataUpdateResult = {
-  sourceId: "a6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc",
+const EVM_FIXTURE_RESULT: Attestation = {
+  payload: {
+    sourceId: "a6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc",
+    value: "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb2e",
+    canonicalTimestamp: 1_700_000_000,
+    registryVersion: 12,
+    signaturesRequired: 5,
+  },
+  signature: {
+    /** uint256(339) — bits 0, 1, 4, 6, 8. */
+    signersBitmap: "00".repeat(30) + "0153",
+    s: "c9dc93909c0274b7a84f6c82fd795b5a47b3c5d2e5d6a00b8c1605c456e7ff78",
+    commitmentAddr: "4A4eEa2ec80f98472b13Fd4787e671e7A233bC5d",
+  },
   value: "-1234",
-  valuePacked: "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb2e",
-  timestamp: 1_700_000_000,
-  registryVersion: 12,
-  signaturesRequired: 5,
-  /** uint256(339) — bits 0, 1, 4, 6, 8. */
-  signersBitmap: "00".repeat(30) + "0153",
-  s: "c9dc93909c0274b7a84f6c82fd795b5a47b3c5d2e5d6a00b8c1605c456e7ff78",
-  commitmentAddr: "4A4eEa2ec80f98472b13Fd4787e671e7A233bC5d",
   fresh: true,
 };
 const EVM_FIXTURE_MESSAGE_HASH = "840185b8abb1635e5e5f94df05e794c4708657c6a3a2cd354c0158dc91addeab";
@@ -115,7 +123,7 @@ describe("signersBitmap conversion", () => {
 });
 
 describe("buildEvmVerifierArgs", () => {
-  it("builds the nested Attestation from a DataUpdateResult, in Solidity member order", () => {
+  it("builds the nested Attestation from an SDK Attestation, in Solidity member order", () => {
     const { attestation, maxAge } = buildEvmVerifierArgs(SAMPLE_RESULT, { maxAge: 300 });
 
     expect(attestation).toEqual({
@@ -148,16 +156,27 @@ describe("buildEvmVerifierArgs", () => {
   });
 
   it("range-checks every integer against its Solidity type", () => {
-    const build = (patch: Partial<DataUpdateResult>, maxAge: number | bigint = 0) =>
-      buildEvmVerifierArgs({ ...SAMPLE_RESULT, ...patch }, { maxAge });
+    const build = (
+      payloadPatch: Partial<Attestation["payload"]> = {},
+      signaturePatch: Partial<Attestation["signature"]> = {},
+      maxAge: number | bigint = 0,
+    ) =>
+      buildEvmVerifierArgs(
+        {
+          ...SAMPLE_RESULT,
+          payload: { ...SAMPLE_RESULT.payload, ...payloadPatch },
+          signature: { ...SAMPLE_RESULT.signature, ...signaturePatch },
+        },
+        { maxAge },
+      );
 
     expect(() => build({ signaturesRequired: 256 })).toThrow(/signaturesRequired/);
     expect(() => build({ signaturesRequired: -1 })).toThrow(/signaturesRequired/);
     expect(() => build({ registryVersion: 2 ** 32 })).toThrow(/registryVersion/);
-    expect(() => build({ timestamp: 1.5 })).toThrow(/timestamp/);
-    expect(() => build({}, -1)).toThrow(/maxAge/);
-    expect(() => build({}, 1n << 64n)).toThrow(/maxAge/);
-    expect(() => build({ commitmentAddr: "dd".repeat(21) })).toThrow(/commitment/);
+    expect(() => build({ canonicalTimestamp: 1.5 })).toThrow(/canonicalTimestamp/);
+    expect(() => build({}, {}, -1)).toThrow(/maxAge/);
+    expect(() => build({}, {}, 1n << 64n)).toThrow(/maxAge/);
+    expect(() => build({}, { commitmentAddr: "dd".repeat(21) })).toThrow(/commitment/);
   });
 });
 
@@ -178,7 +197,7 @@ describe("encodeEvmVerifyCalldata", () => {
   });
 
   it("signs the message the verifier reconstructs from the same result", () => {
-    expect(bytesToHex(attestationMessageHashFromResult(EVM_FIXTURE_RESULT))).toBe(
+    expect(bytesToHex(attestationMessageHashFromAttestation(EVM_FIXTURE_RESULT))).toBe(
       EVM_FIXTURE_MESSAGE_HASH,
     );
   });

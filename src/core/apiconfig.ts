@@ -59,6 +59,3 @@ export function deriveSourceId(apiConfig: APIConfig): Uint8Array {
 export function deriveSourceIdString(apiConfig: APIConfig): string {
   return bytesToHex(deriveSourceId(apiConfig));
 }
-
-/** @deprecated Renamed to {@link deriveSourceId}; identical bytes. */
-export const deriveApiConfigHash = deriveSourceId;

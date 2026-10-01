@@ -11,9 +11,9 @@ import {
 import {
   MESSAGE_PREFIX,
   attestationMessageHash,
-  attestationMessageHashFromResult,
+  attestationMessageHashFromAttestation,
 } from "../src/core/message.js";
-import type { DataUpdateResult } from "../src/core/types.js";
+import type { Attestation } from "../src/core/types.js";
 
 /**
  * Shared fixture: Rust `tests/fixtures/mod.rs`, Go `internal/round/message_test.go`, and EVM
@@ -151,20 +151,24 @@ describe("attestationMessageHash", () => {
   });
 });
 
-describe("attestationMessageHashFromResult", () => {
-  it("hashes the signed fields of a gateway result", () => {
-    const result: DataUpdateResult = {
-      sourceId: VECTOR.sourceId,
+describe("attestationMessageHashFromAttestation", () => {
+  it("hashes the signed fields of a gateway attestation", () => {
+    const attestation: Attestation = {
+      payload: {
+        sourceId: VECTOR.sourceId,
+        value: VECTOR.value,
+        canonicalTimestamp: VECTOR.canonicalTimestamp,
+        registryVersion: VECTOR.registryVersion,
+        signaturesRequired: VECTOR.signaturesRequired,
+      },
+      signature: {
+        signersBitmap: VECTOR.signersBitmap,
+        s: "cc".repeat(32),
+        commitmentAddr: "dd".repeat(20),
+      },
       value: "1",
-      valuePacked: VECTOR.value,
-      timestamp: VECTOR.canonicalTimestamp,
-      registryVersion: VECTOR.registryVersion,
-      signaturesRequired: VECTOR.signaturesRequired,
-      signersBitmap: VECTOR.signersBitmap,
-      s: "cc".repeat(32),
-      commitmentAddr: "dd".repeat(20),
       fresh: true,
     };
-    expect(bytesToHex(attestationMessageHashFromResult(result))).toBe(EXPECTED);
+    expect(bytesToHex(attestationMessageHashFromAttestation(attestation))).toBe(EXPECTED);
   });
 });

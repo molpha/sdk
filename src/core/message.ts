@@ -11,7 +11,7 @@
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { concatBytes, toFixedBytes, u8, u32be, u64be, utf8 } from "./encoding.js";
-import type { DataUpdateResult } from "./types.js";
+import type { Attestation } from "./types.js";
 
 /** `keccak256("MOLPHA_MESSAGE_V1")` domain separator. */
 export const MESSAGE_PREFIX: Uint8Array = keccak_256(utf8("MOLPHA_MESSAGE_V1"));
@@ -48,14 +48,15 @@ export function attestationMessageHash(fields: AttestationMessageFields): Uint8A
   );
 }
 
-/** Message hash of a completed gateway round (`valuePacked` is the signed value). */
-export function attestationMessageHashFromResult(result: DataUpdateResult): Uint8Array {
+/** Message hash of a completed gateway attestation (`payload.value` is the signed word). */
+export function attestationMessageHashFromAttestation(attestation: Attestation): Uint8Array {
+  const { payload, signature } = attestation;
   return attestationMessageHash({
-    sourceId: result.sourceId,
-    registryVersion: result.registryVersion,
-    signaturesRequired: result.signaturesRequired,
-    signersBitmap: result.signersBitmap,
-    value: result.valuePacked,
-    canonicalTimestamp: result.timestamp,
+    sourceId: payload.sourceId,
+    registryVersion: payload.registryVersion,
+    signaturesRequired: payload.signaturesRequired,
+    signersBitmap: signature.signersBitmap,
+    value: payload.value,
+    canonicalTimestamp: payload.canonicalTimestamp,
   });
 }

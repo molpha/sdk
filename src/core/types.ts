@@ -121,24 +121,28 @@ export interface SchnorrSignature {
   signersBitmap: string;
 }
 
-/** A completed gateway round, ready to submit on-chain. */
-export interface DataUpdateResult {
+/** Signed oracle attestation payload (cross-VM `AttestationPayload`). */
+export interface AttestationPayload {
+  /** 32-byte packed value, hex — the bytes covered by the signature. */
+  value: string;
   /** 32-byte source id, hex (`deriveSourceId(apiConfig)`). */
   sourceId: string;
-  /** Human-readable value. */
-  value: string;
-  /** 32-byte packed value, hex — the bytes covered by the signature. */
-  valuePacked: string;
-  /** canonicalTimestamp (seconds). */
-  timestamp: number;
   registryVersion: number;
   signaturesRequired: number;
-  /** 32-byte big-endian bitmap, hex. */
-  signersBitmap: string;
-  /** 32-byte scalar, hex. */
-  s: string;
-  /** 20-byte commitment address, hex. */
-  commitmentAddr: string;
+  /** Unix seconds (u64). */
+  canonicalTimestamp: number;
+}
+
+/**
+ * Threshold-signed oracle attestation from a completed gateway round, ready to submit on-chain.
+ * Matches the cross-VM `Attestation` (`payload` + `signature`). `value` and `fresh` are gateway
+ * metadata and are not part of the signed struct.
+ */
+export interface Attestation {
+  payload: AttestationPayload;
+  signature: SchnorrSignature;
+  /** Human-readable value (not signed). */
+  value: string;
   /** Whether the value was freshly fetched this round. */
   fresh: boolean;
 }

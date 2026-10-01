@@ -52,7 +52,7 @@ message = keccak256(
 
 The preimage is 141 bytes (32 + 32 + 32 + 4 + 1 + 8 + 32).
 
-`attestationMessageHash` / `attestationMessageHashFromResult` recompute it client-side.
+`attestationMessageHash` / `attestationMessageHashFromAttestation` recompute it client-side.
 
 ## Install
 
@@ -61,15 +61,6 @@ pnpm add @molpha/sdk
 ```
 
 Runtime dependencies include `@solana/kit`, `@anchor-lang/core`, and `@noble/*`. `bn.js` is an optional peer dependency (used by the Solana / Anchor path).
-
-> **Migration from `@molpha-oracle/sdk`:** The package was renamed to `@molpha/sdk` starting at `0.1.0`. `@molpha-oracle/sdk` is deprecated — update install commands and imports:
->
-> ```bash
-> pnpm remove @molpha-oracle/sdk
-> pnpm add @molpha/sdk
-> ```
->
-> Replace `@molpha-oracle/sdk` with `@molpha/sdk` in all import paths (including `@molpha/sdk/utils`).
 
 | Import | Use |
 |---|---|
@@ -110,7 +101,7 @@ const { result, signature, feed } = await sdk.requestAndSubmit({
 });
 
 // The round's identity, for reads and cross-chain verification.
-const sourceId = deriveSourceIdString(apiConfig); // === result.sourceId
+const sourceId = deriveSourceIdString(apiConfig); // === result.payload.sourceId
 ```
 
 `requestAndSubmit` requests a threshold-signed attestation from the gateway (against the current on-chain registry version) and submits it to Solana via `submit_attestation` in one call. The first successful submit creates the feed account for `(sourceId, signaturesRequired, submitter)` if it does not already exist.
@@ -285,7 +276,7 @@ const result = await sdk.gateway.requestSignedData({
 
 The gateway round uses the current on-chain registry version. Selected verifier nodes independently fetch/recompute the result and sign only if the observed value matches the canonical result.
 
-The returned `DataUpdateResult` includes `sourceId`, the signed value, canonical timestamp, registry version, required quorum, signer bitmap, and aggregate signature. `signaturesRequired` must be at least the protocol's `min_signers` (currently 3) or the chain rejects the submit.
+The returned `Attestation` matches the cross-VM struct (`payload` + `signature`), plus gateway-only `value` (human-readable) and `fresh`. `payload` carries `sourceId`, the signed 32-byte `value`, `canonicalTimestamp`, `registryVersion`, and `signaturesRequired`; `signature` carries the aggregate Schnorr material and `signersBitmap`. `signaturesRequired` must be at least the protocol's `min_signers` (currently 3) or the chain rejects the submit.
 
 A gateway response is a coordination result, not proof of settlement or of on-chain verification. Consumers still decide freshness, source, quorum and replay policy.
 
@@ -306,7 +297,7 @@ const { signature, feed } = await sdk.solana.submitAttestation(result, { rawValu
 Then read the feed this wallet wrote for that source and quorum:
 
 ```ts
-const feedState = await sdk.solana.readFeed(result.sourceId, signaturesRequired);
+const feedState = await sdk.solana.readFeed(result.payload.sourceId, signaturesRequired);
 ```
 
 `FeedAccount.value` is the 32 signed bytes (`valueKind.value`) or their keccak preimage hash (`valueKind.hash`); `submitter` is the wallet that created the feed.
@@ -391,7 +382,7 @@ Rules (the node is the reference; the SDK rejects violations before any request 
 - Only `rule: "median"` and `numeric.type: "int256"` are supported. `decimals` is `0..255`, `maxDeviationBps` a u32, `maxAgeMs` a positive integer.
 - Tolerance needs `signaturesRequired >= 3`.
 - The nested object is rebuilt in canonical order (`mode`, `rule`, `maxDeviationBps`, `maxAgeMs`, `numeric{type, decimals}`); extra or reordered keys on your input never reach the hash. For the config above, `sourceId` hashes exactly `{"url":...,"method":"GET","headers":{},"responseParser":"$.price","valueTransform":"","aggregation":{"mode":"tolerance","rule":"median","maxDeviationBps":50,"maxAgeMs":2000,"numeric":{"type":"int256","decimals":8}}}` (pinned against the node's Go test `TestAggregationSourceIdentity`).
-- The signed value is a signed `int256` (two's-complement `bytes32`). For tolerance results `DataUpdateResult.value` is rendered from the signed `valuePacked` at the source's `decimals`, and `signersBitmap` / signature fields must come from the response, since the nodes choose the final signing set after the observation exchange.
+- The signed value is a signed `int256` (two's-complement `bytes32`). For tolerance results `Attestation.value` is rendered from the signed `payload.value` at the source's `decimals`, and `signature.signersBitmap` / signature fields must come from the response, since the nodes choose the final signing set after the observation exchange.
 - The gateway must forward `aggregation` to the nodes. If it derives a different identity, the response's `sourceId` / `configHash` will not match and the SDK throws; a gateway that echoes `aggregation` in its response must echo the requested policy.
 
 Helpers for the signed value (mirror the node's `new/tolerance` package):
@@ -406,7 +397,7 @@ import {
   INT256_MAX,
 } from "@molpha/sdk";
 
-const feedState = await sdk.solana.readFeed(result.sourceId, 5);
+const feedState = await sdk.solana.readFeed(result.payload.sourceId, 5);
 const price = formatInt256Decimal(Uint8Array.from(feedState!.value), 8);
 ```
 
@@ -538,21 +529,22 @@ a stateless verifier otherwise accepts a correctly signed attestation forever.
 
 The generated object matches the Solidity `IVerifier.Attestation` struct, using viem's
 primitive types so it passes straight into `readContract` or an ethers `Contract`. Member
-order is ABI order (and the signed message's order), so it differs from `DataUpdateResult`:
+order is ABI order (and the signed message's order). The gateway `Attestation` uses the same
+nested shape with lowercase hex strings instead of viem primitives:
 
 ```ts
 attestation:
 {
   payload: {
-    value: `0x${string}`,          // bytes32 (result.valuePacked)
+    value: `0x${string}`,          // bytes32 (Attestation.payload.value)
     sourceId: `0x${string}`,       // bytes32
     registryVersion: number,       // uint32
     signaturesRequired: number,    // uint8
-    canonicalTimestamp: bigint,    // uint64 (result.timestamp)
+    canonicalTimestamp: bigint,    // uint64
   },
   signature: {
-    signature: `0x${string}`,      // bytes32 (result.s)
-    commitment: `0x${string}`,     // address (result.commitmentAddr)
+    signature: `0x${string}`,      // bytes32 (Attestation.signature.s)
+    commitment: `0x${string}`,     // address (Attestation.signature.commitmentAddr)
     signersBitmap: bigint,         // uint256
   },
 }
@@ -689,7 +681,8 @@ enforces freshness or ordering itself, because a stateless verifier otherwise ac
 correctly signed attestation forever.
 
 The generated object matches the Cairo `Attestation` struct. Member order is Cairo `Serde`
-order (and the signed message's order), so it differs from `DataUpdateResult`:
+order (and the signed message's order). The gateway `Attestation` uses the same nested shape
+with lowercase hex strings instead of Cairo felts:
 
 ```ts
 attestation:
@@ -859,31 +852,6 @@ Known limitations:
 
 Solana paths such as selection bitmap and `submit_attestation` remaining-accounts resolution are aligned with the Molpha program version vendored in this repo (`MoLFnEbuMS5gWnXNfUMLAYSqRM3eQZKWRzjeMQfqbT3`, not yet deployed).
 
-## Migrating from 0.1.x
-
-| Before | After |
-|---|---|
-| `deriveFeedId(owner, apiConfigHash, sigReq)` / `deriveFeedIdString` | removed — use `deriveSourceId(apiConfig)` / `deriveSourceIdString` |
-| `deriveApiConfigHash(apiConfig)` | `deriveSourceId(apiConfig)` (old name kept as a deprecated alias, same bytes) |
-| `requestSignedData({ feedId, ... })` | `requestSignedData({ apiConfig, signaturesRequired, ... })` — `sourceId` is derived from `apiConfig` |
-| `prepareContext(feedId)` | `prepareContext()` |
-| `requestAndSubmit(feedId, opts)` | `requestAndSubmit(opts)` |
-| `authMessage(feedId, timestamp)` (sha256) | `hashRequestAuth({ programId, gateway, sourceId, signaturesRequired, timestamp })` (keccak) |
-| `endpoints: string[]` | `endpoints: (string \| { url, gatewayAuthority })[]` |
-| `submitDataUpdate(result)` | `submitAttestation(result)` (deprecated alias kept); returns `{ signature, feed }` |
-| `readFeed(feedId)` | `readFeed(sourceId, signaturesRequired, submitter?)` |
-| `result.feedId` / `NodeKeyVerifierArgs.feedId` | `.sourceId` |
-| EVM tuple `feedId`, ABI `jobId` | `sourceId` |
-| Starknet `feed_id` | `source_id` |
-| `buildStarknetVerifierArgs(result)` → `{ dataUpdate, signature }` | `buildStarknetVerifierArgs(result, { maxAge })` → `{ attestation, maxAge }` for `verify(attestation, max_age)` |
-| `StarknetDataUpdate` (`signatures_required: u32`) | `StarknetAttestationPayload` (`signatures_required: u8`, `value` first), nested in `StarknetAttestation` |
-| Starknet `verify` returns `bool` | returns `(bool, u8)` — decode with `parseStarknetVerifyResult` |
-| `buildEvmVerifierArgs(result)` → `{ dataUpdate, signature }` tuples | `buildEvmVerifierArgs(result, { maxAge })` → `{ attestation, maxAge }` for `verify(attestation, maxAge)` |
-| `EvmDataUpdateTuple` / `EvmSchnorrSignatureTuple` (positional) | `EvmAttestationPayload` / `EvmSchnorrSignature` objects (`value` first, `signaturesRequired: uint8`, `canonicalTimestamp: bigint`), nested in `EvmAttestation` |
-| EVM `verify(DataUpdate, SchnorrSignature)` returns `bool` | `verify(Attestation, uint64)` returns `(bool, uint8)` — decode with `parseEvmVerifyResult` |
-| `attestationMessageHash`: `sourceId ‖ u32 rv ‖ u32 sigReq ‖ bitmap ‖ value ‖ u64 ts` | `value ‖ sourceId ‖ u32 rv ‖ u8 sigReq ‖ u64 ts ‖ bitmap` (what nodes sign and every verifier checks) |
-| `resolveRegistryIndexForVersion`, `VIRTUAL_INDEX`, `nodePda(index)` | removed — signer accounts are `registry.nodes[bit]`; `nodePda(owner)` |
-
 ## Develop
 
 ```bash
@@ -963,12 +931,6 @@ Versions follow semver and are driven by the nature of each change, not by the b
    npm assigns the first published version to the `latest` tag regardless of `--tag`. If a `dev` snapshot is published before any stable release, that prerelease can become `latest`.
 
    The `dev` workflow should guard against this and fail until a stable `latest` exists.
-
-3. Deprecate the legacy package name on npm (one-time, after `@molpha/sdk@0.1.0` is published):
-
-   ```bash
-   npm deprecate "@molpha-oracle/sdk" "Package renamed to @molpha/sdk. Please migrate."
-   ```
 
 If `latest` ever points to a prerelease, repoint it after publishing a stable version:
 

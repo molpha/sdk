@@ -8,14 +8,14 @@
  * produces the flat felt array for a raw `starknet_call`.
  */
 import { bigIntFromBytesBe, toFixedBytes } from "../core/encoding.js";
-import type { DataUpdateResult } from "../core/types.js";
+import type { Attestation } from "../core/types.js";
 import { VERIFY_CODES, verifyCodeName, type VerifyCodeName } from "../core/verifyCodes.js";
 
 /**
  * Starknet calldata shape for `AttestationPayload`.
  *
  * Member order is the order of the signed message preimage and of Cairo `Serde`, so it is
- * load bearing — it is not the order of `DataUpdateResult`.
+ * load bearing — it is not the flat gateway field order on {@link Attestation}.
  */
 export interface StarknetAttestationPayload {
   /** 32-byte packed value as `u256`. */
@@ -177,21 +177,22 @@ export function signersBitmapToStarknetUint256(value: string): bigint {
  * ```
  */
 export function buildStarknetVerifierArgs(
-  result: DataUpdateResult,
+  attestation: Attestation,
   options: BuildStarknetVerifierArgsOptions,
 ): StarknetVerifierArgs {
+  const { payload: signed, signature: sig } = attestation;
   const payload: StarknetAttestationPayload = {
-    value: fixedHexToBigInt(result.valuePacked, 32, "valuePacked"),
-    source_id: fixedHexToBigInt(result.sourceId, 32, "sourceId"),
-    registry_version: assertUint(result.registryVersion, U32_MAX, "registryVersion"),
-    signatures_required: assertUint(result.signaturesRequired, U8_MAX, "signaturesRequired"),
-    canonical_timestamp: assertUint(result.timestamp, U64_MAX, "timestamp"),
+    value: fixedHexToBigInt(signed.value, 32, "payload.value"),
+    source_id: fixedHexToBigInt(signed.sourceId, 32, "sourceId"),
+    registry_version: assertUint(signed.registryVersion, U32_MAX, "registryVersion"),
+    signatures_required: assertUint(signed.signaturesRequired, U8_MAX, "signaturesRequired"),
+    canonical_timestamp: assertUint(signed.canonicalTimestamp, U64_MAX, "canonicalTimestamp"),
   };
 
   const signature: StarknetSchnorrSignature = {
-    signature: fixedHexToBigInt(result.s, 32, "signature"),
-    commitment: commitmentAddressToStarknetFelt(result.commitmentAddr),
-    signers_bitmap: signersBitmapToStarknetUint256(result.signersBitmap),
+    signature: fixedHexToBigInt(sig.s, 32, "signature"),
+    commitment: commitmentAddressToStarknetFelt(sig.commitmentAddr),
+    signers_bitmap: signersBitmapToStarknetUint256(sig.signersBitmap),
   };
 
   return {

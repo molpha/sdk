@@ -21,7 +21,7 @@ import {
   secp256k1PublicKeyFromCoordinates,
 } from "../core/nodeKeys.js";
 import type {
-  DataUpdateResult,
+  Attestation,
   Node,
   NodeKeyVerifierArgs,
   RegistrySelectionConfig,
@@ -144,8 +144,13 @@ export interface SubmitAttestationArgs {
 export interface SubmitAttestationOptions {
   computeUnitLimit?: number;
   /**
+   * Precomputed signer coalition key. When omitted, the client fetches signer `Node`
+   * accounts and sums their secp256k1 keys ({@link computeCoalitionKey}).
+   */
+  coalitionKey?: CoalitionKey;
+  /**
    * Optional value preimage (maximum 256 bytes). Its keccak256 digest must equal
-   * `result.valuePacked`; the program stores that digest with `valueKind.hash`.
+   * `attestation.payload.value`; the program stores that digest with `valueKind.hash`.
    */
   rawValue?: Uint8Array;
 }
@@ -355,30 +360,31 @@ export class MolphaSolanaClient {
    * (`computeCoalitionKey`); the program only checks the key, so a wrong one fails the
    * transaction and nothing else.
    *
-   * `opts.rawValue` is for values longer than 32 bytes: the signed `valuePacked` must be
+   * `opts.rawValue` is for values longer than 32 bytes: the signed `payload.value` must be
    * `keccak256(rawValue)`; {@link buildSubmitAttestationArgs} validates that before send.
    */
   async submitAttestation(
-    result: DataUpdateResult,
-    opts?: { computeUnitLimit?: number; coalitionKey?: CoalitionKey; rawValue?: Uint8Array },
+    attestation: Attestation,
+    opts?: SubmitAttestationOptions,
   ): Promise<SubmitResult> {
-    const sourceId = toFixedBytes(result.sourceId, 32, "sourceId");
+    const { payload, signature: schnorr } = attestation;
+    const sourceId = toFixedBytes(payload.sourceId, 32, "sourceId");
     const submitter = this.wallet;
-    const registry = await this.fetchRegistry(result.registryVersion);
-    const remaining = resolveRemainingAccounts(result.signersBitmap, registry);
-    assertSignerCount(remaining.length, result.signaturesRequired, registry);
+    const registry = await this.fetchRegistry(payload.registryVersion);
+    const remaining = resolveRemainingAccounts(schnorr.signersBitmap, registry);
+    assertSignerCount(remaining.length, payload.signaturesRequired, registry);
     const coalitionKey =
       opts?.coalitionKey ?? (await this.computeSignerCoalitionKey(remaining, registry));
-    const feed = feedPda(sourceId, result.signaturesRequired, submitter, this.programId);
+    const feed = feedPda(sourceId, payload.signaturesRequired, submitter, this.programId);
     const cuIx = setComputeUnitLimit(opts?.computeUnitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT);
 
     const signature = await this.methods
       .submitAttestation(
-        buildSubmitAttestationArgs(result, coalitionKey, opts?.rawValue),
+        buildSubmitAttestationArgs(attestation, coalitionKey, opts?.rawValue),
       )
       .accountsPartial({
         submitter,
-        registry: registryPda(result.registryVersion, this.programId),
+        registry: registryPda(payload.registryVersion, this.programId),
         feed,
         protocolConfig: protocolConfigPda(this.programId),
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
@@ -409,14 +415,6 @@ export class MolphaSolanaClient {
       };
     });
     return computeCoalitionKey(keys);
-  }
-
-  /** @deprecated Renamed to {@link submitAttestation}. */
-  submitDataUpdate(
-    result: DataUpdateResult,
-    opts?: { computeUnitLimit?: number; coalitionKey?: CoalitionKey; rawValue?: Uint8Array },
-  ): Promise<SubmitResult> {
-    return this.submitAttestation(result, opts);
   }
 
   /**
@@ -548,30 +546,31 @@ export class MolphaSolanaClient {
  * keys (see `computeCoalitionKey`).
  */
 export function buildSubmitAttestationArgs(
-  result: DataUpdateResult,
+  attestation: Attestation,
   coalitionKey: CoalitionKey,
   rawValue?: Uint8Array | null,
 ): SubmitAttestationArgs {
-  const value = toFixedBytes(result.valuePacked, 32, "valuePacked");
+  const { payload, signature } = attestation;
+  const value = toFixedBytes(payload.value, 32, "payload.value");
   if (rawValue && rawValue.length > 256) {
     throw new RangeError(`rawValue must be at most 256 bytes, got ${rawValue.length}`);
   }
   if (rawValue && bytesToHex(keccak_256(rawValue)) !== bytesToHex(value)) {
-    throw new Error("rawValue keccak256 digest does not match result.valuePacked");
+    throw new Error("rawValue keccak256 digest does not match attestation.payload.value");
   }
   return {
     attestation: {
       payload: {
-        value: Array.from(toFixedBytes(result.valuePacked, 32, "valuePacked")),
-        sourceId: Array.from(toFixedBytes(result.sourceId, 32, "sourceId")),
-        registryVersion: result.registryVersion,
-        signaturesRequired: result.signaturesRequired,
-        canonicalTimestamp: new BN(result.timestamp),
+        value: Array.from(toFixedBytes(payload.value, 32, "payload.value")),
+        sourceId: Array.from(toFixedBytes(payload.sourceId, 32, "sourceId")),
+        registryVersion: payload.registryVersion,
+        signaturesRequired: payload.signaturesRequired,
+        canonicalTimestamp: new BN(payload.canonicalTimestamp),
       },
       signature: {
-        aggSigS: Array.from(toFixedBytes(result.s, 32, "s")),
-        commitment: Array.from(toFixedBytes(result.commitmentAddr, 20, "commitmentAddr")),
-        signersBitmap: Array.from(toFixedBytes(result.signersBitmap, 32, "signersBitmap")),
+        aggSigS: Array.from(toFixedBytes(signature.s, 32, "signature.s")),
+        commitment: Array.from(toFixedBytes(signature.commitmentAddr, 20, "signature.commitmentAddr")),
+        signersBitmap: Array.from(toFixedBytes(signature.signersBitmap, 32, "signature.signersBitmap")),
       },
     },
     rawValue: rawValue ? toAnchorBytes(rawValue) : null,

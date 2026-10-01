@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 import { MOLPHA_PROGRAM_ID } from "../src/core/constants.js";
 import { hexToBytes, utf8 } from "../src/core/encoding.js";
-import type { DataUpdateResult } from "../src/core/types.js";
+import type { Attestation } from "../src/core/types.js";
 import { buildSubmitAttestationArgs } from "../src/solana/client.js";
 import { SYSTEM_PROGRAM_ADDRESS } from "../src/solana/kit.js";
 import { feedPda, protocolConfigPda, registryPda } from "../src/solana/pdas.js";
@@ -26,16 +26,20 @@ const VERIFIER_REGISTRY_DISCRIMINATOR = [47, 174, 110, 246, 184, 182, 252, 218];
 
 const COALITION_KEY = { x: new Uint8Array(32).fill(0x55), y: new Uint8Array(32).fill(0x66) };
 
-const result: DataUpdateResult = {
-  sourceId: "11".repeat(32),
+const result: Attestation = {
+  payload: {
+    sourceId: "11".repeat(32),
+    value: "22".repeat(32),
+    canonicalTimestamp: 1_700_000_000,
+    registryVersion: 7,
+    signaturesRequired: 3,
+  },
+  signature: {
+    signersBitmap: "00".repeat(31) + "07",
+    s: "33".repeat(32),
+    commitmentAddr: "44".repeat(20),
+  },
   value: "1",
-  valuePacked: "22".repeat(32),
-  timestamp: 1_700_000_000,
-  registryVersion: 7,
-  signaturesRequired: 3,
-  signersBitmap: "00".repeat(31) + "07",
-  s: "33".repeat(32),
-  commitmentAddr: "44".repeat(20),
   fresh: true,
 };
 
@@ -99,14 +103,14 @@ describe("vendored IDL", () => {
 
     // Field order inside the payload follows the program struct, not the SDK result.
     const body = ix.data.subarray(8);
-    expect([...body.subarray(0, 32)]).toEqual([...hexToBytes(result.valuePacked)]);
-    expect([...body.subarray(32, 64)]).toEqual([...hexToBytes(result.sourceId)]);
-    expect(body.readUInt32LE(64)).toBe(result.registryVersion);
-    expect(body[68]).toBe(result.signaturesRequired);
-    expect(body.readBigUInt64LE(69)).toBe(BigInt(result.timestamp));
-    expect([...body.subarray(77, 109)]).toEqual([...hexToBytes(result.s)]);
-    expect([...body.subarray(109, 129)]).toEqual([...hexToBytes(result.commitmentAddr)]);
-    expect([...body.subarray(129, 161)]).toEqual([...hexToBytes(result.signersBitmap)]);
+    expect([...body.subarray(0, 32)]).toEqual([...hexToBytes(result.payload.value)]);
+    expect([...body.subarray(32, 64)]).toEqual([...hexToBytes(result.payload.sourceId)]);
+    expect(body.readUInt32LE(64)).toBe(result.payload.registryVersion);
+    expect(body[68]).toBe(result.payload.signaturesRequired);
+    expect(body.readBigUInt64LE(69)).toBe(BigInt(result.payload.canonicalTimestamp));
+    expect([...body.subarray(77, 109)]).toEqual([...hexToBytes(result.signature.s)]);
+    expect([...body.subarray(109, 129)]).toEqual([...hexToBytes(result.signature.commitmentAddr)]);
+    expect([...body.subarray(129, 161)]).toEqual([...hexToBytes(result.signature.signersBitmap)]);
     expect(body[161]).toBe(0); // raw_value: None
     expect([...body.subarray(162, 194)]).toEqual([...COALITION_KEY.x]);
     expect([...body.subarray(194, 226)]).toEqual([...COALITION_KEY.y]);
@@ -114,8 +118,8 @@ describe("vendored IDL", () => {
     const programId = MOLPHA_PROGRAM_ADDRESS;
     const expectedKeys = [
       submitter.toBase58(),
-      registryPda(result.registryVersion, programId),
-      feedPda(hexToBytes(result.sourceId), result.signaturesRequired, submitter, programId),
+      registryPda(result.payload.registryVersion, programId),
+      feedPda(hexToBytes(result.payload.sourceId), result.payload.signaturesRequired, submitter, programId),
       protocolConfigPda(programId),
       SYSTEM_PROGRAM_ADDRESS,
     ];
@@ -130,7 +134,10 @@ describe("vendored IDL", () => {
     const rawValue = new Uint8Array(40).fill(0xab);
     const hashedResult = {
       ...result,
-      valuePacked: Buffer.from(keccak_256(rawValue)).toString("hex"),
+      payload: {
+        ...result.payload,
+        value: Buffer.from(keccak_256(rawValue)).toString("hex"),
+      },
     };
     const ix = await program.methods
       .submitAttestation!(buildSubmitAttestationArgs(hashedResult, COALITION_KEY, rawValue))
@@ -148,7 +155,10 @@ describe("vendored IDL", () => {
     const rawValue = new TextEncoder().encode("a value longer than the signed word");
     const hashedResult = {
       ...result,
-      valuePacked: Buffer.from(keccak_256(rawValue)).toString("hex"),
+      payload: {
+        ...result.payload,
+        value: Buffer.from(keccak_256(rawValue)).toString("hex"),
+      },
     };
     const args = buildSubmitAttestationArgs(hashedResult, COALITION_KEY, rawValue);
     const ix = await program.methods

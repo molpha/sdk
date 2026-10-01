@@ -122,8 +122,8 @@ describe("MolphaGateway.requestSignedData failover", () => {
     const gw = new MolphaGateway("http://gw1", registry);
     const result = await gw.requestSignedData(baseRequest);
     expect(result.value).toBe("100");
-    expect(result.sourceId).toBe(SOURCE_ID);
-    expect(result.commitmentAddr).toBe("bb".repeat(20));
+    expect(result.payload.sourceId).toBe(SOURCE_ID);
+    expect(result.signature.commitmentAddr).toBe("bb".repeat(20));
   });
 
   it("derives sourceId from apiConfig and posts it (no feedId)", async () => {
@@ -507,10 +507,12 @@ describe("MolphaGateway response validation", () => {
     const gw = new MolphaGateway("http://gw1", registry);
     const result = await gw.requestSignedData(baseRequest);
     expect(result).toMatchObject({
-      sourceId: SOURCE_ID,
-      timestamp: 5,
-      registryVersion: 0,
-      signersBitmap: "00".repeat(31) + "02",
+      payload: {
+        sourceId: SOURCE_ID,
+        canonicalTimestamp: 5,
+        registryVersion: 0,
+      },
+      signature: { signersBitmap: "00".repeat(31) + "02" },
       fresh: false,
     });
   });
@@ -529,7 +531,7 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     });
 
     expect(result.value).toBe("42");
-    expect(result.registryVersion).toBe(7);
+    expect(result.payload.registryVersion).toBe(7);
     // No on-chain registry read, and the only fetch is the /execute POST.
     expect(getRegistrySelectionConfig).not.toHaveBeenCalled();
     const fetched = fetchSpy.mock.calls.map(([input]) => String(input));
@@ -831,7 +833,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
       '{"url":"http://api","method":"GET","headers":{},"responseParser":"$.price","valueTransform":"",' +
         '"aggregation":{"mode":"tolerance","rule":"median","maxDeviationBps":50,"maxAgeMs":2000,"numeric":{"type":"int256","decimals":8}}}',
     );
-    expect(result.sourceId).toBe(TOLERANCE_SOURCE_ID);
+    expect(result.payload.sourceId).toBe(TOLERANCE_SOURCE_ID);
   });
 
   it("omits aggregation from the wire body for exact mode", async () => {
@@ -887,9 +889,9 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
       apiConfig: toleranceConfig,
     });
     expect(result.value).toBe("42150.12345678");
-    expect(result.valuePacked).toBe(PACKED);
+    expect(result.payload.value).toBe(PACKED);
     // The final signing set comes from the response, not the request's selection bitmap.
-    expect(result.signersBitmap).toBe("00".repeat(31) + "0e");
+    expect(result.signature.signersBitmap).toBe("00".repeat(31) + "0e");
   });
 
   it("renders negative values", async () => {
@@ -995,7 +997,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
         context: { registryVersion: 1, redundancyBuffer: 2, nodes: encryptedNodes },
         maxRetries: 1,
       }),
-    ).resolves.toMatchObject({ sourceId: TOLERANCE_SOURCE_ID });
+    ).resolves.toMatchObject({ payload: { sourceId: TOLERANCE_SOURCE_ID } });
     expect(postedBody?.sourceId).toBe(deriveSourceIdString(config));
     expect((postedBody?.apiConfig as Record<string, unknown>).aggregation).toEqual(aggregation);
     expect(postedBody?.encKeyBundle).toBeDefined();
