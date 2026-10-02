@@ -126,6 +126,72 @@ describe("MolphaGateway.requestSignedData failover", () => {
     expect(result.signature.commitmentAddr).toBe("bb".repeat(20));
   });
 
+  it("parses the gateway's nested `attestation` body (current AttestationResponse)", async () => {
+    globalThis.fetch = mockFetch({
+      execute: () =>
+        jsonResponse({
+          status: "completed",
+          data: {
+            attestation: {
+              payload: {
+                value: "00".repeat(31) + "64",
+                sourceId: SOURCE_ID,
+                registryVersion: 4,
+                signaturesRequired: 1,
+                canonicalTimestamp: 1_700_000_123,
+              },
+              signature: {
+                signature: "aa".repeat(32),
+                commitment: "bb".repeat(20),
+                signersBitmap: "00".repeat(31) + "0e",
+              },
+            },
+            value: "100",
+            fresh: true,
+            configHash: SOURCE_ID,
+          },
+        }),
+    }) as unknown as typeof fetch;
+
+    const gw = new MolphaGateway("http://gw1", registry);
+    const result = await gw.requestSignedData(baseRequest);
+
+    expect(result.value).toBe("100");
+    expect(result.fresh).toBe(true);
+    expect(result.payload).toEqual({
+      sourceId: SOURCE_ID,
+      value: "00".repeat(31) + "64",
+      canonicalTimestamp: 1_700_000_123,
+      registryVersion: 4,
+      signaturesRequired: 1,
+    });
+    expect(result.signature).toEqual({
+      s: "aa".repeat(32),
+      commitmentAddr: "bb".repeat(20),
+      signersBitmap: "00".repeat(31) + "0e",
+    });
+  });
+
+  it("rejects a nested attestation for a different source", async () => {
+    globalThis.fetch = mockFetch({
+      execute: () =>
+        jsonResponse({
+          status: "completed",
+          data: {
+            attestation: {
+              payload: { value: "00".repeat(32), sourceId: "cd".repeat(32), signaturesRequired: 1 },
+              signature: { signature: "aa".repeat(32), commitment: "bb".repeat(20), signersBitmap: "01" },
+            },
+            value: "1",
+            fresh: true,
+          },
+        }),
+    }) as unknown as typeof fetch;
+
+    const gw = new MolphaGateway("http://gw1", registry);
+    await expect(gw.requestSignedData({ ...baseRequest, maxRetries: 1 })).rejects.toThrow(/sourceId/);
+  });
+
   it("derives sourceId from apiConfig and posts it (no feedId)", async () => {
     let postedBody: Record<string, unknown> | undefined;
     globalThis.fetch = mockFetch({
@@ -800,6 +866,42 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
         ...extra,
       },
     });
+
+  it("renders a tolerance value from the nested attestation's signed payload.value", async () => {
+    globalThis.fetch = mockFetch({
+      execute: () =>
+        jsonResponse({
+          status: "completed",
+          data: {
+            attestation: {
+              payload: {
+                value: PACKED,
+                sourceId: TOLERANCE_SOURCE_ID,
+                registryVersion: 4,
+                signaturesRequired: 3,
+                canonicalTimestamp: 1_700_000_123,
+              },
+              signature: {
+                signature: "aa".repeat(32),
+                commitment: "bb".repeat(20),
+                signersBitmap: "00".repeat(31) + "0e",
+              },
+            },
+            value: "stale-display-value",
+            fresh: true,
+            configHash: TOLERANCE_SOURCE_ID,
+            aggregation,
+          },
+        }),
+    }) as unknown as typeof fetch;
+
+    const gw = new MolphaGateway("http://gw1", registry);
+    const result = await gw.requestSignedData({ ...baseRequest, signaturesRequired: 3, apiConfig: toleranceConfig });
+
+    expect(result.value).toBe("42150.12345678");
+    expect(result.payload.value).toBe(PACKED);
+    expect(result.signature.signersBitmap).toBe("00".repeat(31) + "0e");
+  });
 
   it("derives the sourceId from the aggregation and forwards it in the canonical apiConfig", async () => {
     let postedBody: Record<string, unknown> | undefined;
