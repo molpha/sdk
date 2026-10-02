@@ -162,7 +162,28 @@ interface GatewaySignedDataResponse {
   data?: GatewaySignedData;
 }
 
+/**
+ * The gateway's `attestation` object (`AttestationData.attestation`): the signed struct as the
+ * on-chain `Attestation`, with `payload.value` the packed 32-byte value.
+ */
+interface GatewayAttestation {
+  payload?: {
+    value?: string;
+    sourceId?: string;
+    registryVersion?: number;
+    signaturesRequired?: number;
+    canonicalTimestamp?: number;
+  };
+  signature?: {
+    signature?: string;
+    commitment?: string;
+    signersBitmap?: string;
+  };
+}
+
 interface GatewaySignedData {
+  /** Current gateways nest the signed struct here; the flat fields below are the older shape. */
+  attestation?: GatewayAttestation;
   sourceId?: string;
   /** Echo of the canonical apiConfig hash; equals `sourceId`. */
   configHash?: string;
@@ -855,6 +876,31 @@ function normalizeHex(value: string): string {
 }
 
 /**
+ * Lift a nested `attestation` (current gateways) into the flat field names the rest of this
+ * module reads, leaving the older flat body untouched. Top-level `value`, `fresh`,
+ * `configHash` and `aggregation` are the same in both shapes.
+ */
+function flattenGatewayData(data: GatewaySignedData): GatewaySignedData {
+  const nested = data.attestation;
+  if (!nested) return data;
+  const { attestation: _nested, ...rest } = data;
+  const { payload, signature } = nested;
+  return {
+    ...rest,
+    ...(payload?.sourceId !== undefined ? { sourceId: payload.sourceId } : {}),
+    ...(payload?.value !== undefined ? { valuePacked: payload.value } : {}),
+    ...(payload?.canonicalTimestamp !== undefined ? { timestamp: payload.canonicalTimestamp } : {}),
+    ...(payload?.registryVersion !== undefined ? { registryVersion: payload.registryVersion } : {}),
+    ...(payload?.signaturesRequired !== undefined
+      ? { signaturesRequired: payload.signaturesRequired }
+      : {}),
+    ...(signature?.signersBitmap !== undefined ? { signersBitmap: signature.signersBitmap } : {}),
+    ...(signature?.signature !== undefined ? { s: signature.signature } : {}),
+    ...(signature?.commitment !== undefined ? { commitmentAddr: signature.commitment } : {}),
+  };
+}
+
+/**
  * Shape the gateway payload into an {@link Attestation}. `sourceId` and
  * `signaturesRequired` must echo the request (they key the feed and the signed
  * message); `timestamp`, `registryVersion` and `signersBitmap` are taken from the
@@ -867,7 +913,7 @@ function normalizeHex(value: string): string {
  * from the signed `valuePacked` at the source's `decimals` rather than trusted as sent.
  */
 function toResult(
-  data: GatewaySignedData,
+  raw: GatewaySignedData,
   ctx: {
     sourceId: string;
     registryVersion: number;
@@ -877,6 +923,7 @@ function toResult(
     aggregation?: AggregationConfig;
   },
 ): Attestation {
+  const data = flattenGatewayData(raw);
   if (data.sourceId !== undefined && normalizeHex(data.sourceId) !== ctx.sourceId) {
     throw new GatewayError(
       `Gateway response sourceId ${data.sourceId} does not match the requested ${ctx.sourceId}`,
