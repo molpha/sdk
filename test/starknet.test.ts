@@ -18,7 +18,7 @@ const SAMPLE_RESULT: Attestation = {
   payload: {
     sourceId: "aa".repeat(32),
     value: "bb".repeat(32),
-    canonicalTimestamp: 1_700_000_000,
+    timestamp: 1_700_000_000_000,
     registryVersion: 2,
     signaturesRequired: 3,
   },
@@ -39,14 +39,14 @@ const EVM_FIXTURE_RESULT: Attestation = {
   payload: {
     sourceId: "93893838ba3cf2a46fc061b4c3acfba3435fa61b0c29017fe78280146255b604",
     value: "c6d8f1c0fdb8997313cbc4bc43b46af78589ba4bb9036707097db8b33879d6c6",
-    canonicalTimestamp: 1_700_034_927,
+    timestamp: 1_700_034_927_000,
     registryVersion: 12,
     signaturesRequired: 5,
   },
   signature: {
     signersBitmap: "00".repeat(30) + "07f0",
-    s: "9f52f4fd6b2f82086803269007cbda35cf024c40af57160b7472817e2691ef73",
-    commitmentAddr: "aff31ae9e8f7624c9f8c149f1f12bb00f1606c10",
+    s: "956e684ea6710c54bb7d5b0b3256e1c2d1e77cc84607ad575b5f95fdd210aac6",
+    commitmentAddr: "ec61e25b5a06f0a3f9048356b23e98cf775974b9",
   },
   value: "",
   fresh: true,
@@ -54,10 +54,9 @@ const EVM_FIXTURE_RESULT: Attestation = {
 
 /**
  * Flat calldata for `EVM_FIXTURE_RESULT` with `maxAge: 0`, computed from `fixture.json`
- * independently of this SDK and then submitted to the Cairo verifier (`molpha-starknet`),
- * which returned `(1, 0)`. Flipping `value.low` returned `(0, 9)`, and a non-zero final
- * felt was read as `max_age`. If this expectation ever needs to change, the Starknet
- * interface changed — re-prove it against the contract rather than updating the literal.
+ * independently of this SDK. A non-zero final felt is read as `max_age`. If this expectation
+ * ever needs to change, the Starknet interface changed: re-prove it against the contract
+ * (`molpha-starknet`) rather than updating the literal.
  */
 const EVM_FIXTURE_CALLDATA = [
   "0x8589ba4bb9036707097db8b33879d6c6", // value.low
@@ -66,10 +65,10 @@ const EVM_FIXTURE_CALLDATA = [
   "0x93893838ba3cf2a46fc061b4c3acfba3", // source_id.high
   "0xc", // registry_version
   "0x5", // signatures_required
-  "0x6554796f", // canonical_timestamp
-  "0xcf024c40af57160b7472817e2691ef73", // signature.low
-  "0x9f52f4fd6b2f82086803269007cbda35", // signature.high
-  "0xaff31ae9e8f7624c9f8c149f1f12bb00f1606c10", // commitment
+  "0x18bd1fa5998", // timestamp (ms)
+  "0xd1e77cc84607ad575b5f95fdd210aac6", // signature.low
+  "0x956e684ea6710c54bb7d5b0b3256e1c2", // signature.high
+  "0xec61e25b5a06f0a3f9048356b23e98cf775974b9", // commitment
   "0x7f0", // signers_bitmap.low
   "0x0", // signers_bitmap.high
   "0x0", // max_age
@@ -107,7 +106,7 @@ describe("Starknet verifier argument helpers", () => {
         source_id: BigInt(`0x${"aa".repeat(32)}`),
         registry_version: 2,
         signatures_required: 3,
-        canonical_timestamp: 1_700_000_000,
+        timestamp: 1_700_000_000_000,
       },
       signature: {
         signature: BigInt(`0x${"cc".repeat(32)}`),
@@ -121,7 +120,7 @@ describe("Starknet verifier argument helpers", () => {
       "source_id",
       "registry_version",
       "signatures_required",
-      "canonical_timestamp",
+      "timestamp",
     ]);
     expect(maxAge).toBe(300);
   });
@@ -148,7 +147,7 @@ describe("Starknet verifier argument helpers", () => {
     expect(() => build({ signaturesRequired: 256 })).toThrow(/signaturesRequired/);
     expect(() => build({ registryVersion: 2 ** 32 })).toThrow(/registryVersion/);
     expect(() => build({ registryVersion: -1 })).toThrow(/registryVersion/);
-    expect(() => build({ canonicalTimestamp: 1.5 })).toThrow(/canonicalTimestamp/);
+    expect(() => build({ timestamp: 1.5 })).toThrow(/timestamp/);
     expect(() => build({}, {}, -1)).toThrow(/maxAge/);
     expect(() => build({}, {}, Number.NaN)).toThrow(/maxAge/);
     expect(() => build({}, { commitmentAddr: "dd".repeat(21) })).toThrow(/commitment/);

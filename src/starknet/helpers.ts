@@ -26,8 +26,8 @@ export interface StarknetAttestationPayload {
   registry_version: number;
   /** `u8`. */
   signatures_required: number;
-  /** `u64`, unix seconds. */
-  canonical_timestamp: number;
+  /** `u64`, unix MILLISECONDS (`/ 1000` is the seconds the verifier's `max_age` uses). */
+  timestamp: number;
 }
 
 /** Starknet calldata shape for `SchnorrSignature`. */
@@ -186,7 +186,7 @@ export function buildStarknetVerifierArgs(
     source_id: fixedHexToBigInt(signed.sourceId, 32, "sourceId"),
     registry_version: assertUint(signed.registryVersion, U32_MAX, "registryVersion"),
     signatures_required: assertUint(signed.signaturesRequired, U8_MAX, "signaturesRequired"),
-    canonical_timestamp: assertUint(signed.canonicalTimestamp, U64_MAX, "canonicalTimestamp"),
+    timestamp: assertUint(signed.timestamp, U64_MAX, "timestamp"),
   };
 
   const signature: StarknetSchnorrSignature = {
@@ -205,7 +205,7 @@ export function buildStarknetVerifierArgs(
  * Flat felt calldata for `verify(attestation, max_age)`, in Cairo `Serde` order — 13 felts:
  *
  * `value.low, value.high, source_id.low, source_id.high, registry_version,
- *  signatures_required, canonical_timestamp, signature.low, signature.high, commitment,
+ *  signatures_required, timestamp, signature.low, signature.high, commitment,
  *  signers_bitmap.low, signers_bitmap.high, max_age`
  *
  * For a raw `starknet_call` with `entry_point_selector = selector("verify")`.
@@ -217,7 +217,7 @@ export function encodeStarknetVerifyCalldata(args: StarknetVerifierArgs): `0x${s
     ...u256Felts(payload.source_id, "source_id"),
     toFelt(assertUint(payload.registry_version, U32_MAX, "registry_version")),
     toFelt(assertUint(payload.signatures_required, U8_MAX, "signatures_required")),
-    toFelt(assertUint(payload.canonical_timestamp, U64_MAX, "canonical_timestamp")),
+    toFelt(assertUint(payload.timestamp, U64_MAX, "timestamp")),
     ...u256Felts(signature.signature, "signature"),
     // An Ethereum-style address, so it must fit 160 bits (the verifier reports a wider one
     // as `MALFORMED`; one past the field prime would not even deserialize).

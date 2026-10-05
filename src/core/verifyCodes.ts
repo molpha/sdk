@@ -12,11 +12,11 @@ export const VERIFY_CODES = {
   FEED_WITNESS: 1,
   /** The payload's `registryVersion` does not exist on this verifier. */
   BAD_REGISTRY_VERSION: 2,
-  /** Structurally invalid input, or a `canonicalTimestamp` in the future when `maxAge != 0`. */
+  /** Structurally invalid input, or a `timestamp` in the future when `maxAge != 0`. */
   MALFORMED: 3,
-  /** `canonicalTimestamp` predates the registry version's activation. */
+  /** `timestamp` predates the registry version's activation. */
   NOT_YET_ACTIVE: 4,
-  /** The registry version was superseded more than the grace window before `canonicalTimestamp`. */
+  /** The registry version was superseded more than the grace window before `timestamp`. */
   VERSION_EXPIRED: 5,
   /** Reserved. Never returned. */
   COMPROMISED_QUORUM: 6,

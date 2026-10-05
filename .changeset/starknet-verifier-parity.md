@@ -11,7 +11,7 @@ Starknet helpers target the cross-VM parity release of the Molpha Starknet verif
   `attestation` is the nested Cairo `Attestation { payload, signature }`. `maxAge` is required:
   `0` disables the verifier's freshness check, which a stateless verifier should not do silently.
 - `StarknetDataUpdate` is replaced by `StarknetAttestationPayload`, with members in Cairo `Serde`
-  order (`value`, `source_id`, `registry_version`, `signatures_required`, `canonical_timestamp`)
+  order (`value`, `source_id`, `registry_version`, `signatures_required`, `timestamp`)
   and `signatures_required` narrowed to `u8`. `StarknetVerifierArgs` changes shape accordingly.
 - The builder now range-checks every integer against its Cairo type and throws `RangeError`
   instead of producing calldata that would revert during deserialization.

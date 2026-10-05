@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { base64ToBytes } from "../src/core/encoding.js";
 import { createEvmSignerFromPrivateKey } from "../src/evm/eip712.js";
 import { MolphaGateway, UpstreamPaymentRequiredError } from "../src/gateway/index.js";
+import { signedResponseBody } from "./fixtures/gatewayResponse.js";
 
 const SUBSCRIPTION_OWNER = "9K9FknHzW7j8a88yKTrzxKfDrxnV2QLqSR58ETAVdc8P";
 const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
@@ -71,16 +72,7 @@ function upstreamQuote(eligibleSetSize: number, error?: string): Response {
   );
 }
 
-const completed = () =>
-  jsonResponse({
-    status: "completed",
-    value: "100",
-    valuePacked: "00".repeat(32),
-    signersBitmap: "00".repeat(31) + "01",
-    s: "aa".repeat(32),
-    commitmentAddr: "bb".repeat(20),
-    fresh: true,
-  });
+const completed = () => jsonResponse(signedResponseBody({ value: "100" }));
 
 /** Routes the SDK's three destinations: the source, /v1/nodes, and the round. */
 function mockFetch(handlers: {
@@ -92,7 +84,7 @@ function mockFetch(handlers: {
   let probes = 0;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/v1/nodes")) return handlers.nodes?.() ?? jsonResponse({ nodes });
+    if (url.endsWith("/v1/nodes")) return handlers.nodes?.() ?? jsonResponse({ status: "ok", data: { nodes } });
     if (url.endsWith("/v1/round/execute")) {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       rounds.push(body);
@@ -109,6 +101,7 @@ const request = (extra: Record<string, unknown> = {}) => ({
   apiConfig,
   subscriptionOwner: SUBSCRIPTION_OWNER,
   maxRetries: 3,
+  tickMs: 10, // retries wait for the next tick; keep it short in tests
   ...extra,
 });
 
@@ -176,7 +169,9 @@ describe("paywalled API sources", () => {
 
     expect(mock.rounds).toHaveLength(2);
     // A dispatched round tuple cannot be replayed, so the retry is a new round.
-    expect(mock.rounds[0]!.timestamp).not.toBe(mock.rounds[1]!.timestamp);
+    // The gateway, not the caller, stamps rounds: neither attempt carries a timestamp.
+    expect(mock.rounds[0]).not.toHaveProperty("timestamp");
+    expect(mock.rounds[1]).not.toHaveProperty("timestamp");
     const reused = nonces(mock.rounds[0]!).filter((n) => nonces(mock.rounds[1]!).includes(n));
     expect(reused).toEqual([]);
   });
@@ -224,7 +219,9 @@ describe("paywalled API sources", () => {
     expect(mock.rounds).toHaveLength(2);
     expect(mock.rounds[0]!.sourcePayments).toBeUndefined();
     expect((mock.rounds[1]!.sourcePayments as string[])).toHaveLength(3);
-    expect(mock.rounds[0]!.timestamp).not.toBe(mock.rounds[1]!.timestamp);
+    // The gateway, not the caller, stamps rounds: neither attempt carries a timestamp.
+    expect(mock.rounds[0]).not.toHaveProperty("timestamp");
+    expect(mock.rounds[1]).not.toHaveProperty("timestamp");
   });
 
   it("rejects an upstream quote whose eligible set exceeds the round selection", async () => {
@@ -435,13 +432,5 @@ describe("GET /v1/nodes", () => {
     const gw = new MolphaGateway("http://gw1", registry);
     expect((await gw.getNodesInfo()).registry).toBeUndefined();
     expect(await gw.getNodes()).toHaveLength(3);
-  });
-
-  it("still accepts a bare node array", async () => {
-    globalThis.fetch = vi.fn(async () => jsonResponse(nodes)) as unknown as typeof fetch;
-
-    const info = await new MolphaGateway("http://gw1", registry).getNodesInfo();
-    expect(info.nodes).toHaveLength(3);
-    expect(info.registry).toBeUndefined();
   });
 });

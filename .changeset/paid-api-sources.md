@@ -14,7 +14,3 @@ Support API sources that are themselves x402-paywalled, matching the gateway's p
 - `bytesToBase64` / `base64ToBytes` encoding helpers.
 
 Beta signs `exact` payments in USDC on Base and Base Sepolia only; any other network or asset is rejected before anything is signed.
-
-**Fixed**
-
-- Retried rounds now always advance the canonical timestamp. Retries within the same wall-clock second previously reused a timestamp, and so re-sent an already-dispatched round tuple that the gateway cannot replay.

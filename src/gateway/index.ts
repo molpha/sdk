@@ -7,12 +7,7 @@ import { MOLPHA_PROGRAM_ID } from "../core/constants.js";
 import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
 import { formatInt256Decimal } from "../core/int256.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
-import {
-  deriveGroupBitmap,
-  deriveSelectionSeed,
-  effectiveSelectionSize,
-  selectedIndices,
-} from "../core/selection.js";
+import { effectiveSelectionSize } from "../core/selection.js";
 import type {
   AggregationConfig,
   APIConfig,
@@ -68,15 +63,16 @@ export interface RequestSignedDataOptions {
    */
   subscriptionOwner?: string;
   /**
-   * Solana pubkey (base58) of the consumer authority that signs gateway auth.
+   * Solana pubkey (base58) of the consumer: the subscription owner, or a delegate of it.
    * Overrides the gateway's `defaultConsumerAuthority` when set.
    */
   consumerAuthority?: string;
   /**
-   * Signs `hashRequestAuth({ programId, gateway, sourceId, signaturesRequired, timestamp })`.
+   * Signs `hashRequestAuth({ programId, gateway, sourceId, signaturesRequired, authTimestamp })`.
    * The hash binds the gateway's on-chain account, so it is computed — and the signer
-   * invoked — once per endpoint actually tried. Overrides the gateway's `defaultSigner`
-   * when set. When both are omitted, sends an all-zero authSig (dev only).
+   * invoked — once per endpoint actually tried, with a fresh `authTimestamp` each time.
+   * Overrides the gateway's `defaultSigner` when set. When both are omitted, sends an all-zero
+   * authSig (a gateway rejects it with 401; for tests and local tooling only).
    */
   signer?: Signer;
   encrypt?: { secrets: Record<string, string> };
@@ -93,8 +89,13 @@ export interface RequestSignedDataOptions {
   sourcePayment?: SourcePaymentOptions;
   /** Max accepted value age in seconds. Default 60. */
   maxAge?: number;
-  /** Each retry re-rolls the timestamp. Default 15. */
+  /** Max attempts; each retry waits for a later gateway tick. Default 15. */
   maxRetries?: number;
+  /**
+   * The gateway's tick grid in milliseconds (its `round.tick_ms`). A retry waits for the start of
+   * the next tick so it is a new round, not a duplicate of the last. Default 1000.
+   */
+  tickMs?: number;
   /** Per-request timeout in ms. Default 5000. */
   timeoutMs?: number;
   /**
@@ -127,8 +128,9 @@ export interface MolphaGatewayOptions {
   /** Solana pubkey (base58) of the consumer authority used when a request omits it. */
   defaultConsumerAuthority?: string;
   /**
-   * Molpha program id the request authorization is bound to. Defaults to the vendored
-   * `MOLPHA_PROGRAM_ID`; must match the gateway's deployment.
+   * Molpha program id the request authorization is bound to (and that `fetchGatewayInfo`
+   * checks the gateway settles against). Defaults to the vendored `MOLPHA_PROGRAM_ID`;
+   * must match the gateway's deployment.
    */
   programId?: string;
   /**
@@ -148,7 +150,7 @@ export interface MolphaGatewayOptions {
  * {@link MolphaGateway.prepareContext} and reuse across many rounds.
  */
 export interface RoundContext extends RegistrySelectionConfig {
-  /** Full node set used to encrypt private API secrets for the selected nodes. */
+  /** Full registry node set: private API secrets are encrypted for every node in it. */
   nodes: Node[];
 }
 
@@ -163,40 +165,30 @@ interface GatewaySignedDataResponse {
 }
 
 /**
- * The gateway's `attestation` object (`AttestationData.attestation`): the signed struct as the
- * on-chain `Attestation`, with `payload.value` the packed 32-byte value.
+ * The gateway's `AttestationData`: the signed struct as the on-chain `Attestation`
+ * (`payload.value` is the packed 32-byte value), plus the unsigned decimal `value`.
  */
-interface GatewayAttestation {
-  payload?: {
-    value?: string;
-    sourceId?: string;
-    registryVersion?: number;
-    signaturesRequired?: number;
-    canonicalTimestamp?: number;
-  };
-  signature?: {
-    signature?: string;
-    commitment?: string;
-    signersBitmap?: string;
-  };
-}
-
 interface GatewaySignedData {
-  /** Current gateways nest the signed struct here; the flat fields below are the older shape. */
-  attestation?: GatewayAttestation;
-  sourceId?: string;
+  attestation?: {
+    payload?: {
+      value?: string;
+      sourceId?: string;
+      registryVersion?: number;
+      signaturesRequired?: number;
+      /** Gateway-assigned round time, unix milliseconds. */
+      timestamp?: number;
+    };
+    signature?: {
+      signature?: string;
+      commitment?: string;
+      signersBitmap?: string;
+    };
+  };
   /** Echo of the canonical apiConfig hash; equals `sourceId`. */
   configHash?: string;
-  /** Echo of the request's tolerance policy; present only for tolerance rounds (newer gateways). */
+  /** Echo of the request's tolerance policy; present only for tolerance rounds. */
   aggregation?: unknown;
   value?: string;
-  valuePacked?: string;
-  timestamp?: number;
-  registryVersion?: number;
-  signaturesRequired?: number;
-  signersBitmap?: string;
-  s?: string;
-  commitmentAddr?: string;
   fresh?: boolean;
 }
 
@@ -206,6 +198,19 @@ interface GatewayEnvelope<T> {
 }
 
 const ZERO_AUTH_SIG = new Uint8Array(64);
+
+/** Caller's unix SECONDS: the `authTimestamp` of a RequestAuth, not the round's timestamp. */
+const authTimestampNow = (): number => Math.floor(Date.now() / 1000);
+
+/** The gateway's default tick grid in milliseconds. */
+const DEFAULT_TICK_MS = 1000;
+
+/** Milliseconds from `nowMs` to the start of the next tick, plus a millisecond of margin. */
+export function msUntilNextTick(nowMs: number, tickMs: number): number {
+  return tickMs - (nowMs % tickMs) + 1;
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Default gateway base URL when `endpoints` is omitted. */
 export const DEFAULT_GATEWAY_ENDPOINT = "https://dev-gateway.molpha.io/";
@@ -244,8 +249,8 @@ export class MolphaGateway {
     },
     defaultSigner?: Signer,
     /**
-     * Either a default subscription owner (base58) or gateway options. A string
-     * keeps the previous positional form used by standalone callers/tests.
+     * Either a default subscription owner (base58) or gateway options. A string is the
+     * shorthand for `{ defaultSubscriptionOwner }` used by standalone callers/tests.
      */
     defaultSubscriptionOwnerOrOptions?: string | MolphaGatewayOptions,
     defaultConsumerAuthority?: string,
@@ -289,13 +294,12 @@ export class MolphaGateway {
    * selection policy, which sizes the eligible set a paid source must fund.
    *
    * The `registry` block is advisory: it is whatever the gateway read from the
-   * chain, and is absent on older gateways or when that read failed. Prefer the
+   * chain, and is absent when that read failed. Prefer the
    * on-chain read (`MolphaSolanaClient.getRegistrySelectionConfig`) whenever a
    * Solana connection is available — `requestSignedData` already does.
    */
   async getNodesInfo(): Promise<NodesInfo> {
-    const data = await this.firstReachableData<NodesInfo | Node[]>("/v1/nodes");
-    if (Array.isArray(data)) return { nodes: data };
+    const data = await this.firstReachableData<NodesInfo>("/v1/nodes");
     return {
       nodes: data.nodes,
       ...(data.registry ? { registry: data.registry } : {}),
@@ -356,12 +360,23 @@ export class MolphaGateway {
 
   /**
    * Request a threshold-signed data update from the gateway, with retry +
-   * failover. Per attempt a fresh timestamp yields a fresh selection bitmap; the
-   * body is POSTed to each endpoint in order until one `completed`s.
+   * failover. The body is POSTed to each endpoint in order until one `completed`s.
    *
-   * The round's `sourceId` is derived from `apiConfig`. The request authorization
-   * binds the program id and each gateway's on-chain account, so the auth signature
-   * is recomputed for every endpoint tried.
+   * The round's `sourceId` is derived from `apiConfig`. The request carries no round timestamp:
+   * the gateway assigns the round's `timestamp` (unix milliseconds) from its own clock
+   * on a tick grid, and the committee follows from it. The result carries the assigned
+   * timestamp and the signers' bitmap. A retry waits for a later tick, because a round that was
+   * already reserved or dispatched cannot run again in the same one (HTTP 409).
+   *
+   * The request is authorized by a `RequestAuth` signature (`authSig`) over the program id, the
+   * endpoint's Gateway PDA, the source id, the quorum and `authTimestamp` (unix seconds, read
+   * from the local clock for every attempt). It only proves the caller may spend the
+   * subscription's rounds; it is not part of the round, so the signature is recomputed for every
+   * endpoint tried.
+   *
+   * Because the committee is unknown until the gateway stamps the round, private API
+   * secrets are encrypted for **every** node of the registry; the gateway forwards only the
+   * selected nodes' envelopes.
    *
    * By default this fetches the registry selection config up front and the node
    * set only when the round needs it (private API encryption, or when the registry
@@ -457,34 +472,31 @@ export class MolphaGateway {
     }
 
     let lastError: unknown;
-    // Each attempt must be its own round: the tuple that identifies a round
-    // includes the timestamp, and a dispatched round cannot be re-dispatched.
-    let lastTimestamp = 0;
+    // The gateway stamps a round with the tick it arrives in. A round already reserved for this
+    // consumer, or already dispatched to the nodes, cannot run again in that tick: so each retry
+    // waits for a later one.
+    const tickMs = opts.tickMs ?? DEFAULT_TICK_MS;
+    const groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
+    // Every registry node, ascending: the committee is not known until the gateway has stamped
+    // the round, so the envelope set cannot be narrowed here.
+    const registryIndexes = Array.from({ length: nodeCount }, (_, index) => index);
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      let timestamp = Math.floor(Date.now() / 1000);
-      if (timestamp <= lastTimestamp) timestamp = lastTimestamp + 1;
-      lastTimestamp = timestamp;
-
-      const seed = deriveSelectionSeed(sourceIdBytes, registryVersion, timestamp);
-      const groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
-      const bitmap = deriveGroupBitmap(seed, nodeCount, groupSize);
-      const indices = selectedIndices(bitmap, nodeCount);
+      if (attempt > 0) await sleep(msUntilNextTick(Date.now(), tickMs));
 
       let encKeyBundle: ReturnType<typeof encryptForNodes> | undefined;
       if (encrypt) {
-        const selected = selectedNodesForPrivateApiEncryption(round.nodes ?? [], indices);
+        const recipients = selectedNodesForPrivateApiEncryption(round.nodes ?? [], registryIndexes);
 
         if (verifyNodeKeys) {
           await verifyNodeKeys({
             sourceId,
             registryVersion,
-            timestamp,
-            selectedIndexes: [...indices],
-            selectedNodes: selected.map((node) => ({ ...node })),
+            nodeIndexes: [...registryIndexes],
+            nodes: recipients.map((node) => ({ ...node })),
           });
         }
 
-        encKeyBundle = encryptForNodes(requestApiConfig, encrypt.secrets, selected);
+        encKeyBundle = encryptForNodes(requestApiConfig, encrypt.secrets, recipients);
       }
 
       // Fresh authorizations per attempt: each carries a unique nonce, which is
@@ -501,7 +513,6 @@ export class MolphaGateway {
       const baseBody: Record<string, unknown> = {
         sourceId,
         registryVersion,
-        timestamp,
         maxAge,
         signaturesRequired,
         subscriptionOwner,
@@ -515,20 +526,24 @@ export class MolphaGateway {
       let requote = false;
       for (const endpoint of this.endpoints) {
         try {
+          // Fresh per attempt and per endpoint: the stamp is read from the local clock each time,
+          // so a retry after a 409 never reuses an old one.
           let authSig: Uint8Array = ZERO_AUTH_SIG;
+          let authTimestamp = authTimestampNow();
           if (authSigner) {
             const gateway = await this.resolveGatewayPda(endpoint, timeoutMs);
+            authTimestamp = authTimestampNow();
             authSig = await authSigner(
               hashRequestAuth({
                 programId: this.programIdBytes,
                 gateway,
                 sourceId: sourceIdBytes,
                 signaturesRequired,
-                timestamp,
+                authTimestamp,
               }),
             );
           }
-          const body = { ...baseBody, authSig: bytesToHex0x(authSig) };
+          const body = { ...baseBody, authSig: bytesToHex0x(authSig), authTimestamp };
 
           const res = await this.post(
             `${endpoint.url}/v1/round/execute`,
@@ -589,7 +604,7 @@ export class MolphaGateway {
                 `Gateway reports ${quote.resource} is paywalled but the source returned no payment terms`,
               );
             }
-            // Recover on a fresh timestamp: this round is spent, so the next
+            // Recover in a later tick: this round is spent, so the next
             // attempt is a new round rather than a retry of the failed one.
             lastError = new UpstreamPaymentRequiredError(quote);
             requote = true;
@@ -618,16 +633,10 @@ export class MolphaGateway {
             continue;
           }
           const json = (await res.json()) as GatewaySignedDataResponse;
-          const payload = json.data ?? (
-            json.status === "completed" ? (json as unknown as GatewaySignedData) : undefined
-          );
-          if (json.status === "completed" && payload) {
-            return toResult(payload, {
+          if (json.status === "completed" && json.data) {
+            return toResult(json.data, {
               sourceId,
-              registryVersion,
-              timestamp,
               signaturesRequired,
-              bitmap,
               ...(requestApiConfig.aggregation
                 ? { aggregation: requestApiConfig.aggregation }
                 : {}),
@@ -769,16 +778,13 @@ function assertSignaturesRequired(value: number): number {
   return value;
 }
 
-/** Unwrap the gateway `{ status, data }` envelope; passes bare payloads through. */
+/** Unwrap the gateway `{ status, data }` envelope. */
 function unwrapEnvelope(json: unknown, path: string, status?: number): unknown {
-  if (json && typeof json === "object" && "data" in json) {
-    const wrapped = json as Partial<GatewayEnvelope<unknown>>;
-    if (wrapped.data === undefined) {
-      throw new GatewayError(`GET ${path} returned malformed payload`, status);
-    }
-    return wrapped.data;
+  const wrapped = json as Partial<GatewayEnvelope<unknown>> | null;
+  if (wrapped === null || typeof wrapped !== "object" || wrapped.data === undefined) {
+    throw new GatewayError(`GET ${path} returned malformed payload`, status);
   }
-  return json;
+  return wrapped.data;
 }
 
 function selectedNodesForPrivateApiEncryption(
@@ -876,57 +882,30 @@ function normalizeHex(value: string): string {
 }
 
 /**
- * Lift a nested `attestation` (current gateways) into the flat field names the rest of this
- * module reads, leaving the older flat body untouched. Top-level `value`, `fresh`,
- * `configHash` and `aggregation` are the same in both shapes.
- */
-function flattenGatewayData(data: GatewaySignedData): GatewaySignedData {
-  const nested = data.attestation;
-  if (!nested) return data;
-  const { attestation: _nested, ...rest } = data;
-  const { payload, signature } = nested;
-  return {
-    ...rest,
-    ...(payload?.sourceId !== undefined ? { sourceId: payload.sourceId } : {}),
-    ...(payload?.value !== undefined ? { valuePacked: payload.value } : {}),
-    ...(payload?.canonicalTimestamp !== undefined ? { timestamp: payload.canonicalTimestamp } : {}),
-    ...(payload?.registryVersion !== undefined ? { registryVersion: payload.registryVersion } : {}),
-    ...(payload?.signaturesRequired !== undefined
-      ? { signaturesRequired: payload.signaturesRequired }
-      : {}),
-    ...(signature?.signersBitmap !== undefined ? { signersBitmap: signature.signersBitmap } : {}),
-    ...(signature?.signature !== undefined ? { s: signature.signature } : {}),
-    ...(signature?.commitment !== undefined ? { commitmentAddr: signature.commitment } : {}),
-  };
-}
-
-/**
- * Shape the gateway payload into an {@link Attestation}. `sourceId` and
- * `signaturesRequired` must echo the request (they key the feed and the signed
- * message); `timestamp`, `registryVersion` and `signersBitmap` are taken from the
- * response because a non-fresh (cached) attestation legitimately carries the earlier
- * round's values.
+ * Shape the gateway's `AttestationData` into an {@link Attestation}. `sourceId` and
+ * `signaturesRequired` must echo the request (they key the feed and the signed message).
+ * Everything else the verifiers recompute comes from the response and is refused when absent
+ * rather than filled in locally: the gateway assigns `timestamp` (unix milliseconds), so
+ * the caller cannot know it, and the signing set is whoever the nodes signed with.
  *
- * Tolerance mode: the signing set is chosen by the nodes after the observation exchange,
- * so `signersBitmap`, the signature fields and the packed value must all come from the
- * response (the request's selection bitmap is not a substitute), and `value` is rendered
- * from the signed `valuePacked` at the source's `decimals` rather than trusted as sent.
+ * Tolerance mode: `value` is rendered from the signed `payload.value` at the source's
+ * `decimals` rather than trusted as sent.
  */
 function toResult(
-  raw: GatewaySignedData,
+  data: GatewaySignedData,
   ctx: {
     sourceId: string;
-    registryVersion: number;
-    timestamp: number;
     signaturesRequired: number;
-    bitmap: Uint8Array;
     aggregation?: AggregationConfig;
   },
 ): Attestation {
-  const data = flattenGatewayData(raw);
-  if (data.sourceId !== undefined && normalizeHex(data.sourceId) !== ctx.sourceId) {
+  const { payload, signature } = data.attestation ?? {};
+  if (!payload || !signature) {
+    throw new GatewayError("Gateway response is missing the attestation");
+  }
+  if (payload.sourceId !== undefined && normalizeHex(payload.sourceId) !== ctx.sourceId) {
     throw new GatewayError(
-      `Gateway response sourceId ${data.sourceId} does not match the requested ${ctx.sourceId}`,
+      `Gateway response sourceId ${payload.sourceId} does not match the requested ${ctx.sourceId}`,
     );
   }
   if (data.configHash !== undefined && normalizeHex(data.configHash) !== ctx.sourceId) {
@@ -935,11 +914,11 @@ function toResult(
     );
   }
   if (
-    data.signaturesRequired !== undefined &&
-    data.signaturesRequired !== ctx.signaturesRequired
+    payload.signaturesRequired !== undefined &&
+    payload.signaturesRequired !== ctx.signaturesRequired
   ) {
     throw new GatewayError(
-      `Gateway response signaturesRequired ${data.signaturesRequired} does not match the requested ${ctx.signaturesRequired}`,
+      `Gateway response signaturesRequired ${payload.signaturesRequired} does not match the requested ${ctx.signaturesRequired}`,
     );
   }
   if (data.aggregation !== undefined && data.aggregation !== null) {
@@ -962,33 +941,41 @@ function toResult(
       );
     }
   }
+  const fields = {
+    timestamp: payload.timestamp,
+    registryVersion: payload.registryVersion,
+    value: payload.value,
+    signersBitmap: signature.signersBitmap,
+    s: signature.signature,
+    commitmentAddr: signature.commitment,
+  };
+  for (const [name, field] of Object.entries(fields)) {
+    if (field === undefined || field === "") {
+      throw new GatewayError(`Gateway response is missing ${name}`);
+    }
+  }
   let value = data.value ?? "";
   if (ctx.aggregation) {
-    for (const field of ["valuePacked", "signersBitmap", "s", "commitmentAddr"] as const) {
-      if (!data[field]) {
-        throw new GatewayError(`Gateway tolerance response is missing ${field}`);
-      }
-    }
     try {
-      value = formatInt256Decimal(data.valuePacked!, ctx.aggregation.numeric.decimals);
+      value = formatInt256Decimal(fields.value!, ctx.aggregation.numeric.decimals);
     } catch (err) {
       throw new GatewayError(
-        `Gateway tolerance response valuePacked is not an int256 word: ${err instanceof Error ? err.message : String(err)}`,
+        `Gateway tolerance response value is not an int256 word: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
   return {
     payload: {
       sourceId: ctx.sourceId,
-      value: data.valuePacked ?? "",
-      canonicalTimestamp: data.timestamp ?? ctx.timestamp,
-      registryVersion: data.registryVersion ?? ctx.registryVersion,
+      value: fields.value!,
+      timestamp: fields.timestamp!,
+      registryVersion: fields.registryVersion!,
       signaturesRequired: ctx.signaturesRequired,
     },
     signature: {
-      signersBitmap: data.signersBitmap ?? bytesToHex(ctx.bitmap),
-      s: data.s ?? "",
-      commitmentAddr: data.commitmentAddr ?? "",
+      signersBitmap: fields.signersBitmap!,
+      s: fields.s!,
+      commitmentAddr: fields.commitmentAddr!,
     },
     value,
     fresh: data.fresh ?? true,

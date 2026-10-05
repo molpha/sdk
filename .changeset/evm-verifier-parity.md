@@ -16,8 +16,8 @@ patch), `verify(Attestation attestation, uint64 maxAge) returns (bool success, u
   disables the verifier's freshness check, which a stateless verifier should not do silently.
 - `EvmDataUpdateTuple` / `EvmSchnorrSignatureTuple` are replaced by `EvmAttestationPayload` /
   `EvmSchnorrSignature` / `EvmAttestation`. Payload members follow ABI order (`value`, `sourceId`,
-  `registryVersion`, `signaturesRequired`, `canonicalTimestamp`), `signaturesRequired` is `uint8`
-  and `canonicalTimestamp` is a `bigint`.
+  `registryVersion`, `signaturesRequired`, `timestamp`), `signaturesRequired` is `uint8`
+  and `timestamp` is a `bigint`.
 - The builder range-checks every integer against its Solidity type and throws `RangeError`
   instead of producing calldata the ABI decoder would revert on.
 
@@ -35,7 +35,7 @@ patch), `verify(Attestation attestation, uint64 maxAge) returns (bool success, u
 **Fixed**
 
 - `attestationMessageHash` / `attestationMessageHashFromResult` now hash
-  `value ‖ sourceId ‖ u32 registryVersion ‖ u8 signaturesRequired ‖ u64 canonicalTimestamp ‖ signersBitmap`,
+  `value ‖ sourceId ‖ u32 registryVersion ‖ u8 signaturesRequired ‖ u64 timestamp ‖ signersBitmap`,
   the preimage the node signer produces and the EVM, Solana and Starknet verifiers check. The
   previous layout matched no current verifier. `signaturesRequired` outside `0..255` now throws
   instead of wrapping.

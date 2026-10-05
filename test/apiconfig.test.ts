@@ -201,7 +201,7 @@ describe("aggregation (median tolerance mode)", () => {
     const canonical = canonicalizeAPIConfig({ ...base, aggregation: shuffled });
     expect(JSON.stringify(canonical)).toBe(GO_PREIMAGE);
     expect(canonical.aggregation).not.toBe(shuffled);
-    // A top-level extra key is dropped as before.
+    // A top-level extra key is dropped.
     expect(
       JSON.stringify(
         canonicalizeAPIConfig({ ...base, aggregation, junk: 1 } as unknown as APIConfig),

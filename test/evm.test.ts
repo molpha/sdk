@@ -20,7 +20,7 @@ const SAMPLE_RESULT: Attestation = {
   payload: {
     sourceId: "aa".repeat(32),
     value: "bb".repeat(32),
-    canonicalTimestamp: 1_700_000_000,
+    timestamp: 1_700_000_000_000,
     registryVersion: 2,
     signaturesRequired: 3,
   },
@@ -42,20 +42,20 @@ const EVM_FIXTURE_RESULT: Attestation = {
   payload: {
     sourceId: "a6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc",
     value: "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb2e",
-    canonicalTimestamp: 1_700_000_000,
+    timestamp: 1_700_000_000_000,
     registryVersion: 12,
     signaturesRequired: 5,
   },
   signature: {
     /** uint256(339) — bits 0, 1, 4, 6, 8. */
     signersBitmap: "00".repeat(30) + "0153",
-    s: "c9dc93909c0274b7a84f6c82fd795b5a47b3c5d2e5d6a00b8c1605c456e7ff78",
-    commitmentAddr: "4A4eEa2ec80f98472b13Fd4787e671e7A233bC5d",
+    s: "8d0597c6d418a8c6397ad832cda1ed2d1d55e2777943bb5ca83160ba9118a4fd",
+    commitmentAddr: "2D91b53b7DAE92B3731d690efc315f2695Bb0975",
   },
   value: "-1234",
   fresh: true,
 };
-const EVM_FIXTURE_MESSAGE_HASH = "840185b8abb1635e5e5f94df05e794c4708657c6a3a2cd354c0158dc91addeab";
+const EVM_FIXTURE_MESSAGE_HASH = "1f081c05ef4dfa658a55dd6e80cd70c34710fce23b771a3422ac079aa09c8da8";
 
 /**
  * `EVM_FIXTURE_RESULT` with `maxAge: 300`, from Foundry independently of this SDK:
@@ -69,9 +69,9 @@ const EVM_FIXTURE_CALLDATA =
   "a6729f7c91f13795a38aa67f4bc816fae5bef9ffbeb4319c69a9242f2e68cdbc" + // sourceId
   "000000000000000000000000000000000000000000000000000000000000000c" + // registryVersion
   "0000000000000000000000000000000000000000000000000000000000000005" + // signaturesRequired
-  "000000000000000000000000000000000000000000000000000000006553f100" + // canonicalTimestamp
-  "c9dc93909c0274b7a84f6c82fd795b5a47b3c5d2e5d6a00b8c1605c456e7ff78" + // signature
-  "0000000000000000000000004a4eea2ec80f98472b13fd4787e671e7a233bc5d" + // commitment
+  "0000000000000000000000000000000000000000000000000000018bcfe56800" + // timestamp (ms)
+  "8d0597c6d418a8c6397ad832cda1ed2d1d55e2777943bb5ca83160ba9118a4fd" + // signature
+  "0000000000000000000000002d91b53b7dae92b3731d690efc315f2695bb0975" + // commitment
   "0000000000000000000000000000000000000000000000000000000000000153" + // signersBitmap
   "000000000000000000000000000000000000000000000000000000000000012c"; // maxAge
 
@@ -132,7 +132,7 @@ describe("buildEvmVerifierArgs", () => {
         sourceId: `0x${"aa".repeat(32)}`,
         registryVersion: 2,
         signaturesRequired: 3,
-        canonicalTimestamp: 1_700_000_000n,
+        timestamp: 1_700_000_000_000n,
       },
       signature: {
         signature: `0x${"cc".repeat(32)}`,
@@ -145,7 +145,7 @@ describe("buildEvmVerifierArgs", () => {
       "sourceId",
       "registryVersion",
       "signaturesRequired",
-      "canonicalTimestamp",
+      "timestamp",
     ]);
     expect(maxAge).toBe(300n);
   });
@@ -173,7 +173,7 @@ describe("buildEvmVerifierArgs", () => {
     expect(() => build({ signaturesRequired: 256 })).toThrow(/signaturesRequired/);
     expect(() => build({ signaturesRequired: -1 })).toThrow(/signaturesRequired/);
     expect(() => build({ registryVersion: 2 ** 32 })).toThrow(/registryVersion/);
-    expect(() => build({ canonicalTimestamp: 1.5 })).toThrow(/canonicalTimestamp/);
+    expect(() => build({ timestamp: 1.5 })).toThrow(/timestamp/);
     expect(() => build({}, {}, -1)).toThrow(/maxAge/);
     expect(() => build({}, {}, 1n << 64n)).toThrow(/maxAge/);
     expect(() => build({}, { commitmentAddr: "dd".repeat(21) })).toThrow(/commitment/);
@@ -219,9 +219,9 @@ describe("encodeEvmVerifyCalldata", () => {
     expect(() =>
       encodeEvmVerifyCalldata({
         ...args,
-        attestation: { payload: { ...payload, canonicalTimestamp: 1n << 64n }, signature },
+        attestation: { payload: { ...payload, timestamp: 1n << 64n }, signature },
       }),
-    ).toThrow(/canonicalTimestamp/);
+    ).toThrow(/timestamp/);
     expect(() =>
       encodeEvmVerifyCalldata({
         ...args,

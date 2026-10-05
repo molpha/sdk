@@ -1,5 +1,5 @@
 /**
- * Unified wallet surface: Anchor txs + optional gateway authSig signing.
+ * Unified wallet surface: Anchor txs + gateway request-auth signing.
  */
 import type { Wallet } from "@anchor-lang/core";
 import { ed25519 } from "@noble/curves/ed25519.js";

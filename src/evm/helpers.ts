@@ -34,8 +34,8 @@ export interface EvmAttestationPayload {
   registryVersion: number;
   /** `uint8`. */
   signaturesRequired: number;
-  /** `uint64`, unix seconds. */
-  canonicalTimestamp: bigint;
+  /** `uint64`, unix MILLISECONDS (`timestamp / 1000` is the seconds the verifier's `maxAge` uses). */
+  timestamp: bigint;
 }
 
 /** `IVerifier.SchnorrSignature`. */
@@ -181,7 +181,7 @@ export function buildEvmVerifierArgs(
     sourceId: toFixedHex(signed.sourceId, 32, "sourceId"),
     registryVersion: assertUint(signed.registryVersion, U32_MAX, "registryVersion"),
     signaturesRequired: assertUint(signed.signaturesRequired, U8_MAX, "signaturesRequired"),
-    canonicalTimestamp: assertBigUint(signed.canonicalTimestamp, U64_MAX, "canonicalTimestamp"),
+    timestamp: assertBigUint(signed.timestamp, U64_MAX, "timestamp"),
   };
 
   const signature: EvmSchnorrSignature = {
@@ -200,7 +200,7 @@ export function buildEvmVerifierArgs(
  * ABI calldata for `verify(attestation, maxAge)`: the 4-byte selector followed by nine
  * 32-byte words. Both structs are static, so they encode inline with no offsets:
  *
- * `value, sourceId, registryVersion, signaturesRequired, canonicalTimestamp, signature,
+ * `value, sourceId, registryVersion, signaturesRequired, timestamp, signature,
  *  commitment, signersBitmap, maxAge`
  *
  * For a raw `eth_call` (`{ to: verifier, data }`).
@@ -215,7 +215,7 @@ export function encodeEvmVerifyCalldata(args: EvmVerifierArgs): `0x${string}` {
     u256beFromBigInt(
       BigInt(assertUint(payload.signaturesRequired, U8_MAX, "signaturesRequired")),
     ),
-    u256beFromBigInt(assertBigUint(payload.canonicalTimestamp, U64_MAX, "canonicalTimestamp")),
+    u256beFromBigInt(assertBigUint(payload.timestamp, U64_MAX, "timestamp")),
     word(signature.signature, 32, "signature"),
     word(signature.commitment, 20, "commitment"),
     u256beFromBigInt(assertBigUint(signature.signersBitmap, U256_MAX, "signersBitmap")),

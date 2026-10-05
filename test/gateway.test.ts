@@ -8,6 +8,7 @@ import { bytesToHex, hexToBytes } from "../src/core/encoding.js";
 import { hashRequestAuth } from "../src/gateway/auth.js";
 import { addressToBytes, deriveGatewayPda } from "../src/gateway/identity.js";
 import { MolphaGateway } from "../src/gateway/index.js";
+import { signedResponseBody, type SignedResponseFields } from "./fixtures/gatewayResponse.js";
 
 const SUBSCRIPTION_OWNER = "9K9FknHzW7j8a88yKTrzxKfDrxnV2QLqSR58ETAVdc8P";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
@@ -62,14 +63,13 @@ function mockFetch(routes: MockRoutes) {
       if (!routes.info) throw new Error(`unexpected fetch: ${url}`);
       return routes.info(url, init);
     }
-    if (url.endsWith("/nodes")) return jsonResponse(nodes);
+    if (url.endsWith("/nodes")) return jsonResponse({ status: "ok", data: { nodes } });
     if (url.endsWith("/health")) return jsonResponse({ ok: true });
     throw new Error(`unexpected fetch: ${url}`);
   });
 }
 
-const completed = (extra: Record<string, unknown> = {}) =>
-  jsonResponse({ status: "completed", value: "1", ...extra });
+const completed = (extra: SignedResponseFields = {}) => jsonResponse(signedResponseBody(extra));
 
 const baseRequest = {
   signaturesRequired: 1,
@@ -83,6 +83,7 @@ function ed25519Signer() {
   return { publicKey, signer: async (msg: Uint8Array) => ed25519.sign(msg, secret) };
 }
 
+/** Does `body.authSig` verify for the RequestAuth the gateway at `gatewayAuthority` rebuilds? */
 async function expectedAuthSig(
   publicKey: Uint8Array,
   body: Record<string, unknown>,
@@ -93,7 +94,7 @@ async function expectedAuthSig(
     gateway: await deriveGatewayPda(gatewayAuthority, MOLPHA_PROGRAM_ID),
     sourceId: body.sourceId as string,
     signaturesRequired: body.signaturesRequired as number,
-    timestamp: body.timestamp as number,
+    authTimestamp: body.authTimestamp as number,
   });
   return ed25519.verify(hexToBytes(body.authSig as string), message, publicKey);
 }
@@ -106,16 +107,10 @@ describe("MolphaGateway.requestSignedData failover", () => {
   it("returns the result when a gateway completes", async () => {
     globalThis.fetch = mockFetch({
       execute: () =>
-        jsonResponse({
-          status: "completed",
+        completed({
           sourceId: SOURCE_ID,
           value: "100",
-          valuePacked: "00".repeat(32),
-          signersBitmap: "00".repeat(31) + "01",
-          s: "aa".repeat(32),
-          commitmentAddr: "bb".repeat(20),
           signaturesRequired: 1,
-          fresh: true,
         }),
     }) as unknown as typeof fetch;
 
@@ -126,7 +121,7 @@ describe("MolphaGateway.requestSignedData failover", () => {
     expect(result.signature.commitmentAddr).toBe("bb".repeat(20));
   });
 
-  it("parses the gateway's nested `attestation` body (current AttestationResponse)", async () => {
+  it("parses the gateway's `attestation` body (AttestationResponse)", async () => {
     globalThis.fetch = mockFetch({
       execute: () =>
         jsonResponse({
@@ -138,7 +133,7 @@ describe("MolphaGateway.requestSignedData failover", () => {
                 sourceId: SOURCE_ID,
                 registryVersion: 4,
                 signaturesRequired: 1,
-                canonicalTimestamp: 1_700_000_123,
+                timestamp: 1_700_000_123,
               },
               signature: {
                 signature: "aa".repeat(32),
@@ -161,7 +156,7 @@ describe("MolphaGateway.requestSignedData failover", () => {
     expect(result.payload).toEqual({
       sourceId: SOURCE_ID,
       value: "00".repeat(31) + "64",
-      canonicalTimestamp: 1_700_000_123,
+      timestamp: 1_700_000_123,
       registryVersion: 4,
       signaturesRequired: 1,
     });
@@ -251,7 +246,7 @@ describe("MolphaGateway.requestSignedData failover", () => {
     const handler = vi.fn((url: string) =>
       url.startsWith("http://gw1")
         ? jsonResponse({ error: "busy" }, 503)
-        : jsonResponse({ status: "completed", value: "7" }),
+        : completed({ value: "7" }),
     );
     globalThis.fetch = mockFetch({ execute: handler }) as unknown as typeof fetch;
 
@@ -278,7 +273,7 @@ describe("MolphaGateway.requestSignedData failover", () => {
 });
 
 describe("MolphaGateway request auth", () => {
-  it("uses defaultSigner over the program id and the endpoint's Gateway PDA", async () => {
+  it("signs RequestAuth with defaultSigner over the program id and the endpoint's Gateway PDA", async () => {
     const defaultSigner = vi.fn(async (_msg: Uint8Array) => new Uint8Array(64).fill(0xab));
     let postedBody: Record<string, unknown> | undefined;
     globalThis.fetch = mockFetch({
@@ -306,9 +301,75 @@ describe("MolphaGateway request auth", () => {
         gateway: await deriveGatewayPda(GATEWAY_AUTHORITY_1, MOLPHA_PROGRAM_ID),
         sourceId: SOURCE_ID,
         signaturesRequired: 1,
-        timestamp: postedBody!.timestamp as number,
+        authTimestamp: postedBody!.authTimestamp as number,
       }),
     );
+  });
+
+  it("posts authSig and authTimestamp but no round timestamp", async () => {
+    const { signer } = ed25519Signer();
+    let postedBody: Record<string, unknown> | undefined;
+    globalThis.fetch = mockFetch({
+      execute: (_url, body) => {
+        postedBody = body;
+        return completed();
+      },
+    }) as unknown as typeof fetch;
+
+    const gw = new MolphaGateway(
+      { url: "http://gw1", gatewayAuthority: GATEWAY_AUTHORITY_1 },
+      registry,
+      signer,
+      SUBSCRIPTION_OWNER,
+    );
+    await gw.requestSignedData({ signaturesRequired: 1, apiConfig });
+
+    expect(postedBody).toHaveProperty("authSig");
+    expect(postedBody).toHaveProperty("authTimestamp");
+    expect(postedBody).not.toHaveProperty("timestamp");
+    expect(postedBody?.consumerAuthority).toBe(SUBSCRIPTION_OWNER);
+    expect(postedBody?.subscriptionOwner).toBe(SUBSCRIPTION_OWNER);
+  });
+
+  it("authTimestamp is unix seconds from the SDK clock and fresh for every attempt", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(1_750_000_000_900));
+      const { publicKey, signer } = ed25519Signer();
+      const bodies: Record<string, unknown>[] = [];
+      globalThis.fetch = mockFetch({
+        execute: (_url, body) => {
+          bodies.push(body);
+          // A 409 (same tick); the next attempt happens 5 s of local clock later.
+          if (bodies.length === 1) {
+            vi.setSystemTime(new Date(1_750_000_005_900));
+            return jsonResponse({ error: "duplicate round" }, 409);
+          }
+          return completed();
+        },
+      }) as unknown as typeof fetch;
+
+      const gw = new MolphaGateway(
+        { url: "http://gw1", gatewayAuthority: GATEWAY_AUTHORITY_1 },
+        registry,
+        signer,
+        SUBSCRIPTION_OWNER,
+      );
+      // tickMs 1 keeps the (real) inter-attempt sleep negligible; Date is the faked clock.
+      await gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 2, tickMs: 1 });
+
+      expect(bodies).toHaveLength(2);
+      // Seconds, not milliseconds: floor(ms / 1000).
+      expect(bodies[0]!.authTimestamp).toBe(1_750_000_000);
+      expect(bodies[1]!.authTimestamp).toBe(1_750_000_005);
+      expect(bodies[0]!.authSig).not.toBe(bodies[1]!.authSig);
+      for (const body of bodies) {
+        expect(body).not.toHaveProperty("timestamp");
+        expect(await expectedAuthSig(publicKey, body, GATEWAY_AUTHORITY_1)).toBe(true);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("prefers per-call signer over defaultSigner", async () => {
@@ -435,43 +496,24 @@ describe("MolphaGateway request auth", () => {
     expect(await expectedAuthSig(publicKey, postedBody!, GATEWAY_AUTHORITY_2)).toBe(true);
   });
 
-  it("times out a hanging /v1/info and fails over to the next endpoint", async () => {
-    const { publicKey, signer } = ed25519Signer();
-    let postedBody: Record<string, unknown> | undefined;
-    globalThis.fetch = mockFetch({
-      info: (url, init) => {
-        if (url.startsWith("http://gw1")) {
-          return new Promise<Response>((_resolve, reject) => {
-            const signal = init?.signal;
-            if (!signal) return;
-            if (signal.aborted) {
-              reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
-              return;
-            }
-            signal.addEventListener("abort", () => {
-              reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
-            });
-          });
-        }
-        return jsonResponse({ status: "ok", data: { gatewayAuthority: GATEWAY_AUTHORITY_2 } });
-      },
-      execute: (_url, body) => {
-        postedBody = body;
-        return completed({ value: "9" });
-      },
-    }) as unknown as typeof fetch;
+  it("treats a 401 as terminal", async () => {
+    const { signer } = ed25519Signer();
+    const execute = vi.fn(() => jsonResponse({ error: "authSig does not verify" }, 401));
+    globalThis.fetch = mockFetch({ execute }) as unknown as typeof fetch;
 
-    const gw = new MolphaGateway(["http://gw1", "http://gw2"], registry, signer, SUBSCRIPTION_OWNER);
-    const result = await gw.requestSignedData({
-      signaturesRequired: 1,
-      apiConfig,
-      timeoutMs: 50,
+    const gw = new MolphaGateway(
+      { url: "http://gw1", gatewayAuthority: GATEWAY_AUTHORITY_1 },
+      registry,
+      signer,
+      SUBSCRIPTION_OWNER,
+    );
+    await expect(gw.requestSignedData({ signaturesRequired: 1, apiConfig })).rejects.toMatchObject({
+      status: 401,
     });
-    expect(result.value).toBe("9");
-    expect(await expectedAuthSig(publicKey, postedBody!, GATEWAY_AUTHORITY_2)).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it("never contacts /v1/info without a signer", async () => {
+  it("without a signer, sends an all-zero authSig and never contacts /v1/info", async () => {
     const fetchSpy = mockFetch({ execute: () => completed() });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
@@ -479,6 +521,72 @@ describe("MolphaGateway request auth", () => {
     await gw.requestSignedData(baseRequest);
     const fetched = fetchSpy.mock.calls.map(([input]) => String(input));
     expect(fetched.some((url) => url.endsWith("/v1/info"))).toBe(false);
+    const posted = JSON.parse(
+      String(fetchSpy.mock.calls.find(([, init]) => init?.method === "POST")?.[1]?.body),
+    );
+    expect(posted.authSig).toBe("0x" + "00".repeat(64));
+    expect(posted).toHaveProperty("authTimestamp");
+  });
+});
+
+describe("MolphaGateway round timestamp", () => {
+  it("takes the timestamp and signer bitmap from the response", async () => {
+    globalThis.fetch = mockFetch({
+      execute: () => completed({ timestamp: 1_750_000_123_000, signersBitmap: "00".repeat(31) + "05" }),
+    }) as unknown as typeof fetch;
+
+    const result = await new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER).requestSignedData({
+      signaturesRequired: 1,
+      apiConfig,
+    });
+    expect(result.payload.timestamp).toBe(1_750_000_123_000);
+    expect(result.signature.signersBitmap).toBe("00".repeat(31) + "05");
+  });
+
+  it("refuses a response without the assigned timestamp or the signers", async () => {
+    for (const missing of ["timestamp", "signersBitmap"] as const) {
+      globalThis.fetch = mockFetch({
+        execute: () => completed({ [missing]: undefined }),
+      }) as unknown as typeof fetch;
+      await expect(
+        new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER).requestSignedData({
+          signaturesRequired: 1,
+          apiConfig,
+          maxRetries: 1,
+        }),
+      ).rejects.toThrow(new RegExp(`missing ${missing}`));
+    }
+  });
+
+  it("a retry waits for a later tick: the same tick would be a duplicate round", async () => {
+    const posts: number[] = [];
+    globalThis.fetch = mockFetch({
+      execute: () => {
+        posts.push(Date.now());
+        return posts.length === 1 ? jsonResponse({ error: "duplicate round" }, 409) : completed();
+      },
+    }) as unknown as typeof fetch;
+
+    const gw = new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER);
+    const result = await gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 3, tickMs: 40 });
+    expect(result.value).toBe("1");
+    expect(posts).toHaveLength(2);
+    // The second attempt starts on a later 40 ms tick than the first.
+    expect(Math.floor(posts[1]! / 40)).toBeGreaterThan(Math.floor(posts[0]! / 40));
+  });
+
+  it("checks a gateway's program with fetchGatewayInfo, not on every request", async () => {
+    globalThis.fetch = mockFetch({
+      info: () =>
+        jsonResponse({
+          status: "ok",
+          data: { gatewayAuthority: GATEWAY_AUTHORITY_1, programId: SYSTEM_PROGRAM },
+        }),
+      execute: () => completed(),
+    }) as unknown as typeof fetch;
+
+    const gw = new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER);
+    await expect(gw.fetchGatewayInfo("http://gw1")).rejects.toThrow(/settles against program/);
   });
 });
 
@@ -514,7 +622,7 @@ describe("MolphaGateway node count", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("derives the selection from nodeCount when encrypting", async () => {
+  it("authenticates and encrypts for every registry node, not a selection", async () => {
     const verifyNodeKeys = vi.fn(async (_args: unknown) => undefined);
     globalThis.fetch = mockFetch({ execute: () => completed() }) as unknown as typeof fetch;
 
@@ -528,10 +636,9 @@ describe("MolphaGateway node count", () => {
       encrypt: privateApiEncrypt,
       context: { registryVersion: 1, redundancyBuffer: 5, nodeCount: 3, nodes: encryptedNodes },
     });
-    // groupSize = min(3 + 5, nodeCount 3) = 3
-    expect(
-      (verifyNodeKeys.mock.calls[0]?.[0] as { selectedIndexes: number[] }).selectedIndexes,
-    ).toEqual([0, 1, 2]);
+    // The committee depends on the gateway-assigned timestamp, so it is unknown here: every node of
+    // the registry is a recipient.
+    expect((verifyNodeKeys.mock.calls[0]?.[0] as { nodeIndexes: number[] }).nodeIndexes).toEqual([0, 1, 2]);
   });
 });
 
@@ -575,7 +682,7 @@ describe("MolphaGateway response validation", () => {
     expect(result).toMatchObject({
       payload: {
         sourceId: SOURCE_ID,
-        canonicalTimestamp: 5,
+        timestamp: 5,
         registryVersion: 0,
       },
       signature: { signersBitmap: "00".repeat(31) + "02" },
@@ -586,7 +693,7 @@ describe("MolphaGateway response validation", () => {
 
 describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
   it("skips the prelude fetches when a full context is supplied", async () => {
-    const fetchSpy = mockFetch({ execute: () => completed({ value: "42" }) });
+    const fetchSpy = mockFetch({ execute: () => completed({ value: "42", registryVersion: 7 }) });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
     const getRegistrySelectionConfig = vi.fn(async () => ({ registryVersion: 1, redundancyBuffer: 2 }));
 
@@ -640,13 +747,16 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     expect(getRegistrySelectionConfig).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the cached redundancyBuffer for selection size", async () => {
+  it("encrypts for every cached node whatever the redundancy buffer", async () => {
     const verifyNodeKeys = vi.fn(async (_args: unknown) => undefined);
-    globalThis.fetch = mockFetch({ execute: () => completed() }) as unknown as typeof fetch;
-    const getRegistrySelectionConfig = vi.fn(async () => ({
-      registryVersion: 1,
-      redundancyBuffer: 2,
-    }));
+    const postedBodies: Record<string, unknown>[] = [];
+    globalThis.fetch = mockFetch({
+      execute: (_url, body) => {
+        postedBodies.push(body);
+        return completed();
+      },
+    }) as unknown as typeof fetch;
+    const getRegistrySelectionConfig = vi.fn(async () => ({ registryVersion: 1, redundancyBuffer: 2 }));
 
     const gw = new MolphaGateway("http://gw1", getRegistrySelectionConfig, undefined, {
       verifyNodeKeys,
@@ -656,21 +766,15 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
       signaturesRequired: 1,
       apiConfig: privateApiConfig,
       encrypt: privateApiEncrypt,
-      context: {
-        registryVersion: 1,
-        // On-chain buffer lowered to 0 — select only signaturesRequired nodes.
-        redundancyBuffer: 0,
-        nodes: encryptedNodes,
-      },
+      // A buffer of 0 would select a single node; the committee is unknown at encryption time, so
+      // the envelope set cannot depend on it.
+      context: { registryVersion: 1, redundancyBuffer: 0, nodes: encryptedNodes },
     });
-
-    expect(getRegistrySelectionConfig).not.toHaveBeenCalled();
-    expect((verifyNodeKeys.mock.calls[0]?.[0] as { selectedIndexes: number[] }).selectedIndexes)
-      .toHaveLength(1);
+    expect((verifyNodeKeys.mock.calls[0]?.[0] as { nodeIndexes: number[] }).nodeIndexes).toEqual([0, 1, 2]);
+    const envelopes = (postedBodies[0]?.encKeyBundle as { envelopes: Record<string, string> }).envelopes;
+    expect(Object.keys(envelopes).sort()).toEqual(["0", "1", "2"]);
   });
-});
 
-describe("MolphaGateway.requestSignedData private API encryption node key verification", () => {
   it("throws by default when encrypt.secrets is used without a verifier", async () => {
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
@@ -738,8 +842,8 @@ describe("MolphaGateway.requestSignedData private API encryption node key verifi
     expect(verifyNodeKeys.mock.calls[0]?.[0]).toMatchObject({
       sourceId: deriveSourceIdString(privateApiConfig),
       registryVersion: 1,
-      selectedIndexes: [0, 1, 2],
-      selectedNodes: encryptedNodes,
+      nodeIndexes: [0, 1, 2],
+      nodes: encryptedNodes,
     });
     expect(postedBody?.sourceId).toBe(deriveSourceIdString(privateApiConfig));
     expect(postedBody?.encKeyBundle).toMatchObject({
@@ -850,24 +954,18 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
   // 42150.12345678 at 8 decimals, as a signed int256 word.
   const PACKED = "00".repeat(26) + "03d56250474e";
 
-  const toleranceResponse = (extra: Record<string, unknown> = {}) =>
-    jsonResponse({
-      status: "completed",
-      data: {
-        sourceId: TOLERANCE_SOURCE_ID,
-        configHash: TOLERANCE_SOURCE_ID,
-        value: "stale-display-value",
-        valuePacked: PACKED,
-        signersBitmap: "00".repeat(31) + "0e",
-        s: "aa".repeat(32),
-        commitmentAddr: "bb".repeat(20),
-        signaturesRequired: 3,
-        fresh: true,
-        ...extra,
-      },
+  const toleranceResponse = (extra: SignedResponseFields = {}) =>
+    completed({
+      sourceId: TOLERANCE_SOURCE_ID,
+      configHash: TOLERANCE_SOURCE_ID,
+      value: "stale-display-value",
+      valuePacked: PACKED,
+      signersBitmap: "00".repeat(31) + "0e",
+      signaturesRequired: 3,
+      ...extra,
     });
 
-  it("renders a tolerance value from the nested attestation's signed payload.value", async () => {
+  it("renders a tolerance value from the attestation's signed payload.value", async () => {
     globalThis.fetch = mockFetch({
       execute: () =>
         jsonResponse({
@@ -879,7 +977,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
                 sourceId: TOLERANCE_SOURCE_ID,
                 registryVersion: 4,
                 signaturesRequired: 3,
-                canonicalTimestamp: 1_700_000_123,
+                timestamp: 1_700_000_123,
               },
               signature: {
                 signature: "aa".repeat(32),
@@ -1009,7 +1107,8 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
   });
 
   it("requires the signed fields in a tolerance response", async () => {
-    for (const missing of ["valuePacked", "signersBitmap", "s", "commitmentAddr"]) {
+    const labels = { valuePacked: "value", signersBitmap: "signersBitmap", s: "s", commitmentAddr: "commitmentAddr" } as const;
+    for (const missing of ["valuePacked", "signersBitmap", "s", "commitmentAddr"] as const) {
       globalThis.fetch = mockFetch({
         execute: () => toleranceResponse({ [missing]: undefined }),
       }) as unknown as typeof fetch;
@@ -1020,7 +1119,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
           apiConfig: toleranceConfig,
           maxRetries: 1,
         }),
-      ).rejects.toThrow(new RegExp(`missing ${missing}`));
+      ).rejects.toThrow(new RegExp(`missing ${labels[missing]}`));
     }
   });
 
