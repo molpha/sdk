@@ -16,19 +16,22 @@ import {
 import type { Attestation } from "../src/core/types.js";
 
 /**
- * Shared fixture: Rust `tests/fixtures/mod.rs`, Go `internal/round/message_test.go`, and EVM
+ * Shared fixture (unix-millisecond timestamp): Rust `tests/fixtures/mod.rs`, Go
+ * `internal/round/message_test.go`, the gateway's `ticket_test.go`, and EVM
  * `MessageFormatSpec.t.sol::test_constructMessage_matchesRustAndSdkSharedVector`.
+ * Hashes below were recomputed independently with the stdlib keccak256 in
+ * `molpha-verifier/scripts/gen_fixture.py`.
  */
 const VECTOR = {
   sourceId: "41b87cd1b00231a5caebdfbc3e352d92bb0ec116335cc3544278a4bac95071a7",
   registryVersion: 12,
   signaturesRequired: 5,
   value: "12cd90a4cd4351a26f2bd02583d791ae1b1a3285853a3315e718db8d7b85a62d",
-  canonicalTimestamp: 1_705_257_421,
+  timestamp: 1_705_257_421_000, // unix milliseconds
   /** uint256(4008) — bits 3, 5, 7, 8, 9, 10, 11. */
   signersBitmap: "00".repeat(30) + "0fa8",
 };
-const EXPECTED = "52e92f58c9c128d2f7e0be6165c4d58f843c39e828c12fcad8cdc566152f2bb1";
+const EXPECTED = "e1bedfeec7c869576b3a5048215e2be458a02f73ad3736d34d091c363b9dd54f";
 
 /** Digests the EVM verifier (`molpha-core-contracts`) pins for other inputs. */
 const EVM_VECTORS = [
@@ -39,10 +42,10 @@ const EVM_VECTORS = [
       registryVersion: 7,
       signaturesRequired: 3,
       value: "00".repeat(28) + "deadbeef",
-      canonicalTimestamp: 1_699_965_440,
+      timestamp: 1_699_965_440_000,
       signersBitmap: "00".repeat(31) + "83",
     },
-    expected: "7527b765799e48db80cefdd8c8cf76fd1e8feed2838eee5ba7ab862d920b5e61",
+    expected: "d4b03dd5a71d9afbac41567f7409f2723943191b30243332b56143320d749838",
   },
   {
     name: "fixtures/fixture.json",
@@ -51,10 +54,10 @@ const EVM_VECTORS = [
       registryVersion: 12,
       signaturesRequired: 5,
       value: "c6d8f1c0fdb8997313cbc4bc43b46af78589ba4bb9036707097db8b33879d6c6",
-      canonicalTimestamp: 1_700_034_927,
+      timestamp: 1_700_034_927_000,
       signersBitmap: "00".repeat(30) + "07f0",
     },
-    expected: "a3e58f5c157c98cad4fd8478fd39b18da85f4ad2d581db06b724f53b55afc5b3",
+    expected: "58489d3ded5f129c6fca09a174ff0dcf35c58f70c560e2d5ce538ef10c3bbb3e",
   },
   {
     name: "fixtures/attestation.json kindB-tuple",
@@ -63,10 +66,10 @@ const EVM_VECTORS = [
       registryVersion: 12,
       signaturesRequired: 5,
       value: "47869257dae795e85b30cb6a0ac7f82fe977ec5ced28d96a70f3fe2cb514ff1a",
-      canonicalTimestamp: 1_700_000_000,
+      timestamp: 1_700_000_000_000,
       signersBitmap: "00".repeat(30) + "0153",
     },
-    expected: "0c9f7a402576e4df66820f04379b92039b9629b872d40aec0b3ec77d6b031a48",
+    expected: "73e42f102997909d3a191cfbf210efba1564f263847b527fe8472784ff070965",
   },
 ];
 
@@ -95,7 +98,7 @@ describe("attestationMessageHash", () => {
       hexToBytes(VECTOR.sourceId),
       u32be(VECTOR.registryVersion),
       Uint8Array.of(VECTOR.signaturesRequired),
-      u64be(VECTOR.canonicalTimestamp),
+      u64be(VECTOR.timestamp),
       hexToBytes(VECTOR.signersBitmap),
     );
     expect(preimage).toHaveLength(141);
@@ -109,7 +112,7 @@ describe("attestationMessageHash", () => {
       sourceId: hexToBytes(VECTOR.sourceId),
       value: hexToBytes(VECTOR.value),
       signersBitmap: hexToBytes(VECTOR.signersBitmap),
-      canonicalTimestamp: BigInt(VECTOR.canonicalTimestamp),
+      timestamp: BigInt(VECTOR.timestamp),
     });
     const with0x = attestationMessageHash({
       ...VECTOR,
@@ -128,7 +131,7 @@ describe("attestationMessageHash", () => {
       { ...VECTOR, signaturesRequired: 6 },
       { ...VECTOR, signersBitmap: "00".repeat(30) + "0fa9" },
       { ...VECTOR, value: "00" + VECTOR.value.slice(2) },
-      { ...VECTOR, canonicalTimestamp: VECTOR.canonicalTimestamp + 1 },
+      { ...VECTOR, timestamp: VECTOR.timestamp + 1 },
     ];
     for (const variant of variants) {
       expect(bytesToHex(attestationMessageHash(variant))).not.toBe(base);
@@ -157,7 +160,7 @@ describe("attestationMessageHashFromAttestation", () => {
       payload: {
         sourceId: VECTOR.sourceId,
         value: VECTOR.value,
-        canonicalTimestamp: VECTOR.canonicalTimestamp,
+        timestamp: VECTOR.timestamp,
         registryVersion: VECTOR.registryVersion,
         signaturesRequired: VECTOR.signaturesRequired,
       },
@@ -170,5 +173,15 @@ describe("attestationMessageHashFromAttestation", () => {
       fresh: true,
     };
     expect(bytesToHex(attestationMessageHashFromAttestation(attestation))).toBe(EXPECTED);
+  });
+});
+
+describe("millisecond timestamp", () => {
+  it("the timestamp is signed as milliseconds: the same instant in seconds is a different message", () => {
+    expect(bytesToHex(attestationMessageHash({ ...VECTOR, timestamp: VECTOR.timestamp / 1000 }))).not.toBe(EXPECTED);
+  });
+
+  it("one millisecond changes the message", () => {
+    expect(bytesToHex(attestationMessageHash({ ...VECTOR, timestamp: VECTOR.timestamp + 1 }))).not.toBe(EXPECTED);
   });
 });

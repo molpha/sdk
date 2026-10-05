@@ -2,7 +2,7 @@
  * `MolphaSolanaClient.submitAttestation`: remaining accounts, coalition key and argument
  * shape, with the Anchor account / method namespaces stubbed (no RPC).
  */
-import { AnchorProvider, Program, Wallet, web3 } from "@anchor-lang/core";
+import { Program, Wallet, web3 } from "@anchor-lang/core";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { describe, expect, it, vi } from "vitest";
 import { bytesToHex, hexToBytes } from "../src/core/encoding.js";
@@ -18,7 +18,7 @@ const result: Attestation = {
   payload: {
     sourceId: "41b87cd1b00231a5caebdfbc3e352d92bb0ec116335cc3544278a4bac95071a7",
     value: "12cd90a4cd4351a26f2bd02583d791ae1b1a3285853a3315e718db8d7b85a62d",
-    canonicalTimestamp: 1_705_257_421,
+    timestamp: 1_705_257_421,
     registryVersion: 12,
     signaturesRequired: 5,
   },

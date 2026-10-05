@@ -26,7 +26,7 @@ export const MOLPHA_VERIFIER_ABI = [
               { name: "sourceId", type: "bytes32", internalType: "bytes32" },
               { name: "registryVersion", type: "uint32", internalType: "uint32" },
               { name: "signaturesRequired", type: "uint8", internalType: "uint8" },
-              { name: "canonicalTimestamp", type: "uint64", internalType: "uint64" },
+              { name: "timestamp", type: "uint64", internalType: "uint64" },
             ],
           },
           {

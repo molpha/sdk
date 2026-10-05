@@ -26,10 +26,21 @@ describe("deriveSelectionSeed", () => {
         keccak_256(utf8("MOLPHA_SELECTION_V1")),
         sourceId,
         u32be(3),
-        u64be(1_700_000_000),
+        u64be(1_700_000_000), // the 1 s window index of the millisecond timestamp
       ),
     );
-    expect(deriveSelectionSeed(sourceId, 3, 1_700_000_000)).toEqual(expected);
+    expect(deriveSelectionSeed(sourceId, 3, 1_700_000_000_000)).toEqual(expected);
+  });
+
+  it("reads only the one-second window of the millisecond timestamp", () => {
+    const base = 1_700_000_000_000;
+    const seed = deriveSelectionSeed(sourceId, 3, base);
+    for (const offset of [1, 250, 999]) {
+      expect(deriveSelectionSeed(sourceId, 3, base + offset)).toEqual(seed);
+    }
+    expect(deriveSelectionSeed(sourceId, 3, base + 1000)).not.toEqual(seed);
+    expect(deriveSelectionSeed(sourceId, 3, base - 1)).not.toEqual(seed);
+    expect(deriveSelectionSeed(sourceId, 3, BigInt(base))).toEqual(seed);
   });
 });
 

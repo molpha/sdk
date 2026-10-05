@@ -4629,7 +4629,7 @@
     {
       "code": 6030,
       "name": "FeedNotNewer",
-      "msg": "canonical_timestamp <= feed.canonical_timestamp"
+      "msg": "timestamp <= feed.timestamp"
     },
     {
       "code": 6031,
@@ -4774,12 +4774,12 @@
     {
       "code": 6059,
       "name": "AttestationTooStale",
-      "msg": "canonical_timestamp is older than now - max_settlement_delay_seconds"
+      "msg": "timestamp is older than now - max_settlement_delay_seconds"
     },
     {
       "code": 6060,
       "name": "AttestationInFuture",
-      "msg": "canonical_timestamp is further ahead of cluster time than the allowed drift"
+      "msg": "timestamp is further ahead of cluster time than the allowed drift"
     },
     {
       "code": 6061,
@@ -4904,7 +4904,7 @@
     {
       "code": 6085,
       "name": "RoundOutsideEpoch",
-      "msg": "canonical_timestamp is outside the epoch window"
+      "msg": "timestamp is outside the epoch window"
     },
     {
       "code": 6086,
@@ -5061,7 +5061,7 @@
             "type": "u8"
           },
           {
-            "name": "canonical_timestamp",
+            "name": "timestamp",
             "type": "u64"
           }
         ]
@@ -5712,7 +5712,7 @@
             "type": "pubkey"
           },
           {
-            "name": "canonical_timestamp",
+            "name": "timestamp",
             "type": "u64"
           },
           {
@@ -5758,7 +5758,7 @@
             "type": "u32"
           },
           {
-            "name": "canonical_timestamp",
+            "name": "timestamp",
             "type": "u64"
           },
           {
@@ -6813,7 +6813,7 @@
           {
             "name": "max_settlement_delay_seconds",
             "docs": [
-              "Max age in seconds of `canonical_timestamp` relative to cluster time at attestation",
+              "Max age in seconds of `timestamp` relative to cluster time at attestation",
               "ingress, and the grace period of a superseded registry version."
             ],
             "type": "u64"

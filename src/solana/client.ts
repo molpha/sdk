@@ -7,7 +7,6 @@
 import {
   AnchorProvider,
   Program,
-  web3,
   type Idl,
   type Wallet,
 } from "@anchor-lang/core";
@@ -78,8 +77,7 @@ export interface PlanInfo {
 }
 
 /**
- * On-chain `Subscription`. The program no longer tracks usage: `used_rounds`,
- * `prepaid_usdc` and the locked `price` were removed (round quota is counted by the
+ * On-chain `Subscription`. The program does not track usage (round quota is counted by the
  * gateway's off-chain outbox), so there is no on-chain "rounds used" figure to read.
  */
 export interface SubscriptionInfo {
@@ -112,8 +110,8 @@ export interface FeedAccount {
   value: Uint8Array | number[];
   valueKind: { value: Record<string, never> } | { hash: Record<string, never> };
   submitter: Address;
-  /** u64 unix seconds. */
-  canonicalTimestamp: BN;
+  /** u64 unix MILLISECONDS (the round's gateway-assigned timestamp). */
+  timestamp: BN;
   signaturesRequired: number;
   signersBitmap: number[];
   registryVersion: number;
@@ -128,7 +126,7 @@ export interface SubmitAttestationArgs {
       sourceId: number[];
       registryVersion: number;
       signaturesRequired: number;
-      canonicalTimestamp: BN;
+      timestamp: BN;
     };
     signature: {
       aggSigS: number[];
@@ -565,7 +563,7 @@ export function buildSubmitAttestationArgs(
         sourceId: Array.from(toFixedBytes(payload.sourceId, 32, "sourceId")),
         registryVersion: payload.registryVersion,
         signaturesRequired: payload.signaturesRequired,
-        canonicalTimestamp: new BN(payload.canonicalTimestamp),
+        timestamp: new BN(payload.timestamp),
       },
       signature: {
         aggSigS: Array.from(toFixedBytes(signature.s, 32, "signature.s")),
@@ -642,17 +640,17 @@ function nodeCoordinate(
 }
 
 function selectedNodesForVerifier(args: NodeKeyVerifierArgs): Node[] {
-  if (args.selectedIndexes.length === 0) {
+  if (args.nodeIndexes.length === 0) {
     throw new Error("Private API node-key verification requires at least one selected index");
   }
-  if (args.selectedNodes.length !== args.selectedIndexes.length) {
+  if (args.nodes.length !== args.nodeIndexes.length) {
     throw new Error(
-      `Private API node-key verification expected ${args.selectedIndexes.length} selected nodes, got ${args.selectedNodes.length}`,
+      `Private API node-key verification expected ${args.nodeIndexes.length} selected nodes, got ${args.nodes.length}`,
     );
   }
 
   const expected = new Set<number>();
-  for (const index of args.selectedIndexes) {
+  for (const index of args.nodeIndexes) {
     if (!Number.isInteger(index) || index < 0) {
       throw new Error(`Private API selected index must be a non-negative integer: ${index}`);
     }
@@ -663,7 +661,7 @@ function selectedNodesForVerifier(args: NodeKeyVerifierArgs): Node[] {
   }
 
   const byIndex = new Map<number, Node>();
-  for (const node of args.selectedNodes) {
+  for (const node of args.nodes) {
     if (!Number.isInteger(node.index) || node.index < 0) {
       throw new Error(
         `Private API selected node index must be a non-negative integer: ${node.index}`,
@@ -678,7 +676,7 @@ function selectedNodesForVerifier(args: NodeKeyVerifierArgs): Node[] {
     byIndex.set(node.index, node);
   }
 
-  return args.selectedIndexes.map((index) => {
+  return args.nodeIndexes.map((index) => {
     const node = byIndex.get(index);
     if (!node) {
       throw new Error(`Private API selected node is missing for index: ${index}`);

@@ -16,22 +16,24 @@ export interface Node {
   signingKey: string;
 }
 
-/** Selected node-key material that must be authenticated before private API encryption. */
+/**
+ * Node-key material that must be authenticated before private API encryption. Secrets are
+ * encrypted for every node of the registry, because the committee is not known until the
+ * gateway has assigned the round's timestamp.
+ */
 export interface NodeKeyVerifierArgs {
   /** 32-byte source id, hex. */
   sourceId: string;
   /** On-chain registry version the gateway round is bound to. */
   registryVersion: number;
-  /** Canonical timestamp used to derive the selected indexes. */
-  timestamp: number;
-  /** Selected node indexes derived from the round bitmap, ascending. */
-  selectedIndexes: readonly number[];
-  /** Gateway-provided selected nodes whose keys must be authenticated. */
-  selectedNodes: readonly Node[];
+  /** Every node index of that registry version, ascending. */
+  nodeIndexes: readonly number[];
+  /** Gateway-provided nodes, one per index, whose keys must be authenticated. */
+  nodes: readonly Node[];
 }
 
 /**
- * Authenticates selected gateway node encryption keys. Throwing fails the
+ * Authenticates gateway-provided node encryption keys. Throwing fails the
  * private API request before secrets are encrypted or posted.
  */
 export type NodeKeyVerifier = (args: NodeKeyVerifierArgs) => void | Promise<void>;
@@ -129,8 +131,8 @@ export interface AttestationPayload {
   sourceId: string;
   registryVersion: number;
   signaturesRequired: number;
-  /** Unix seconds (u64). */
-  canonicalTimestamp: number;
+  /** Gateway-assigned round time in unix MILLISECONDS (u64). Divide by 1000 for seconds. */
+  timestamp: number;
 }
 
 /**

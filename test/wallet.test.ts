@@ -15,7 +15,7 @@ describe("gatewaySignerFromWallet", () => {
       gateway: new Uint8Array(32),
       sourceId: new Uint8Array(32),
       signaturesRequired: 1,
-      timestamp: 1n,
+      authTimestamp: 1n,
     });
     const sig = await signer!(msg);
     expect(sig).toHaveLength(64);

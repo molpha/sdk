@@ -30,7 +30,7 @@ const result: Attestation = {
   payload: {
     sourceId: "11".repeat(32),
     value: "22".repeat(32),
-    canonicalTimestamp: 1_700_000_000,
+    timestamp: 1_700_000_000,
     registryVersion: 7,
     signaturesRequired: 3,
   },
@@ -97,7 +97,7 @@ describe("vendored IDL", () => {
 
     expect([...ix.data.subarray(0, 8)]).toEqual(SUBMIT_ATTESTATION_DISCRIMINATOR);
     // Attestation { payload: value 32 + source_id 32 + registry_version 4 + signatures_required 1
-    //   + canonical_timestamp 8, signature: agg_sig_s 32 + commitment 20 + signers_bitmap 32 },
+    //   + timestamp 8, signature: agg_sig_s 32 + commitment 20 + signers_bitmap 32 },
     // raw_value: Option<bytes> = None (1), coalition_key: x 32 + y 32.
     expect(ix.data.length).toBe(8 + (32 + 32 + 4 + 1 + 8) + (32 + 20 + 32) + 1 + (32 + 32));
 
@@ -107,7 +107,7 @@ describe("vendored IDL", () => {
     expect([...body.subarray(32, 64)]).toEqual([...hexToBytes(result.payload.sourceId)]);
     expect(body.readUInt32LE(64)).toBe(result.payload.registryVersion);
     expect(body[68]).toBe(result.payload.signaturesRequired);
-    expect(body.readBigUInt64LE(69)).toBe(BigInt(result.payload.canonicalTimestamp));
+    expect(body.readBigUInt64LE(69)).toBe(BigInt(result.payload.timestamp));
     expect([...body.subarray(77, 109)]).toEqual([...hexToBytes(result.signature.s)]);
     expect([...body.subarray(109, 129)]).toEqual([...hexToBytes(result.signature.commitmentAddr)]);
     expect([...body.subarray(129, 161)]).toEqual([...hexToBytes(result.signature.signersBitmap)]);
@@ -227,7 +227,7 @@ describe("vendored IDL", () => {
     expect(Buffer.from(feed.value).toString("hex")).toBe("22".repeat(32));
     expect(feed.valueKind).toEqual({ hash: {} });
     expect((feed.submitter as web3.PublicKey).toBase58()).toBe(submitter.toBase58());
-    expect((feed.canonicalTimestamp as BN).toString()).toBe("1700000123");
+    expect((feed.timestamp as BN).toString()).toBe("1700000123");
     expect(feed.signaturesRequired).toBe(5);
     expect(feed.registryVersion).toBe(9);
     expect(feed.bump).toBe(254);

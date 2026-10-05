@@ -23,10 +23,10 @@ At a high level:
 Consumer
   └─ subscribes (USDC) on Solana
   └─ derives sourceId = keccak256(canonical apiConfig)
-  └─ signs a RequestAuth bound to (programId, gateway, sourceId, signaturesRequired, timestamp)
+  └─ signs a RequestAuth bound to (programId, gateway, sourceId, signaturesRequired, authTimestamp)
 
 Gateway
-  └─ coordinates a signing round for (sourceId, signaturesRequired)
+  └─ assigns the round's timestamp (unix ms) from its own clock and coordinates a signing round
 
 Verifier nodes
   └─ fetch/recompute the API result independently
@@ -46,7 +46,7 @@ Every signed attestation commits to the same message across chains:
 ```text
 message = keccak256(
   keccak256("MOLPHA_MESSAGE_V1") || value || sourceId || u32be(registryVersion) ||
-  u8(signaturesRequired) || u64be(canonicalTimestamp) || signersBitmap
+  u8(signaturesRequired) || u64be(timestamp) || signersBitmap
 )
 ```
 
@@ -64,7 +64,7 @@ Runtime dependencies include `@solana/kit`, `@anchor-lang/core`, and `@noble/*`.
 
 | Import | Use |
 |---|---|
-| `@molpha/sdk` | Facade (`MolphaSDK`), `MolphaGateway`, `MolphaSolanaClient`, core hashing (`deriveSourceId`, `attestationMessageHash`, `hashRequestAuth`), EVM/Starknet helpers. Browser-safe; no `fs` in the main entry. |
+| `@molpha/sdk` | Facade (`MolphaSDK`), `MolphaGateway`, `MolphaSolanaClient`, core hashing (`deriveSourceId`, `attestationMessageHash`, `hashRequestAuth`, `timestampSeconds`), EVM/Starknet helpers. Browser-safe; no `fs` in the main entry. |
 | `@molpha/sdk/utils` | `walletFromKeypairFile`, `loadKeypair` — load a Solana CLI keypair as an Anchor `Wallet`. Node.js only. |
 
 The package is ESM with `"sideEffects": false`, so gateway-only or read-only apps can tree-shake unused paths.
@@ -149,10 +149,12 @@ Gateway request authorization binds the gateway's on-chain account, so the clien
 
 ```text
 requestAuthHash = keccak256(
-  "MOLPHA_REQAUTH_V1" || programId || gatewayPda || sourceId || u8(signaturesRequired) || u64le(timestamp)
+  "MOLPHA_REQAUTH_V1" || programId || gatewayPda || sourceId || u8(signaturesRequired) || u64le(authTimestamp)
 )
 gatewayPda = PDA(["molpha_gateway", gatewayAuthority], programId)
 ```
+
+`authTimestamp` is the caller's unix **seconds** at signing: a freshness stamp for the authorization only (the gateway rejects stamps outside its `request_auth.window_seconds`, 60 s by default). It is read from the SDK clock for every attempt, so a retry after a 409 signs a fresh one. It has nothing to do with the round's `timestamp`.
 
 Pass `gatewayAuthority` (the gateway's base58 signing pubkey) per endpoint to pin it. When omitted, the SDK calls `GET {url}/v1/info` once per endpoint and reads:
 
@@ -162,6 +164,20 @@ Pass `gatewayAuthority` (the gateway's base58 signing pubkey) per endpoint to pi
 
 A `programId` that differs from the client's is rejected. Because the hash differs per gateway, the auth signature is recomputed for every endpoint actually tried during failover — with a browser wallet that means one signing prompt per endpoint tried. `/v1/info` is never contacted when no signer is configured (dev zero-signature path).
 
+### Round timestamp
+
+The request body carries `authSig` and `authTimestamp` but no round timestamp. The gateway assigns the
+round's `timestamp` from its own clock, in unix **milliseconds**, on a tick grid
+(`floor(now / tickMs) * tickMs`, one second by default), and the result carries it in
+`payload.timestamp`. Committee selection reads only the timestamp's one-second window, so
+nobody can pick a committee by picking a time.
+
+- The message the nodes sign is `keccak256(MOLPHA_MESSAGE_V1 || value || sourceId || u32be(registryVersion) || u8(quorum) || u64be(timestamp) || signersBitmap)`.
+- Chain clocks, epochs and `maxAge`/staleness are in **seconds**: compare with
+  `timestampSeconds(payload.timestamp)` (floored `ts / 1000`). `timestampAgeSeconds(ts, nowSeconds)` saturates at 0.
+- A round that was already reserved for this consumer, or dispatched to the nodes, cannot run again in the same tick (HTTP 409), so a retry waits for the next one (`tickMs`, default 1000: set it to the gateway's `round.tick_ms`).
+- Private API secrets are encrypted for every node of the registry (the committee is unknown until the gateway stamps the round); the gateway forwards only the selected nodes' envelopes. `verifyNodeKeys` therefore authenticates all of them.
+
 ## Wallet
 
 `wallet` is a single `MolphaWallet` used across both protocol surfaces:
@@ -169,7 +185,7 @@ A `programId` that differs from the client's is rejected. Because the hash diffe
 | Layer | What it signs |
 |---|---|
 | Solana client | Transactions such as `subscribe`, `extendSubscription`, `submitAttestation` |
-| Gateway client | `hashRequestAuth({ programId, gateway, sourceId, signaturesRequired, timestamp })` for authenticated gateway requests |
+| Gateway client | `hashRequestAuth({ programId, gateway, sourceId, signaturesRequired, authTimestamp })` for authenticated gateway requests |
 
 Gateway auth is resolved automatically when you use `MolphaSDK`:
 
@@ -182,7 +198,8 @@ Gateway auth is resolved automatically when you use `MolphaSDK`:
 explicit `signer`. Standalone `new MolphaGateway(...)` omits auth unless you pass
 a `defaultSigner` (third constructor arg) or per-call `signer`.
 
-The all-zero `authSig` path is for development only. Production jobs should authenticate gateway requests.
+The all-zero `authSig` path is for development only: a gateway rejects it with 401. Production jobs should authenticate gateway requests.
+
 
 ### Node.js utility
 
@@ -276,7 +293,7 @@ const result = await sdk.gateway.requestSignedData({
 
 The gateway round uses the current on-chain registry version. Selected verifier nodes independently fetch/recompute the result and sign only if the observed value matches the canonical result.
 
-The returned `Attestation` matches the cross-VM struct (`payload` + `signature`), plus gateway-only `value` (human-readable) and `fresh`. `payload` carries `sourceId`, the signed 32-byte `value`, `canonicalTimestamp`, `registryVersion`, and `signaturesRequired`; `signature` carries the aggregate Schnorr material and `signersBitmap`. `signaturesRequired` must be at least the protocol's `min_signers` (currently 3) or the chain rejects the submit.
+The returned `Attestation` matches the cross-VM struct (`payload` + `signature`), plus gateway-only `value` (human-readable) and `fresh`. `payload` carries `sourceId`, the signed 32-byte `value`, `timestamp`, `registryVersion`, and `signaturesRequired`; `signature` carries the aggregate Schnorr material and `signersBitmap`. `signaturesRequired` must be at least the protocol's `min_signers` (currently 3) or the chain rejects the submit.
 
 A gateway response is a coordination result, not proof of settlement or of on-chain verification. Consumers still decide freshness, source, quorum and replay policy.
 
@@ -302,7 +319,7 @@ const feedState = await sdk.solana.readFeed(result.payload.sourceId, signaturesR
 
 `FeedAccount.value` is the 32 signed bytes (`valueKind.value`) or their keccak preimage hash (`valueKind.hash`); `submitter` is the wallet that created the feed.
 
-The subscription read no longer exposes usage. The program dropped `used_rounds` / `prepaid_usdc` / `price` from `Subscription`; round quota is counted by the gateway's off-chain outbox, so `SubscriptionInfo` carries only `owner`, `planType`, `validUntil`, `maxRounds`, `delegateCount`, `maxDelegates`, `maxSigners`.
+The subscription read does not expose usage: the program stores no `used_rounds` / `prepaid_usdc` / `price`, and round quota is counted by the gateway's off-chain outbox. `SubscriptionInfo` carries only `owner`, `planType`, `validUntil`, `maxRounds`, `delegateCount`, `maxDelegates`, `maxSigners`.
 
 ### One-call request + submit
 
@@ -540,7 +557,7 @@ attestation:
     sourceId: `0x${string}`,       // bytes32
     registryVersion: number,       // uint32
     signaturesRequired: number,    // uint8
-    canonicalTimestamp: bigint,    // uint64
+    timestamp: bigint,    // uint64
   },
   signature: {
     signature: `0x${string}`,      // bytes32 (Attestation.signature.s)
@@ -692,7 +709,7 @@ attestation:
     source_id: u256,
     registry_version: u32,
     signatures_required: u8,
-    canonical_timestamp: u64,
+    timestamp: u64,
   },
   signature: {
     signature: u256,
@@ -742,7 +759,7 @@ shared with the EVM verifier contract and exported as `VERIFY_CODES`:
 | 0 | `OK` | Verified |
 | 2 | `BAD_REGISTRY_VERSION` | `registryVersion` does not exist on this verifier |
 | 3 | `MALFORMED` | Structurally invalid input, or dated in the future when `maxAge != 0` |
-| 4 | `NOT_YET_ACTIVE` | `canonicalTimestamp` predates the registry version's activation |
+| 4 | `NOT_YET_ACTIVE` | `timestamp` predates the registry version's activation |
 | 5 | `VERSION_EXPIRED` | Registry version superseded more than the grace window earlier |
 | 7 | `BAD_QUORUM` | Signers are not within the round's derived selection group |
 | 8 | `BAD_AGGREGATE` | The signers' aggregate key is the point at infinity |
@@ -770,7 +787,7 @@ A Molpha attestation is valid only if the verifier can confirm:
 - the update targets the expected `sourceId`;
 - the result was signed against a specific `registryVersion` (an immutable node-set snapshot);
 - the quorum satisfies `signaturesRequired`;
-- the signer bitmap is a subset of the deterministic selection for `(sourceId, registryVersion, canonicalTimestamp)`;
+- the signer bitmap is a subset of the deterministic selection for `(sourceId, registryVersion, timestamp)`;
 - the aggregate Schnorr signature over `attestationMessageHash(...)` is valid;
 - the timestamp is within the accepted freshness bounds;
 - on Solana, the signer `Node` accounts passed as remaining accounts are exactly `registry.nodes[bit]` for every set bit, and the supplied coalition key matches the sum of their keys.
@@ -834,7 +851,7 @@ Current scope:
 
 - Solana subscription and extend flow;
 - deterministic source id and attestation message hashing;
-- gateway signed-data requests (failover, retries, per-gateway request auth, context cache);
+- gateway signed-data requests (failover, tick-aware retries, per-gateway request auth, context cache);
 - Solana attestation submission and feed/registry reads;
 - private API encryption helpers (pre-production);
 - caller-funded x402 payments for paywalled API sources (Base USDC, pre-production);

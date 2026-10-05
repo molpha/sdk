@@ -4,10 +4,11 @@
  *
  *   message = keccak256(
  *     keccak256("MOLPHA_MESSAGE_V1") || value || sourceId || u32be(registryVersion) ||
- *     u8(signaturesRequired) || u64be(canonicalTimestamp) || signersBitmap
+ *     u8(signaturesRequired) || u64be(timestamp) || signersBitmap
  *   )
  *
- * The preimage is 141 bytes. Widths follow the Rust, Solidity, Solana, and node encoders.
+ * `timestamp` is unix MILLISECONDS, assigned by the gateway. The preimage is 141 bytes.
+ * Widths follow the Rust, Solidity, Solana, and node encoders.
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { concatBytes, toFixedBytes, u8, u32be, u64be, utf8 } from "./encoding.js";
@@ -26,8 +27,8 @@ export interface AttestationMessageFields {
   signersBitmap: string | Uint8Array;
   /** 32-byte packed value (hex or bytes). */
   value: string | Uint8Array;
-  /** Unix seconds (u64). */
-  canonicalTimestamp: number | bigint;
+  /** Unix milliseconds (u64), assigned by the gateway. */
+  timestamp: number | bigint;
 }
 
 /** Compute the attestation message hash (32 bytes). */
@@ -42,7 +43,7 @@ export function attestationMessageHash(fields: AttestationMessageFields): Uint8A
       toFixedBytes(fields.sourceId, 32, "sourceId"),
       u32be(fields.registryVersion),
       u8(fields.signaturesRequired),
-      u64be(fields.canonicalTimestamp),
+      u64be(fields.timestamp),
       toFixedBytes(fields.signersBitmap, 32, "signersBitmap"),
     ),
   );
@@ -57,6 +58,6 @@ export function attestationMessageHashFromAttestation(attestation: Attestation):
     signaturesRequired: payload.signaturesRequired,
     signersBitmap: signature.signersBitmap,
     value: payload.value,
-    canonicalTimestamp: payload.canonicalTimestamp,
+    timestamp: payload.timestamp,
   });
 }

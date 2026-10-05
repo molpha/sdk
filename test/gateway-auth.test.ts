@@ -23,14 +23,14 @@ const AUTHORITY = "9K9FknHzW7j8a88yKTrzxKfDrxnV2QLqSR58ETAVdc8P";
 const programId = addressToBytes(MOLPHA_PROGRAM_ID);
 const gateway = new Uint8Array(32).fill(0x42);
 const sourceId = Uint8Array.from({ length: 32 }, (_, i) => i);
-const timestamp = 1_750_000_000;
-const fields = { programId, gateway, sourceId, signaturesRequired: 3, timestamp };
+const authTimestamp = 1_750_000_000;
+const fields = { programId, gateway, sourceId, signaturesRequired: 3, authTimestamp };
 
 describe("hashRequestAuth", () => {
   it("is keccak256(MOLPHA_REQAUTH_V1 || borsh(RequestAuth))", () => {
     expect(REQUEST_AUTH_DOMAIN).toEqual(utf8("MOLPHA_REQAUTH_V1"));
-    // borsh(RequestAuth { program_id, gateway, source_id, signatures_required: u8, timestamp: u64 })
-    const body = concatBytes(programId, gateway, sourceId, Uint8Array.of(3), u64le(timestamp));
+    // borsh(RequestAuth { program_id, gateway, source_id, signatures_required: u8, timestamp: u64 }); the u64 is the auth timestamp in unix seconds
+    const body = concatBytes(programId, gateway, sourceId, Uint8Array.of(3), u64le(authTimestamp));
     expect(body).toHaveLength(32 + 32 + 32 + 1 + 8);
     expect(encodeRequestAuth(fields)).toEqual(body);
     expect(hashRequestAuth(fields)).toEqual(
@@ -39,18 +39,26 @@ describe("hashRequestAuth", () => {
     expect(hashRequestAuth(fields)).toHaveLength(32);
   });
 
+  it("matches a golden digest computed independently (python keccak256)", () => {
+    // keccak256("MOLPHA_REQAUTH_V1" || programId || gateway || sourceId || u8(3) || u64le(1_750_000_000)),
+    // programId = the vendored MOLPHA_PROGRAM_ID, gateway = 0x42 * 32, sourceId = 0x00..0x1f.
+    expect(Buffer.from(hashRequestAuth(fields)).toString("hex")).toBe(
+      "f6646d9bd6b61891206b6884465a54e7537954833eb127300dc287504ddf5830",
+    );
+  });
+
   it("binds every field", () => {
     const base = hashRequestAuth(fields);
     expect(hashRequestAuth({ ...fields, programId: new Uint8Array(32).fill(1) })).not.toEqual(base);
     expect(hashRequestAuth({ ...fields, gateway: new Uint8Array(32).fill(1) })).not.toEqual(base);
     expect(hashRequestAuth({ ...fields, sourceId: new Uint8Array(32).fill(1) })).not.toEqual(base);
     expect(hashRequestAuth({ ...fields, signaturesRequired: 4 })).not.toEqual(base);
-    expect(hashRequestAuth({ ...fields, timestamp: timestamp + 1 })).not.toEqual(base);
+    expect(hashRequestAuth({ ...fields, authTimestamp: authTimestamp + 1 })).not.toEqual(base);
   });
 
-  it("accepts a hex sourceId and a bigint timestamp", () => {
+  it("accepts a hex sourceId and a bigint authTimestamp", () => {
     const hex = Buffer.from(sourceId).toString("hex");
-    expect(hashRequestAuth({ ...fields, sourceId: hex, timestamp: BigInt(timestamp) })).toEqual(
+    expect(hashRequestAuth({ ...fields, sourceId: hex, authTimestamp: BigInt(authTimestamp) })).toEqual(
       hashRequestAuth(fields),
     );
     expect(hashRequestAuth({ ...fields, sourceId: `0x${hex}` })).toEqual(hashRequestAuth(fields));
@@ -62,7 +70,7 @@ describe("hashRequestAuth", () => {
     expect(() => hashRequestAuth({ ...fields, programId: new Uint8Array(31) })).toThrow();
     expect(() => hashRequestAuth({ ...fields, gateway: new Uint8Array(33) })).toThrow();
     expect(() => hashRequestAuth({ ...fields, sourceId: "aa" })).toThrow();
-    expect(() => hashRequestAuth({ ...fields, timestamp: -1 })).toThrow();
+    expect(() => hashRequestAuth({ ...fields, authTimestamp: -1 })).toThrow();
   });
 
   it("produces a message an ed25519 consumer key can sign", () => {
