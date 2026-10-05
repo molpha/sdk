@@ -121,7 +121,7 @@ describe("MolphaGateway.requestSignedData failover", () => {
     expect(result.signature.commitmentAddr).toBe("bb".repeat(20));
   });
 
-  it("parses the gateway's `attestation` body (AttestationResponse)", async () => {
+  it("parses the gateway's nested `attestation` body (current AttestationResponse)", async () => {
     globalThis.fetch = mockFetch({
       execute: () =>
         jsonResponse({
@@ -965,7 +965,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
       ...extra,
     });
 
-  it("renders a tolerance value from the attestation's signed payload.value", async () => {
+  it("renders a tolerance value from the nested attestation's signed payload.value", async () => {
     globalThis.fetch = mockFetch({
       execute: () =>
         jsonResponse({

@@ -165,30 +165,43 @@ interface GatewaySignedDataResponse {
 }
 
 /**
- * The gateway's `AttestationData`: the signed struct as the on-chain `Attestation`
- * (`payload.value` is the packed 32-byte value), plus the unsigned decimal `value`.
+ * The gateway's `attestation` object (`AttestationData.attestation`): the signed struct as the
+ * on-chain `Attestation`, with `payload.value` the packed 32-byte value.
  */
-interface GatewaySignedData {
-  attestation?: {
-    payload?: {
-      value?: string;
-      sourceId?: string;
-      registryVersion?: number;
-      signaturesRequired?: number;
-      /** Gateway-assigned round time, unix milliseconds. */
-      timestamp?: number;
-    };
-    signature?: {
-      signature?: string;
-      commitment?: string;
-      signersBitmap?: string;
-    };
+interface GatewayAttestation {
+  payload?: {
+    value?: string;
+    sourceId?: string;
+    registryVersion?: number;
+    signaturesRequired?: number;
+    /** Legacy wire name on some gateways; newer responses use `timestamp`. */
+    canonicalTimestamp?: number;
+    /** Gateway-assigned round time, unix milliseconds. */
+    timestamp?: number;
   };
+  signature?: {
+    signature?: string;
+    commitment?: string;
+    signersBitmap?: string;
+  };
+}
+
+interface GatewaySignedData {
+  /** Current gateways nest the signed struct here; the flat fields below are the older shape. */
+  attestation?: GatewayAttestation;
+  sourceId?: string;
   /** Echo of the canonical apiConfig hash; equals `sourceId`. */
   configHash?: string;
   /** Echo of the request's tolerance policy; present only for tolerance rounds. */
   aggregation?: unknown;
   value?: string;
+  valuePacked?: string;
+  timestamp?: number;
+  registryVersion?: number;
+  signaturesRequired?: number;
+  signersBitmap?: string;
+  s?: string;
+  commitmentAddr?: string;
   fresh?: boolean;
 }
 
@@ -882,7 +895,33 @@ function normalizeHex(value: string): string {
 }
 
 /**
- * Shape the gateway's `AttestationData` into an {@link Attestation}. `sourceId` and
+ * Lift a nested `attestation` (current gateways) into the flat field names the rest of this
+ * module reads, leaving the older flat body untouched. Top-level `value`, `fresh`,
+ * `configHash` and `aggregation` are the same in both shapes.
+ */
+function flattenGatewayData(data: GatewaySignedData): GatewaySignedData {
+  const nested = data.attestation;
+  if (!nested) return data;
+  const { attestation: _nested, ...rest } = data;
+  const { payload, signature } = nested;
+  const timestamp = payload?.timestamp ?? payload?.canonicalTimestamp;
+  return {
+    ...rest,
+    ...(payload?.sourceId !== undefined ? { sourceId: payload.sourceId } : {}),
+    ...(payload?.value !== undefined ? { valuePacked: payload.value } : {}),
+    ...(timestamp !== undefined ? { timestamp } : {}),
+    ...(payload?.registryVersion !== undefined ? { registryVersion: payload.registryVersion } : {}),
+    ...(payload?.signaturesRequired !== undefined
+      ? { signaturesRequired: payload.signaturesRequired }
+      : {}),
+    ...(signature?.signersBitmap !== undefined ? { signersBitmap: signature.signersBitmap } : {}),
+    ...(signature?.signature !== undefined ? { s: signature.signature } : {}),
+    ...(signature?.commitment !== undefined ? { commitmentAddr: signature.commitment } : {}),
+  };
+}
+
+/**
+ * Shape the gateway payload into an {@link Attestation}. `sourceId` and
  * `signaturesRequired` must echo the request (they key the feed and the signed message).
  * Everything else the verifiers recompute comes from the response and is refused when absent
  * rather than filled in locally: the gateway assigns `timestamp` (unix milliseconds), so
@@ -892,20 +931,23 @@ function normalizeHex(value: string): string {
  * `decimals` rather than trusted as sent.
  */
 function toResult(
-  data: GatewaySignedData,
+  raw: GatewaySignedData,
   ctx: {
     sourceId: string;
     signaturesRequired: number;
     aggregation?: AggregationConfig;
   },
 ): Attestation {
-  const { payload, signature } = data.attestation ?? {};
-  if (!payload || !signature) {
-    throw new GatewayError("Gateway response is missing the attestation");
+  if (raw.attestation) {
+    const { payload, signature } = raw.attestation;
+    if (!payload || !signature) {
+      throw new GatewayError("Gateway response is missing the attestation");
+    }
   }
-  if (payload.sourceId !== undefined && normalizeHex(payload.sourceId) !== ctx.sourceId) {
+  const data = flattenGatewayData(raw);
+  if (data.sourceId !== undefined && normalizeHex(data.sourceId) !== ctx.sourceId) {
     throw new GatewayError(
-      `Gateway response sourceId ${payload.sourceId} does not match the requested ${ctx.sourceId}`,
+      `Gateway response sourceId ${data.sourceId} does not match the requested ${ctx.sourceId}`,
     );
   }
   if (data.configHash !== undefined && normalizeHex(data.configHash) !== ctx.sourceId) {
@@ -914,11 +956,11 @@ function toResult(
     );
   }
   if (
-    payload.signaturesRequired !== undefined &&
-    payload.signaturesRequired !== ctx.signaturesRequired
+    data.signaturesRequired !== undefined &&
+    data.signaturesRequired !== ctx.signaturesRequired
   ) {
     throw new GatewayError(
-      `Gateway response signaturesRequired ${payload.signaturesRequired} does not match the requested ${ctx.signaturesRequired}`,
+      `Gateway response signaturesRequired ${data.signaturesRequired} does not match the requested ${ctx.signaturesRequired}`,
     );
   }
   if (data.aggregation !== undefined && data.aggregation !== null) {
@@ -942,12 +984,12 @@ function toResult(
     }
   }
   const fields = {
-    timestamp: payload.timestamp,
-    registryVersion: payload.registryVersion,
-    value: payload.value,
-    signersBitmap: signature.signersBitmap,
-    s: signature.signature,
-    commitmentAddr: signature.commitment,
+    timestamp: data.timestamp,
+    registryVersion: data.registryVersion,
+    value: data.valuePacked,
+    signersBitmap: data.signersBitmap,
+    s: data.s,
+    commitmentAddr: data.commitmentAddr,
   };
   for (const [name, field] of Object.entries(fields)) {
     if (field === undefined || field === "") {
