@@ -4980,6 +4980,11 @@
       "code": 6100,
       "name": "InvalidRentReceiver",
       "msg": "rent receiver must be the account that paid for the closed account"
+    },
+    {
+      "code": 6101,
+      "name": "InvalidInitialTau",
+      "msg": "initial_tau is below the minimum ticket threshold"
     }
   ],
   "types": [
@@ -6019,6 +6024,18 @@
           {
             "name": "protocol_fee_bps",
             "type": "u16"
+          },
+          {
+            "name": "initial_tau",
+            "docs": [
+              "Ticket threshold of the two genesis epochs: a round is a ticket when the 64-bit prefix of its",
+              "ticket hash is below it, so the sampling probability is `initial_tau / 2^64`. Size it as",
+              "`2^64 * target_tickets_per_epoch / expected_rounds_per_epoch`. `u64::MAX` samples every round",
+              "(every round then costs a ticket transaction until the controller, which moves the",
+              "threshold at most 8x per epoch with a two-epoch lag, brings it down). Must be at least",
+              "`TAU_MIN`."
+            ],
+            "type": "u64"
           }
         ]
       }

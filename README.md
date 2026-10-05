@@ -175,7 +175,22 @@ nobody can pick a committee by picking a time.
 - The message the nodes sign is `keccak256(MOLPHA_MESSAGE_V1 || value || sourceId || u32be(registryVersion) || u8(quorum) || u64be(timestamp) || signersBitmap)`.
 - Chain clocks, epochs and `maxAge`/staleness are in **seconds**: compare with
   `timestampSeconds(payload.timestamp)` (floored `ts / 1000`). `timestampAgeSeconds(ts, nowSeconds)` saturates at 0.
-- A round that was already reserved for this consumer, or dispatched to the nodes, cannot run again in the same tick (HTTP 409), so a retry waits for the next one (`tickMs`, default 1000: set it to the gateway's `round.tick_ms`).
+- A round that was already reserved for this consumer, or dispatched to the nodes, cannot run again in the same tick (HTTP 409), so a retry waits for the next one. `tickMs` defaults to the gateway's advertised `tickMs` (read once, on the first retry, from `GET /v1/info`), else 1000.
+
+### Retries and timeouts
+
+`requestSignedData` makes up to `maxRetries` attempts (default 6) and chooses the wait before each by why the last one failed (`retryDelayMs`). Every wait reaches at least the next tick, then adds jitter so clients that failed together do not retry together:
+
+| Last attempt | Wait before the next |
+| --- | --- |
+| 409 (this consumer already has a round for the source in this tick) | next tick, plus up to half a tick |
+| 503 or 429 (gateway at capacity, or nodes unavailable) | the later of the next tick and the gateway's `Retry-After`, plus up to a tick |
+| timeout, network error, other 5xx | capped exponential backoff (250 ms up to 5 s), half of it randomized |
+| 400, 401, 402, 403 | none: terminal. 403 means the subscription is inactive or its round quota for the term is spent |
+
+A 400 saying the `registryVersion` is not the current one (a cached context, or a registry roll between your read and the request) is the exception: the SDK reads the registry afresh and retries once, without spending an attempt.
+
+`timeoutMs` defaults to 35 s, above the gateway's own wait for a round (`roundTimeoutSeconds` in `/v1/info`, 30 s by default). A shorter timeout abandons a round the gateway is still running, and the retry then starts another. A source that cannot be fetched is reported as soon as enough nodes have failed (usually well under a second), not after the wait.
 - Private API secrets are encrypted for every node of the registry (the committee is unknown until the gateway stamps the round); the gateway forwards only the selected nodes' envelopes. `verifyNodeKeys` therefore authenticates all of them.
 
 ## Wallet
@@ -311,6 +326,10 @@ If the signed 32-byte value is the keccak digest of a longer preimage, pass `{ r
 const { signature, feed } = await sdk.solana.submitAttestation(result, { rawValue });
 ```
 
+**Compute budget and fees.** The transaction requests `estimateSubmitComputeUnits(signers)` compute units (about `43k + 9.2k` per signer, plus 15% and 10k of margin: roughly 140k at 8 signers), not the 1.4M maximum the old default asked for, which mattered once a priority fee is priced per requested unit. Pass `{ computeUnitLimit }` to override it. No priority fee is attached unless you ask: `{ priorityFeeMicroLamports: 2_000 }` sets a price in micro-lamports per unit, and `{ priorityFeeMicroLamports: "auto" }` uses the 75th percentile of the fees recently paid by writers of that feed (capped at 1 lamport per unit; an unreadable fee market means no fee). Use one of them when submits are dropped under load.
+
+**Many feeds.** The client caches what feeds sharing a registry version have in common: the registry read (30 s), each signer `Node` key (never changes) and the coalition key of each signer set, and concurrent submits share one read. Submitting a fleet of feeds therefore costs one registry read and one `Node` read per distinct signer, not per submit. A stale or duplicate round is refused by the program in about 17-20k compute units, before it verifies the signature.
+
 Then read the feed this wallet wrote for that source and quorum:
 
 ```ts
@@ -336,6 +355,27 @@ This is equivalent to:
 const result = await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired });
 const { signature, feed } = await sdk.solana.submitAttestation(result);
 ```
+
+If the round succeeds but submitting fails, `requestAndSubmit` throws a `SubmitFailedError` that carries the signed attestation (`error.result`). The round already consumed quota and the attestation is valid, so submit `error.result` again instead of requesting a new round.
+
+### Many feeds
+
+For a large set of feeds use `requestMany` (also exported from the package root) instead of looping over `requestAndSubmit`:
+
+```ts
+import { requestMany } from "@molpha/sdk";
+
+const results = await requestMany(sdk, feeds, {
+  spreadMs: 1000, // spread starts by source hash so feeds due together do not arrive together
+  request: { maxRetries: 6 },
+});
+for (const r of results) {
+  if (!r.ok) console.error(r.label, r.error);
+  else if (r.submitError) console.warn(r.label, "round ok, submit failed", r.submitError);
+}
+```
+
+It reads the registry inputs once for the whole batch; bounds concurrency, starting from half the gateway's advertised `maxInflightRounds` (at most 64, else 32) and adapting (halving on a busy answer, growing back while requests succeed); runs Solana submits on their own smaller limiter (`submitConcurrency`, default 8); never discards the signed attestation of a round whose submit failed; and returns one result per feed in input order, so a failing feed does not stop the others. Pass `submit: false` to collect attestations only. Throughput is limited by the submit path (one transaction per attestation) long before it is limited by the gateway.
 
 ### Fast requests with a cached context
 

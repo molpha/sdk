@@ -89,14 +89,23 @@ export interface RequestSignedDataOptions {
   sourcePayment?: SourcePaymentOptions;
   /** Max accepted value age in seconds. Default 60. */
   maxAge?: number;
-  /** Max attempts; each retry waits for a later gateway tick. Default 15. */
+  /**
+   * Max attempts. Each retry waits for a later gateway tick, plus jitter, and for longer after a
+   * busy answer (`Retry-After`) or a failure that is not a conflict (capped exponential backoff);
+   * see {@link retryDelayMs}. Default {@link DEFAULT_MAX_RETRIES}.
+   */
   maxRetries?: number;
   /**
    * The gateway's tick grid in milliseconds (its `round.tick_ms`). A retry waits for the start of
-   * the next tick so it is a new round, not a duplicate of the last. Default 1000.
+   * the next tick so it is a new round, not a duplicate of the last. Default: the gateway's
+   * advertised `tickMs` (read once, on the first retry), else 1000.
    */
   tickMs?: number;
-  /** Per-request timeout in ms. Default 5000. */
+  /**
+   * Per-request timeout in ms. Default {@link DEFAULT_ROUND_TIMEOUT_MS}, above the gateway's own
+   * wait for a round: a shorter timeout abandons rounds the gateway is still running and the retry
+   * then starts another.
+   */
   timeoutMs?: number;
   /**
    * Pre-fetched round inputs. Any field present here skips its network/on-chain
@@ -143,6 +152,8 @@ export interface MolphaGatewayOptions {
    * may use gateway-provided node keys without authentication. Defaults to false.
    */
   allowUnverifiedNodeKeysForPrivateApi?: boolean;
+  /** Source of randomness in [0, 1) for retry jitter; defaults to `Math.random` (tests only). */
+  random?: () => number;
 }
 
 /**
@@ -225,6 +236,79 @@ export function msUntilNextTick(nowMs: number, tickMs: number): number {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** First delay of the exponential backoff, in ms. */
+const BACKOFF_BASE_MS = 250;
+/** Cap of the exponential backoff, in ms. */
+const BACKOFF_MAX_MS = 5_000;
+/**
+ * Default per-request timeout: above the gateway's own wait for a round (`node.agg_wait_seconds`,
+ * 30 s by default), so the client does not abandon a round the gateway is still running and then
+ * start a second one. A gateway advertises its value as `roundTimeoutSeconds` in `GET /v1/info`.
+ */
+export const DEFAULT_ROUND_TIMEOUT_MS = 35_000;
+/** Default number of attempts. */
+export const DEFAULT_MAX_RETRIES = 6;
+
+/**
+ * Why an attempt failed, as far as it decides how long to wait before the next one:
+ *  - `conflict`: HTTP 409, this consumer already has a round for the source in this tick;
+ *  - `busy`: HTTP 503 or 429, the gateway is at capacity or a node set is unavailable, optionally
+ *    with the gateway's `Retry-After`;
+ *  - `error`: anything else that may be transient (timeout, network, other 5xx).
+ */
+export type RetryCause =
+  | { kind: "conflict" }
+  | { kind: "busy"; retryAfterMs?: number }
+  | { kind: "error" };
+
+/**
+ * How long to wait before the next attempt, in ms. Every delay reaches at least the start of the
+ * next tick (a retry inside the tick that just failed would be a duplicate round), then adds jitter
+ * so clients that failed together do not retry together:
+ *  - conflict: the next tick plus up to half a tick;
+ *  - busy: the later of the next tick and the gateway's `Retry-After` (a tick if absent), plus up to
+ *    a tick;
+ *  - error: capped exponential backoff (250 ms, 500 ms, ... 5 s) with half of it randomized.
+ * `failures` is the number of attempts that have failed so far (1 after the first).
+ */
+export function retryDelayMs(
+  cause: RetryCause,
+  failures: number,
+  nowMs: number,
+  tickMs: number,
+  random: () => number = Math.random,
+): number {
+  const nextTick = msUntilNextTick(nowMs, tickMs);
+  switch (cause.kind) {
+    case "conflict":
+      return nextTick + random() * (tickMs / 2);
+    case "busy":
+      return Math.max(nextTick, cause.retryAfterMs ?? tickMs) + random() * tickMs;
+    case "error": {
+      const backoff = Math.min(BACKOFF_BASE_MS * 2 ** Math.max(failures - 1, 0), BACKOFF_MAX_MS);
+      return Math.max(nextTick, backoff / 2 + random() * (backoff / 2));
+    }
+  }
+}
+
+/** The more demanding of two causes, so one endpoint's busy answer is not hidden by another's error. */
+function mergeCause(a: RetryCause, b: RetryCause): RetryCause {
+  if (a.kind === "busy" || b.kind === "busy") {
+    const waits = [a, b].flatMap((c) => (c.kind === "busy" && c.retryAfterMs !== undefined ? [c.retryAfterMs] : []));
+    return waits.length ? { kind: "busy", retryAfterMs: Math.max(...waits) } : { kind: "busy" };
+  }
+  if (a.kind === "conflict" || b.kind === "conflict") return { kind: "conflict" };
+  return { kind: "error" };
+}
+
+/** Parse a `Retry-After` header given in seconds into ms; HTTP dates and junk are ignored. */
+function retryAfterMs(res: Response): number | undefined {
+  const raw = res.headers.get("retry-after");
+  if (raw === null) return undefined;
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 60) * 1000 : undefined;
+}
+
 /** Default gateway base URL when `endpoints` is omitted. */
 export const DEFAULT_GATEWAY_ENDPOINT = "https://dev-gateway.molpha.io/";
 
@@ -252,6 +336,9 @@ export class MolphaGateway {
   private readonly programIdBytes: Uint8Array;
   /** Gateway PDA per endpoint URL; resolved once per client lifetime. */
   private readonly gatewayPdas = new Map<string, Promise<Uint8Array>>();
+  /** Advertised timing per endpoint URL, read lazily on the first retry. */
+  private readonly advertisedInfo = new Map<string, Promise<GatewayInfo | undefined>>();
+  private readonly random: () => number;
 
   constructor(
     endpoints?: GatewayEndpointInput | GatewayEndpointInput[],
@@ -295,6 +382,12 @@ export class MolphaGateway {
       options.allowUnverifiedNodeKeysForPrivateApi ?? false;
     this.programId = options.programId ?? MOLPHA_PROGRAM_ID;
     this.programIdBytes = addressToBytes(this.programId);
+    this.random = options.random ?? Math.random;
+  }
+
+  /** The configured gateway base URLs, in failover order. */
+  endpointUrls(): string[] {
+    return this.endpoints.map((e) => e.url);
   }
 
   /** Tries endpoints in order; returns the first node list it can fetch. */
@@ -408,8 +501,8 @@ export class MolphaGateway {
       encrypt,
       sourcePayment,
       maxAge = 60,
-      maxRetries = 15,
-      timeoutMs = 5000,
+      maxRetries = DEFAULT_MAX_RETRIES,
+      timeoutMs = DEFAULT_ROUND_TIMEOUT_MS,
     } = opts;
     const signaturesRequired = assertSignaturesRequired(opts.signaturesRequired);
 
@@ -440,21 +533,19 @@ export class MolphaGateway {
       opts.consumerAuthority ?? this.defaultConsumerAuthority ?? subscriptionOwner;
     const authSigner = signer ?? this.defaultSigner;
 
-    const round = await this.resolveContext(opts.context, encrypt !== undefined);
-    const { registryVersion, redundancyBuffer } = round;
-    if (
-      round.nodeCount !== undefined &&
-      round.nodes !== undefined &&
-      round.nodes.length !== round.nodeCount
-    ) {
-      throw new Error(
-        `Gateway node list has ${round.nodes.length} nodes but registry ${registryVersion} has node_count ${round.nodeCount} — refresh the round context`,
-      );
-    }
-    const nodeCount = round.nodeCount ?? round.nodes?.length;
-    if (nodeCount === undefined) {
-      throw new Error("Round context resolved neither nodeCount nor nodes");
-    }
+    let round = await this.resolveContext(opts.context, encrypt !== undefined);
+    let { registryVersion, redundancyBuffer } = round;
+    const nodeCountOf = (r: ResolvedRound): number => {
+      if (r.nodeCount !== undefined && r.nodes !== undefined && r.nodes.length !== r.nodeCount) {
+        throw new Error(
+          `Gateway node list has ${r.nodes.length} nodes but registry ${r.registryVersion} has node_count ${r.nodeCount} — refresh the round context`,
+        );
+      }
+      const n = r.nodeCount ?? r.nodes?.length;
+      if (n === undefined) throw new Error("Round context resolved neither nodeCount nor nodes");
+      return n;
+    };
+    let nodeCount = nodeCountOf(round);
 
     // A paywalled source is paid by the caller, per node fetch, from their own
     // wallet. Read the source's terms once, then sign fresh authorizations per
@@ -487,14 +578,27 @@ export class MolphaGateway {
     let lastError: unknown;
     // The gateway stamps a round with the tick it arrives in. A round already reserved for this
     // consumer, or already dispatched to the nodes, cannot run again in that tick: so each retry
-    // waits for a later one.
-    const tickMs = opts.tickMs ?? DEFAULT_TICK_MS;
-    const groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
+    // waits for a later one (see retryDelayMs). The grid is the gateway's advertised one, read once
+    // on the first retry, unless the caller pinned it.
+    let tickMs = opts.tickMs;
+    let groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
     // Every registry node, ascending: the committee is not known until the gateway has stamped
     // the round, so the envelope set cannot be narrowed here.
-    const registryIndexes = Array.from({ length: nodeCount }, (_, index) => index);
+    let registryIndexes = Array.from({ length: nodeCount }, (_, index) => index);
+    // What made the last attempt fail decides how long to wait before the next.
+    let cause: RetryCause = { kind: "error" };
+    // A stale registry version is refreshed at most once per call, and the refreshed attempt is
+    // neither counted nor delayed. `refreshedOnce` is never reset: a registry that is still stale
+    // after the refresh is a terminal error, not a reason to refresh again.
+    let refreshedOnce = false;
+    let retryNow = false;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      if (attempt > 0) await sleep(msUntilNextTick(Date.now(), tickMs));
+      if (attempt > 0 && !retryNow) {
+        tickMs ??= (await this.advertisedTickMs(timeoutMs)) ?? DEFAULT_TICK_MS;
+        await sleep(retryDelayMs(cause, attempt, Date.now(), tickMs, this.random));
+      }
+      retryNow = false;
+      cause = { kind: "error" };
 
       let encKeyBundle: ReturnType<typeof encryptForNodes> | undefined;
       if (encrypt) {
@@ -537,6 +641,8 @@ export class MolphaGateway {
 
       /** Set when a relayed source quote makes this attempt's round obsolete. */
       let requote = false;
+      /** Set when the gateway says the registry version is stale. */
+      let restartForRefresh = false;
       for (const endpoint of this.endpoints) {
         try {
           // Fresh per attempt and per endpoint: the stamp is read from the local clock each time,
@@ -625,17 +731,36 @@ export class MolphaGateway {
           }
 
           const errorDetail = !res.ok ? await parseGatewayErrorDetail(res) : undefined;
-          if (res.status === 400 || res.status === 401) {
+          // The registry rolled since the inputs were read (a cached context, or a roll between
+          // the read and the request). Read it afresh and retry once, without spending an attempt.
+          if (
+            res.status === 400 &&
+            !refreshedOnce &&
+            !restartForRefresh &&
+            /registryVersion.*current version/i.test(errorDetail ?? "")
+          ) {
+            restartForRefresh = true;
+            break;
+          }
+          // 400 and 401 are the request's fault; 403 is the subscription's (inactive, or the
+          // round quota for the term is spent): none of them improves by trying again.
+          if (res.status === 400 || res.status === 401 || res.status === 403) {
             throw new GatewayError(
               formatGatewayErrorMessage("Gateway rejected request", res.status, errorDetail),
               res.status,
             );
           }
-          if (res.status === 503) {
+          if (res.status === 503 || res.status === 429) {
             lastError = new GatewayError(
-              formatGatewayErrorMessage("Gateway unavailable", 503, errorDetail),
-              503,
+              formatGatewayErrorMessage(
+                res.status === 429 ? "Gateway rate limited" : "Gateway unavailable",
+                res.status,
+                errorDetail,
+              ),
+              res.status,
             );
+            const wait = retryAfterMs(res);
+            cause = mergeCause(cause, wait === undefined ? { kind: "busy" } : { kind: "busy", retryAfterMs: wait });
             continue; // a different gateway may already hold the AggSig
           }
           if (!res.ok) {
@@ -643,6 +768,8 @@ export class MolphaGateway {
               formatGatewayErrorMessage("Gateway error", res.status, errorDetail),
               res.status,
             );
+            // This consumer already has a round for the source in this tick: wait for the next.
+            if (res.status === 409) cause = mergeCause(cause, { kind: "conflict" });
             continue;
           }
           const json = (await res.json()) as GatewaySignedDataResponse;
@@ -661,12 +788,23 @@ export class MolphaGateway {
           if (err instanceof UpstreamPaymentRequiredError) throw err;
           if (
             err instanceof GatewayError &&
-            (err.status === 400 || err.status === 401 || err.status === 402)
+            (err.status === 400 || err.status === 401 || err.status === 402 || err.status === 403)
           ) {
             throw err;
           }
           lastError = err; // timeout / network / identity lookup → next endpoint
         }
+      }
+      if (restartForRefresh) {
+        round = await this.resolveContext(undefined, encrypt !== undefined);
+        ({ registryVersion, redundancyBuffer } = round);
+        nodeCount = nodeCountOf(round);
+        groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
+        registryIndexes = Array.from({ length: nodeCount }, (_, index) => index);
+        refreshedOnce = true;
+        retryNow = true;
+        attempt--; // the refreshed request is the same attempt, with the right inputs
+        continue;
       }
       // A requote invalidates this attempt's body for every endpoint alike.
       if (requote) continue;
@@ -706,6 +844,28 @@ export class MolphaGateway {
     const registry = await registryPromise;
     if (registry.nodeCount !== undefined) return registry;
     return { ...registry, nodes: await this.getNodes() };
+  }
+
+  /**
+   * The gateway's advertised tick grid, read once per endpoint and only when a retry needs it. Any
+   * failure (an old gateway without `/v1/info`, a timeout) means "not advertised", so the caller
+   * falls back to the default; a failure is not cached.
+   */
+  private async advertisedTickMs(timeoutMs: number): Promise<number | undefined> {
+    for (const endpoint of this.endpoints) {
+      let pending = this.advertisedInfo.get(endpoint.url);
+      if (!pending) {
+        pending = this.fetchGatewayInfo(endpoint, Math.min(timeoutMs, 3_000)).catch(() => undefined);
+        this.advertisedInfo.set(endpoint.url, pending);
+      }
+      const info = await pending;
+      if (info === undefined) {
+        this.advertisedInfo.delete(endpoint.url);
+        continue;
+      }
+      if (info.tickMs !== undefined) return info.tickMs;
+    }
+    return undefined;
   }
 
   /** Gateway PDA bytes for an endpoint, cached per URL. A failed lookup is not cached. */
