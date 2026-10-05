@@ -7,7 +7,7 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { describe, expect, it, vi } from "vitest";
 import { bytesToHex, hexToBytes } from "../src/core/encoding.js";
 import type { Attestation } from "../src/core/types.js";
-import { MolphaSolanaClient } from "../src/solana/client.js";
+import { estimateSubmitComputeUnits, MolphaSolanaClient } from "../src/solana/client.js";
 import { addressFromBytes } from "../src/solana/kit.js";
 import { FIXTURE_SIGNER_BITS, PUBKEYS, RUST_VECTORS } from "./fixtures/registry12.js";
 
@@ -65,8 +65,9 @@ function harness(opts: { registry?: ReturnType<typeof registryAccount>; missingN
       };
     }),
   );
+  const registryFetch = vi.fn(async () => opts.registry ?? registryAccount());
   program.account = {
-    registry: { fetch: vi.fn(async () => opts.registry ?? registryAccount()) },
+    registry: { fetch: registryFetch },
     node: { fetchMultiple },
   };
 
@@ -84,7 +85,7 @@ function harness(opts: { registry?: ReturnType<typeof registryAccount>; missingN
       return builder;
     },
   };
-  return { client, captured, rpc, fetchMultiple, wallet };
+  return { client, captured, rpc, fetchMultiple, wallet, registryFetch };
 }
 
 describe("MolphaSolanaClient.submitAttestation", () => {
@@ -172,3 +173,120 @@ describe("MolphaSolanaClient.submitAttestation", () => {
   });
 });
 
+/** Decodes the compute-budget instruction's argument: [discriminator, u32 units] or [.., u64 price]. */
+function budgetArg(ix: any, kind: "limit" | "price"): number {
+  const data = Buffer.from(ix.data);
+  expect(data[0]).toBe(kind === "limit" ? 2 : 3);
+  return kind === "limit" ? data.readUInt32LE(1) : Number(data.readBigUInt64LE(1));
+}
+
+describe("compute budget", () => {
+  it("sizes the limit to the aggregate instead of requesting the 1.4M maximum", async () => {
+    const { client, captured } = harness();
+    await client.submitAttestation(result); // seven signers
+    expect(captured.pre).toHaveLength(1);
+    const limit = budgetArg(captured.pre![0], "limit");
+    expect(limit).toBe(estimateSubmitComputeUnits(7));
+    expect(limit).toBeLessThan(250_000);
+    // Above what the program benchmark measures for the whole transaction at 8 signers (~119k).
+    expect(estimateSubmitComputeUnits(8)).toBeGreaterThan(119_000 * 1.15);
+  });
+
+  it("covers the benchmark and stays inside the transaction maximum", () => {
+    for (const [signers, measured] of [[8, 119_178], [12, 157_382], [18, 210_020]] as const) {
+      expect(estimateSubmitComputeUnits(signers)).toBeGreaterThan(measured * 1.15);
+    }
+    expect(estimateSubmitComputeUnits(200)).toBe(1_400_000);
+    expect(estimateSubmitComputeUnits(0)).toBe(1_400_000);
+  });
+
+  it("honors an explicit limit", async () => {
+    const { client, captured } = harness();
+    await client.submitAttestation(result, { computeUnitLimit: 300_000 });
+    expect(budgetArg(captured.pre![0], "limit")).toBe(300_000);
+  });
+
+  it("adds a compute-unit price only when asked", async () => {
+    const { client, captured } = harness();
+    await client.submitAttestation(result, { priorityFeeMicroLamports: 2_500 });
+    expect(captured.pre).toHaveLength(2);
+    expect(budgetArg(captured.pre![1], "price")).toBe(2_500);
+    await expect(
+      client.submitAttestation(result, { priorityFeeMicroLamports: -1 }),
+    ).rejects.toThrow(/priorityFeeMicroLamports/);
+  });
+
+  it("derives an automatic fee from recent prioritization fees, capped, and reuses it briefly", async () => {
+    const { client, captured } = harness();
+    const getFees = vi.fn(async () =>
+      [0, 0, 100, 200, 300, 400, 500, 600, 700, 5_000_000].map((fee, slot) => ({ slot, prioritizationFee: fee })),
+    );
+    (client as any).provider.connection.getRecentPrioritizationFees = getFees;
+    await client.submitAttestation(result, { priorityFeeMicroLamports: "auto" });
+    // 75th percentile of ten samples is the 8th smallest (index 7): 600... capped fees apply to outliers only.
+    expect(budgetArg(captured.pre![1], "price")).toBe(600);
+    await client.submitAttestation(result, { priorityFeeMicroLamports: "auto" });
+    expect(getFees).toHaveBeenCalledTimes(1);
+  });
+
+  it("an unreadable fee market does not stop a submit", async () => {
+    const { client, captured, rpc } = harness();
+    (client as any).provider.connection.getRecentPrioritizationFees = vi.fn(async () => {
+      throw new Error("rpc down");
+    });
+    await client.submitAttestation(result, { priorityFeeMicroLamports: "auto" });
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(captured.pre).toHaveLength(1);
+  });
+});
+
+describe("registry and signer-key caching", () => {
+  it("reads the registry and the signer Node accounts once for many submits", async () => {
+    const { client, registryFetch, fetchMultiple } = harness();
+    for (let i = 0; i < 5; i++) await client.submitAttestation(result);
+    expect(registryFetch).toHaveBeenCalledTimes(1);
+    expect(fetchMultiple).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces concurrent submits into one read", async () => {
+    const { client, registryFetch, fetchMultiple, rpc } = harness();
+    await Promise.all(Array.from({ length: 20 }, () => client.submitAttestation(result)));
+    expect(rpc).toHaveBeenCalledTimes(20);
+    expect(registryFetch).toHaveBeenCalledTimes(1);
+    expect(fetchMultiple).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads only the Node accounts it has not seen when the signer set changes", async () => {
+    const { client, fetchMultiple } = harness();
+    await client.submitAttestation(result);
+    // Drop one signer (bit 3 of 4008 = 0b111110101000): still a valid 6-signer set for quorum 5.
+    const without = {
+      ...result,
+      signature: { ...result.signature, signersBitmap: "00".repeat(30) + "0fa0" },
+    };
+    await client.submitAttestation(without);
+    expect(fetchMultiple).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not remember a failed read", async () => {
+    const { client, registryFetch } = harness();
+    registryFetch.mockRejectedValueOnce(new Error("rpc down"));
+    await expect(client.submitAttestation(result)).rejects.toThrow(/rpc down/);
+    await client.submitAttestation(result);
+    expect(registryFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a missing Node account", async () => {
+    const { client, rpc } = harness({ missingNode: 7 });
+    await expect(client.submitAttestation(result)).rejects.toThrow(/does not exist/);
+    await expect(client.submitAttestation(result)).rejects.toThrow(/does not exist/);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("gives a client with a different registry version its own entry", async () => {
+    const { client, registryFetch } = harness();
+    await client.submitAttestation(result);
+    await client.submitAttestation({ ...result, payload: { ...result.payload, registryVersion: 13 } });
+    expect(registryFetch).toHaveBeenCalledTimes(2);
+  });
+});

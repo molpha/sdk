@@ -68,6 +68,10 @@ export function setComputeUnitLimit(units: number): SolanaInstruction {
   return web3.ComputeBudgetProgram.setComputeUnitLimit({ units });
 }
 
+export function setComputeUnitPrice(microLamports: number): SolanaInstruction {
+  return web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports });
+}
+
 export function keypairFromSecretKey(secretKey: Uint8Array): SolanaKeypair {
   return web3.Keypair.fromSecretKey(secretKey);
 }

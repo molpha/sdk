@@ -9,6 +9,7 @@ import {
   Program,
   type Idl,
   type Wallet,
+  web3,
 } from "@anchor-lang/core";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import BN from "bn.js";
@@ -34,6 +35,7 @@ import {
   addressFromBytes,
   getAssociatedTokenAddressSync,
   setComputeUnitLimit,
+  setComputeUnitPrice,
   SYSTEM_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
   toSolanaAddress,
@@ -54,8 +56,34 @@ import { PlanType, planIdFromVariant, planVariant, type PlanId } from "./plans.j
 
 export { PlanType, type PlanId } from "./plans.js";
 
-/** Matches the program CLI default; `submit_attestation` verifies the aggregate on-chain. */
-const DEFAULT_COMPUTE_UNIT_LIMIT = 1_400_000;
+/** The most a transaction may request; the fallback when the signer count is unknown. */
+const MAX_COMPUTE_UNIT_LIMIT = 1_400_000;
+
+/**
+ * Compute units to request for a `submit_attestation` carrying `signerCount` signatures.
+ *
+ * The program's LiteSVM benchmark measures the whole transaction at about `43k + 9.1k` units per
+ * signer (119k at 8 signers, 155k at 12, 208k at 18), so the old flat 1.4M request was 7-10 times
+ * what a typical aggregate uses. That matters once a priority fee is attached, because it is
+ * priced per requested unit, and for how the scheduler packs blocks. The estimate adds 15% and a
+ * fixed 10k: the program's selection check costs a little more on some registries than the
+ * benchmark's, and a limit that is hit fails the transaction for good.
+ */
+export function estimateSubmitComputeUnits(signerCount: number): number {
+  if (!Number.isInteger(signerCount) || signerCount < 1) return MAX_COMPUTE_UNIT_LIMIT;
+  const measured = 43_000 + 9_200 * signerCount;
+  return Math.min(Math.round(measured * 1.15) + 10_000, MAX_COMPUTE_UNIT_LIMIT);
+}
+
+/** How long a registry read is reused. A registry version's node list never changes. */
+const REGISTRY_CACHE_MS = 30_000;
+/** Cap on remembered node keys / coalition keys, so a long-lived client stays bounded. */
+const KEY_CACHE_LIMIT = 8_192;
+/** How long a recent-prioritization-fee read is reused. */
+const PRIORITY_FEE_CACHE_MS = 5_000;
+/** Percentile of recent fees for `priorityFeeMicroLamports: "auto"`, and the most it will pay. */
+const AUTO_FEE_PERCENTILE = 0.75;
+const AUTO_FEE_CAP_MICRO_LAMPORTS = 1_000_000;
 type Commitment = NonNullable<ConstructorParameters<typeof AnchorProvider>[2]>["commitment"];
 
 export interface SubscribeResult {
@@ -140,7 +168,18 @@ export interface SubmitAttestationArgs {
 }
 
 export interface SubmitAttestationOptions {
+  /**
+   * Compute-unit limit. Defaults to {@link estimateSubmitComputeUnits} for the aggregate's signer
+   * count, not the 1.4M maximum.
+   */
   computeUnitLimit?: number;
+  /**
+   * Priority fee in micro-lamports per compute unit. A number is used as given; `"auto"` takes the
+   * 75th percentile of the fees recently paid by transactions that wrote the feed, capped at 1
+   * lamport per unit. Omitted: no priority fee, which is right on a quiet cluster. Raise it (or
+   * use `"auto"`) when submits are dropped under load.
+   */
+  priorityFeeMicroLamports?: number | "auto";
   /**
    * Precomputed signer coalition key. When omitted, the client fetches signer `Node`
    * accounts and sums their secp256k1 keys ({@link computeCoalitionKey}).
@@ -169,6 +208,14 @@ interface CreateClientOpts {
 }
 
 export class MolphaSolanaClient {
+  // Registry reads and signer keys are shared by every submit that names the same registry
+  // version, so a fleet of feeds reads them once. Promises are cached, so concurrent submits
+  // coalesce; a failed read is dropped and retried by the next call.
+  private readonly registryCache = new Map<number, { at: number; value: Promise<RegistryView> }>();
+  private readonly nodeKeyCache = new Map<string, { x: Uint8Array; y: Uint8Array }>();
+  private readonly coalitionCache = new Map<string, Promise<CoalitionKey>>();
+  private priorityFeeCache?: { at: number; value: Promise<number> };
+
   private constructor(
     private readonly program: Program,
     private readonly provider: AnchorProvider,
@@ -368,13 +415,18 @@ export class MolphaSolanaClient {
     const { payload, signature: schnorr } = attestation;
     const sourceId = toFixedBytes(payload.sourceId, 32, "sourceId");
     const submitter = this.wallet;
-    const registry = await this.fetchRegistry(payload.registryVersion);
+    const registry = await this.fetchRegistryCached(payload.registryVersion);
     const remaining = resolveRemainingAccounts(schnorr.signersBitmap, registry);
     assertSignerCount(remaining.length, payload.signaturesRequired, registry);
     const coalitionKey =
-      opts?.coalitionKey ?? (await this.computeSignerCoalitionKey(remaining, registry));
+      opts?.coalitionKey ??
+      (await this.computeSignerCoalitionKey(remaining, registry, schnorr.signersBitmap));
     const feed = feedPda(sourceId, payload.signaturesRequired, submitter, this.programId);
-    const cuIx = setComputeUnitLimit(opts?.computeUnitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT);
+    const preInstructions = [
+      setComputeUnitLimit(opts?.computeUnitLimit ?? estimateSubmitComputeUnits(remaining.length)),
+    ];
+    const price = await this.resolvePriorityFee(opts?.priorityFeeMicroLamports, feed);
+    if (price > 0) preInstructions.push(setComputeUnitPrice(price));
 
     const signature = await this.methods
       .submitAttestation(
@@ -388,31 +440,98 @@ export class MolphaSolanaClient {
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
       })
       .remainingAccounts(remaining)
-      .preInstructions([cuIx])
+      .preInstructions(preInstructions)
       .rpc();
     return { signature, feed };
   }
 
+  /** The registry for `version`, reused for {@link REGISTRY_CACHE_MS}. */
+  private fetchRegistryCached(version: number): Promise<RegistryView> {
+    const now = Date.now();
+    const hit = this.registryCache.get(version);
+    if (hit && now - hit.at < REGISTRY_CACHE_MS) return hit.value;
+    const value = this.fetchRegistry(version);
+    this.registryCache.set(version, { at: now, value });
+    value.catch(() => {
+      if (this.registryCache.get(version)?.value === value) this.registryCache.delete(version);
+    });
+    return value;
+  }
+
+  private async resolvePriorityFee(
+    option: number | "auto" | undefined,
+    feed: SolanaAddress,
+  ): Promise<number> {
+    if (option === undefined) return 0;
+    if (option !== "auto") {
+      if (!Number.isFinite(option) || option < 0) {
+        throw new Error("priorityFeeMicroLamports must be a non-negative number or \"auto\"");
+      }
+      return Math.floor(option);
+    }
+    const now = Date.now();
+    if (!this.priorityFeeCache || now - this.priorityFeeCache.at >= PRIORITY_FEE_CACHE_MS) {
+      const value = (async () => {
+        try {
+          const recent = await this.provider.connection.getRecentPrioritizationFees({
+            lockedWritableAccounts: [new web3.PublicKey(feed)],
+          });
+          const fees = recent.map((r) => r.prioritizationFee).sort((a, b) => a - b);
+          if (fees.length === 0) return 0;
+          const fee = fees[Math.min(fees.length - 1, Math.floor(fees.length * AUTO_FEE_PERCENTILE))]!;
+          return Math.min(fee, AUTO_FEE_CAP_MICRO_LAMPORTS);
+        } catch {
+          return 0; // an unreadable fee market must not stop a submit
+        }
+      })();
+      this.priorityFeeCache = { at: now, value };
+    }
+    return this.priorityFeeCache.value;
+  }
+
   /** Sum of the signers' keys, read from their on-chain `Node` accounts (one batched fetch). */
-  private async computeSignerCoalitionKey(
+  private computeSignerCoalitionKey(
+    remaining: SolanaAccountMeta[],
+    registry: RegistryView,
+    signersBitmap: string,
+  ): Promise<CoalitionKey> {
+    // A node's key never changes, so the sum for one (registry, signer set) is reusable, and
+    // each Node account is read at most once however many signer sets include it. The promise is
+    // cached, so concurrent submits of one signer set share a single read.
+    const setKey = `${registry.version}:${signersBitmap}`;
+    const known = this.coalitionCache.get(setKey);
+    if (known) return known;
+    if (this.coalitionCache.size >= KEY_CACHE_LIMIT) this.coalitionCache.clear();
+    const pending = this.sumSignerKeys(remaining, registry);
+    this.coalitionCache.set(setKey, pending);
+    pending.catch(() => {
+      if (this.coalitionCache.get(setKey) === pending) this.coalitionCache.delete(setKey);
+    });
+    return pending;
+  }
+
+  private async sumSignerKeys(
     remaining: SolanaAccountMeta[],
     registry: RegistryView,
   ): Promise<CoalitionKey> {
-    const accounts: Array<NodeAccount | null> = await this.accounts.node.fetchMultiple(
-      remaining.map((meta) => meta.pubkey),
-    );
-    const keys = accounts.map((account, i) => {
-      if (!account) {
-        throw new Error(
-          `Node account ${remaining[i]!.pubkey.toBase58()} (registry ${registry.version}) does not exist`,
-        );
-      }
-      return {
-        x: nodeCoordinate(account, "secp256k1PubkeyX", "secp256k1_pubkey_x"),
-        y: nodeCoordinate(account, "secp256k1PubkeyY", "secp256k1_pubkey_y"),
-      };
-    });
-    return computeCoalitionKey(keys);
+    const addresses = remaining.map((meta) => meta.pubkey);
+    const missing = addresses.filter((a) => !this.nodeKeyCache.has(a.toBase58()));
+    if (missing.length > 0) {
+      const accounts: Array<NodeAccount | null> = await this.accounts.node.fetchMultiple(missing);
+      if (this.nodeKeyCache.size + missing.length > KEY_CACHE_LIMIT) this.nodeKeyCache.clear();
+      accounts.forEach((account, i) => {
+        if (!account) {
+          throw new Error(
+            `Node account ${missing[i]!.toBase58()} (registry ${registry.version}) does not exist`,
+          );
+        }
+        this.nodeKeyCache.set(missing[i]!.toBase58(), {
+          x: nodeCoordinate(account, "secp256k1PubkeyX", "secp256k1_pubkey_x"),
+          y: nodeCoordinate(account, "secp256k1PubkeyY", "secp256k1_pubkey_y"),
+        });
+      });
+    }
+    return computeCoalitionKey(addresses.map((a) => this.nodeKeyCache.get(a.toBase58())!));
   }
 
   /**
