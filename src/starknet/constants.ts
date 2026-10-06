@@ -1,13 +1,17 @@
 /**
  * Deployed Molpha verifier contract addresses on Starknet testnets.
+ *
+ * Address comes from the active deployment profile (`config/deployments.json`).
+ * When `MOLPHA_DEV_VERIFIERS_PROVISIONAL` is true, the value is a stable fallback
+ * and should not be treated as the live Attestation-interface deployment.
  */
+
+export { MOLPHA_VERIFIER_STARKNET_SEPOLIA } from "../deployment.generated.js";
+
+import { MOLPHA_VERIFIER_STARKNET_SEPOLIA } from "../deployment.generated.js";
 
 /** Supported Starknet testnet identifiers. */
 export type MolphaStarknetNetwork = "starknet-sepolia";
-
-/** Deployed verifier address on Starknet Sepolia. */
-export const MOLPHA_VERIFIER_STARKNET_SEPOLIA =
-  "0x0378df4dbecf8f0c7daa801282932f7011c7a5e5773bab9eaf68f5fa5e7530ef" as const;
 
 /** Network id -> deployed verifier address. */
 export const MOLPHA_VERIFIER_STARKNET_ADDRESSES: Record<

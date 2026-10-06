@@ -8,12 +8,15 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { describe, expect, it } from "vitest";
 import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
-import { MOLPHA_PROGRAM_ID } from "../src/core/constants.js";
+import { MOLPHA_PROGRAM_ID, MOLPHA_SDK_PROFILE } from "../src/core/constants.js";
 import { hexToBytes, utf8 } from "../src/core/encoding.js";
 import type { Attestation } from "../src/core/types.js";
 import { buildSubmitAttestationArgs } from "../src/solana/client.js";
 import { SYSTEM_PROGRAM_ADDRESS } from "../src/solana/kit.js";
 import { feedPda, protocolConfigPda, registryPda } from "../src/solana/pdas.js";
+
+/** Layout/instruction guards below target the parity IDL; skip under the Brebeneskul stable profile. */
+const describeParityIdl = MOLPHA_SDK_PROFILE === "dev" ? describe : describe.skip;
 
 /** Anchor discriminator: first 8 bytes of sha256("<namespace>:<name>"). */
 const discriminator = (namespace: "global" | "account", name: string): number[] => [
@@ -57,7 +60,9 @@ describe("vendored IDL", () => {
     expect(MOLPHA_IDL.address).toBe(MOLPHA_PROGRAM_ID);
     expect(MOLPHA_PROGRAM_ADDRESS).toBe(MOLPHA_PROGRAM_ID);
   });
+});
 
+describeParityIdl("vendored IDL (parity / epoch-settlement)", () => {
   it("is the epoch-settlement program IDL (no round-settlement instructions)", () => {
     const names = MOLPHA_IDL.instructions.map((ix) => ix.name);
     expect(names).toEqual(
