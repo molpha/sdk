@@ -40,8 +40,12 @@
     }
   },
   "scripts": {
+    "select-profile": "tsx scripts/select-profile.ts",
+    "prebuild": "pnpm select-profile",
     "build": "tsup",
+    "pretypecheck": "pnpm select-profile",
     "typecheck": "tsc --noEmit",
+    "pretest": "pnpm select-profile",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf dist",

@@ -79,10 +79,8 @@ const VERIFY_SIGNATURE =
   "verify(((bytes32,bytes32,uint32,uint8,uint64),(bytes32,address,uint256)),uint64)";
 
 describe("MOLPHA verifier address", () => {
-  it("exports the CREATE2 address used on all EVM chains", () => {
-    expect(MOLPHA_VERIFIER_ADDRESS).toBe(
-      "0xE1fd792b7E54e0C8F0Cd1c8055E446ff36d233eB",
-    );
+  it("exports a 0x-prefixed 20-byte address from the active deployment profile", () => {
+    expect(MOLPHA_VERIFIER_ADDRESS).toMatch(/^0x[0-9a-fA-F]{40}$/);
   });
 });
 

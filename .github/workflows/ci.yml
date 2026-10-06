@@ -15,6 +15,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select deployment profile
+        # PRs into main (and pushes on main) bake the stable defaults; everything else uses dev.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.base_ref }}"
+          else
+            base="${{ github.ref_name }}"
+          fi
+          if [ "$base" = "main" ]; then
+            echo "MOLPHA_SDK_PROFILE=stable" >> "$GITHUB_ENV"
+          else
+            echo "MOLPHA_SDK_PROFILE=dev" >> "$GITHUB_ENV"
+          fi
+          echo "Using MOLPHA_SDK_PROFILE for base=$base"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 

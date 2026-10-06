@@ -60,7 +60,24 @@ The preimage is 141 bytes (32 + 32 + 32 + 4 + 1 + 8 + 32).
 pnpm add @molpha/sdk
 ```
 
+For the pre-release channel (parity program + `dev-gateway`):
+
+```bash
+pnpm add @molpha/sdk@dev
+```
+
 Runtime dependencies include `@solana/kit`, `@anchor-lang/core`, and `@noble/*`. `bn.js` is an optional peer dependency (used by the Solana / Anchor path).
+
+### npm tags and deployment defaults
+
+Defaults are baked at publish time from `config/deployments.json` (`MOLPHA_SDK_PROFILE`). Override at runtime with `endpoints`, `programId`, and `idl`.
+
+| npm dist-tag | Profile | Default gateway | Solana program | EVM / Starknet |
+|---|---|---|---|---|
+| `latest` | `stable` | `https://gateway.molpha.io/` | `MoLFGDpFoVnQgwbkTNScKPohCxhbfd61JjFrnotuwzh` | Documented CREATE2 / Sepolia addresses |
+| `dev` | `dev` | `https://dev-gateway.molpha.io/` | `chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt` | Provisional until redeploy (`MOLPHA_DEV_VERIFIERS_PROVISIONAL`); falls back to stable addresses |
+
+Inspect the active profile via `MOLPHA_SDK_PROFILE` and `MOLPHA_DEV_VERIFIERS_PROVISIONAL`. Local builds: `MOLPHA_SDK_PROFILE=stable pnpm build` or `MOLPHA_SDK_PROFILE=dev pnpm build` (default `dev`).
 
 | Import | Use |
 |---|---|
@@ -907,7 +924,7 @@ Known limitations:
 - production deployments should use authenticated gateway requests;
 - testnet verifier addresses may change between protocol releases.
 
-Solana paths such as selection bitmap and `submit_attestation` remaining-accounts resolution are aligned with the Molpha program version vendored in this repo (`MoLFnEbuMS5gWnXNfUMLAYSqRM3eQZKWRzjeMQfqbT3`, not yet deployed).
+Solana paths such as selection bitmap and `submit_attestation` remaining-accounts resolution are aligned with the IDL selected by the active deployment profile (`idl/profiles/{stable,dev}/molpha.json`).
 
 ## Develop
 

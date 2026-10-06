@@ -4,6 +4,7 @@
 import { assertAggregationQuorum, canonicalizeAggregation } from "../core/aggregation.js";
 import { canonicalizeAPIConfig, deriveSourceId } from "../core/apiconfig.js";
 import { MOLPHA_PROGRAM_ID } from "../core/constants.js";
+import { DEFAULT_GATEWAY_ENDPOINT } from "../deployment.generated.js";
 import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
 import { formatInt256Decimal } from "../core/int256.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
@@ -309,8 +310,8 @@ function retryAfterMs(res: Response): number | undefined {
   return Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 60) * 1000 : undefined;
 }
 
-/** Default gateway base URL when `endpoints` is omitted. */
-export const DEFAULT_GATEWAY_ENDPOINT = "https://dev-gateway.molpha.io/";
+/** Default gateway base URL when `endpoints` is omitted (from the active deployment profile). */
+export { DEFAULT_GATEWAY_ENDPOINT };
 
 /** Thrown for terminal gateway errors (400/401) — never retried. */
 export class GatewayError extends Error {
