@@ -49,6 +49,41 @@ function sourceTerms(overrides: Record<string, unknown> = {}): Response {
   );
 }
 
+const ID_SCHEMA = {
+  type: "object",
+  properties: { required: { type: "boolean" }, id: { type: "string", minLength: 16, maxLength: 128, pattern: "^[a-zA-Z0-9_-]+$" } },
+  required: ["required"],
+};
+
+/** A source that, like TickerLayer, declares a required payment-identifier extension. */
+function sourceTermsWithIdentifier(): Response {
+  return jsonResponse(
+    {
+      x402Version: 2,
+      accepts: [
+        {
+          scheme: "exact",
+          network: "eip155:84532",
+          asset: BASE_SEPOLIA_USDC,
+          payTo: "0x1111111111111111111111111111111111111111",
+          amount: "10000",
+          maxTimeoutSeconds: 60,
+          extra: { name: "USDC", version: "2" },
+        },
+      ],
+      extensions: { "payment-identifier": { info: { required: true }, schema: ID_SCHEMA }, bazaar: { info: {} } },
+    },
+    402,
+  );
+}
+
+/** Each authorization as the source would read it, in wire order. */
+function decodedPayments(body: Record<string, unknown>): Record<string, any>[] {
+  return (body.sourcePayments as string[]).map(
+    (raw) => JSON.parse(new TextDecoder().decode(base64ToBytes(raw))) as Record<string, any>,
+  );
+}
+
 /** The gateway's relayed quote: payment required, just not to Molpha. */
 function upstreamQuote(eligibleSetSize: number, error?: string): Response {
   return jsonResponse(
@@ -155,6 +190,37 @@ describe("paywalled API sources", () => {
     }
     // A unique nonce per authorization is what prevents a double settle.
     expect(new Set(nonces(mock.rounds[0]!)).size).toBe(3);
+  });
+
+  it("echoes a declared payment-identifier into each authorization, with an id of its own", async () => {
+    const mock = mockFetch({ source: () => sourceTermsWithIdentifier(), round: () => completed() });
+
+    await new MolphaGateway("http://gw1", registry).requestSignedData(
+      request({ sourcePayment: { signer: evmSigner() } }),
+    );
+
+    const payments = decodedPayments(mock.rounds[0]!);
+    expect(payments).toHaveLength(3);
+    const ids = payments.map((p) => p.extensions["payment-identifier"].info.id as string);
+    // One shared id would make the nodes' fetches look like retries of a single request.
+    expect(new Set(ids).size).toBe(3);
+    for (const [i, p] of payments.entries()) {
+      expect(ids[i]).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
+      expect(p.extensions["payment-identifier"].info.required).toBe(true);
+      expect(p.extensions["payment-identifier"].schema).toEqual(ID_SCHEMA);
+      // The identifier is not what was signed: the authorization is exactly as without it.
+      expect(p.payload.authorization.value).toBe("10000");
+    }
+  });
+
+  it("sends no extensions to a source that declares none", async () => {
+    const mock = mockFetch({ round: () => completed() });
+
+    await new MolphaGateway("http://gw1", registry).requestSignedData(
+      request({ sourcePayment: { signer: evmSigner() } }),
+    );
+
+    for (const p of decodedPayments(mock.rounds[0]!)) expect("extensions" in p).toBe(false);
   });
 
   it("re-signs with fresh nonces on a retry, as a new round", async () => {

@@ -32,6 +32,11 @@ const NETWORKS: Record<string, { chainId: number; usdc: string }> = {
   "base-sepolia": { chainId: 84532, usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
 };
 
+/** An x402 payment identifier: 16-128 of [A-Za-z0-9_-]; the recommended `pay_` plus 32 hex digits. */
+function newPaymentId(): string {
+  return `pay_${bytesToHex0x(randomBytes(16)).slice(2)}`;
+}
+
 /** Raised when a round needs source payment the caller cannot or did not make. */
 export class UpstreamPaymentRequiredError extends Error {
   constructor(
@@ -134,8 +139,18 @@ function selectTerms(
   const payTo = String(supported.payTo ?? "");
   if (!payTo) throw new Error(`Source ${resource} omitted payTo`);
 
+  // A source that declares payment-identifier may require it (TickerLayer does: without one a payment is a 400).
+  const declared = (envelope as { extensions?: Record<string, unknown> }).extensions?.["payment-identifier"] as
+    | { info?: unknown; schema?: unknown }
+    | undefined;
+  const paymentIdentifier =
+    declared && typeof declared === "object" && declared.info && typeof declared.info === "object"
+      ? { info: declared.info as Record<string, unknown>, schema: declared.schema }
+      : undefined;
+
   return {
     x402Version: version,
+    paymentIdentifier,
     // Echoed verbatim in the signed payload, so it must stay the source's own object.
     requirements: supported as Record<string, unknown>,
     network: String(supported.network),
@@ -262,7 +277,7 @@ export async function signSourcePayments(
     );
     const signature = bytesToHex0x(await signer.signDigest(digest));
 
-    const payload =
+    const payload: Record<string, unknown> =
       terms.x402Version === 1
         ? {
             x402Version: 1,
@@ -275,6 +290,17 @@ export async function signSourcePayments(
             accepted: terms.requirements,
             payload: { signature, authorization },
           };
+    if (terms.x402Version === 2 && terms.paymentIdentifier) {
+      // One identifier per authorization: the source ties it to this exact request and payment, so one
+      // shared across nodes would make their fetches look like retries of each other.
+      const { info, schema } = terms.paymentIdentifier;
+      payload.extensions = {
+        "payment-identifier": {
+          info: { ...info, id: newPaymentId() },
+          ...(schema !== undefined ? { schema } : {}),
+        },
+      };
+    }
     payments.push(bytesToBase64(utf8(JSON.stringify(payload))));
   }
   return payments;
