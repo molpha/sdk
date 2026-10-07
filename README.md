@@ -1,6 +1,14 @@
 # @molpha/sdk
 
-Browser-first TypeScript SDK for **Molpha data consumers and feed owners**.
+[![npm](https://img.shields.io/npm/v/@molpha/sdk)](https://www.npmjs.com/package/@molpha/sdk)
+[![license](https://img.shields.io/npm/l/@molpha/sdk)](./LICENSE)
+
+TypeScript SDK for **[Molpha](https://molpha.io)**, a pull-based oracle protocol. Molpha nodes
+fetch an API result, sign it once with a threshold signature, and the same signed attestation can be
+verified on **Solana, EVM and Starknet**. This SDK is for data consumers and feed owners, and runs in
+the browser and in Node.js.
+
+Links: [molpha.io](https://molpha.io) · [GitHub](https://github.com/Molpha/sdk) · [npm](https://www.npmjs.com/package/@molpha/sdk)
 
 Use it to:
 
@@ -57,16 +65,18 @@ The preimage is 141 bytes (32 + 32 + 32 + 4 + 1 + 8 + 32).
 ## Install
 
 ```bash
-pnpm add @molpha/sdk
+npm install @molpha/sdk @anchor-lang/core bn.js
+# or: pnpm add @molpha/sdk @anchor-lang/core bn.js
+# or: yarn add @molpha/sdk @anchor-lang/core bn.js
 ```
 
-For the pre-release channel (parity program + `dev-gateway`):
+`@anchor-lang/core` and `bn.js` are optional peer dependencies. Install them if you use the Solana / Anchor path (as in the examples below). Gateway-only or EVM/Starknet-only apps can skip them. Runtime dependencies installed automatically are `@solana/kit`, `@noble/*` and `canonicalize`.
+
+For the pre-release channel (the `dev` gateway and the matching dev Solana program; may change without notice):
 
 ```bash
-pnpm add @molpha/sdk@dev
+npm install @molpha/sdk@dev
 ```
-
-Runtime dependencies include `@solana/kit`, `@anchor-lang/core`, and `@noble/*`. `bn.js` is an optional peer dependency (used by the Solana / Anchor path).
 
 ### npm tags and deployment defaults
 
@@ -208,7 +218,6 @@ nobody can pick a committee by picking a time.
 A 400 saying the `registryVersion` is not the current one (a cached context, or a registry roll between your read and the request) is the exception: the SDK reads the registry afresh and retries once, without spending an attempt.
 
 `timeoutMs` defaults to 35 s, above the gateway's own wait for a round (`roundTimeoutSeconds` in `/v1/info`, 30 s by default). A shorter timeout abandons a round the gateway is still running, and the retry then starts another. A source that cannot be fetched is reported as soon as enough nodes have failed (usually well under a second), not after the wait.
-- Private API secrets are encrypted for every node of the registry (the committee is unknown until the gateway stamps the round); the gateway forwards only the selected nodes' envelopes. `verifyNodeKeys` therefore authenticates all of them.
 
 ## Wallet
 
@@ -271,7 +280,7 @@ import { walletFromKeypairFile } from "@molpha/sdk/utils";
 
 const sdk = new MolphaSDK({
   connection: new web3.Connection("https://api.devnet.solana.com", "confirmed"),
-  wallet: walletFromKeypairFile("~/.config/solpha/id.json"),
+  wallet: walletFromKeypairFile("~/.config/solana/id.json"),
 });
 ```
 
@@ -496,7 +505,7 @@ const result = await sdk.gateway.requestSignedData({
 
 `MolphaSDK` wires `verifyNodeKeys` to `solana.verifyNodeKeysForPrivateApi`, which authenticates gateway node encryption keys against the on-chain `Node` accounts of the round's registry snapshot (`registry.nodes[index]`) before secrets are encrypted.
 
-Secrets are encrypted into per-node envelopes. The gateway coordinates the round but should not receive plaintext API credentials. The encrypted plaintext is the canonical config (including `aggregation`) with secrets substituted.
+Secrets are encrypted into per-node envelopes. The gateway coordinates the round but should not receive plaintext API credentials. Secrets are encrypted for every node of the registry (the committee is unknown until the gateway stamps the round), and the gateway forwards only the selected nodes' envelopes. `verifyNodeKeys` therefore authenticates all of them. The encrypted plaintext is the canonical config (including `aggregation`) with secrets substituted.
 
 Private API access is still an active security-sensitive surface. Do not treat encrypted secret delivery as production-ready until gateway/node-side test vectors and validation are complete.
 
@@ -902,7 +911,7 @@ The facade wires the registry selection config resolver, gateway signer, subscri
 
 ## Status
 
-`0.0.0` (unreleased) — first stable release `@molpha/sdk@0.1.0` is pending via changesets.
+Pre-1.0. The `latest` dist-tag is `0.1.0` (stable profile). Newer features described in this README (for example tolerance mode, `requestMany` and paywalled API sources) may be available only on the `dev` tag until the next stable release. See [CHANGELOG.md](./CHANGELOG.md).
 
 Current scope:
 

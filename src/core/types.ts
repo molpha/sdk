@@ -203,6 +203,12 @@ export interface UpstreamTerms {
   domain: AssetDomain;
   /** The source URL these terms were read from. */
   resource: string;
+  /**
+   * The source's `payment-identifier` extension (x402 idempotency), when it declares one. A source that
+   * requires it rejects a payment without an identifier, so each authorization echoes the declaration
+   * with its own `info.id`.
+   */
+  paymentIdentifier?: { info: Record<string, unknown>; schema?: unknown };
 }
 
 /**
@@ -211,6 +217,8 @@ export interface UpstreamTerms {
  * and network come from the source's own 402, which the caller reads directly.
  */
 export interface UpstreamQuote {
+  /** The integrated provider whose paid host this is, when it is one. */
+  provider?: string;
   resource: string;
   signaturesRequired: number;
   redundancyBuffer: number;
