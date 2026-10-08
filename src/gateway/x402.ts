@@ -192,6 +192,18 @@ export function validateSuppliedTerms(
     {
       x402Version: terms.x402Version,
       accepts: [terms.requirements as Offer],
+      // Re-validation rebuilds the terms from a bare envelope, so the source's payment-identifier
+      // declaration has to be carried through it or the supplied terms would pay without one.
+      ...(terms.paymentIdentifier
+        ? {
+            extensions: {
+              "payment-identifier": {
+                info: terms.paymentIdentifier.info,
+                ...(terms.paymentIdentifier.schema !== undefined ? { schema: terms.paymentIdentifier.schema } : {}),
+              },
+            },
+          }
+        : {}),
     },
     resource,
     assetDomain,
