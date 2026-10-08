@@ -366,6 +366,36 @@ describe("paywalled API sources", () => {
     expect(mock.rounds[0]!.x402Source).toBeUndefined();
   });
 
+  it("keeps a declared payment-identifier when the caller supplies the terms", async () => {
+    // A caller that vets the price before paying (an agent tool with a spend cap) hands the terms back
+    // in. Re-validating them must not lose the identifier the source requires, or it answers 400.
+    const mock = mockFetch({ round: () => completed() });
+    const requirements = {
+      scheme: "exact", network: "eip155:84532", asset: BASE_SEPOLIA_USDC,
+      payTo: "0x1111111111111111111111111111111111111111", amount: "10000", maxTimeoutSeconds: 60,
+      extra: { name: "USDC", version: "2" },
+    };
+
+    await new MolphaGateway("http://gw1", registry).requestSignedData(
+      request({
+        sourcePayment: {
+          signer: evmSigner(),
+          terms: {
+            x402Version: 2 as const, requirements, network: "eip155:84532", chainId: 84532, asset: BASE_SEPOLIA_USDC,
+            payTo: requirements.payTo, amount: "10000", maxTimeoutSeconds: 60, domain: { name: "USDC", version: "2" },
+            resource: SOURCE_URL, paymentIdentifier: { info: { required: true }, schema: ID_SCHEMA },
+          },
+        },
+      }),
+    );
+
+    expect(mock.probes()).toBe(0);
+    const payments = decodedPayments(mock.rounds[0]!);
+    const ids = payments.map((p) => p.extensions["payment-identifier"].info.id as string);
+    expect(new Set(ids).size).toBe(3);
+    expect(payments[0]!.extensions["payment-identifier"].info.required).toBe(true);
+  });
+
   it("skips the probe when the caller supplies terms", async () => {
     const mock = mockFetch({ round: () => completed() });
 
