@@ -9,6 +9,7 @@ import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
 import { formatInt256Decimal } from "../core/int256.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
 import { effectiveSelectionSize } from "../core/selection.js";
+import { ROUND_TICK_MS } from "../core/timestamp.js";
 import type {
   AggregationConfig,
   APIConfig,
@@ -91,17 +92,12 @@ export interface RequestSignedDataOptions {
   /** Max accepted value age in seconds. Default 60. */
   maxAge?: number;
   /**
-   * Max attempts. Each retry waits for a later gateway tick, plus jitter, and for longer after a
-   * busy answer (`Retry-After`) or a failure that is not a conflict (capped exponential backoff);
-   * see {@link retryDelayMs}. Default {@link DEFAULT_MAX_RETRIES}.
+   * Max attempts. The wait before each retry depends on why the last attempt failed: one round
+   * tick after a duplicate (HTTP 409), the gateway's `Retry-After` or a capped exponential backoff
+   * after a busy answer, the backoff after anything else; see {@link retryDelayMs}. Every attempt
+   * the gateway accepts spends another unit of round quota. Default {@link DEFAULT_MAX_RETRIES}.
    */
   maxRetries?: number;
-  /**
-   * The gateway's tick grid in milliseconds (its `round.tick_ms`). A retry waits for the start of
-   * the next tick so it is a new round, not a duplicate of the last. Default: the gateway's
-   * advertised `tickMs` (read once, on the first retry), else 1000.
-   */
-  tickMs?: number;
   /**
    * Per-request timeout in ms. Default {@link DEFAULT_ROUND_TIMEOUT_MS}, above the gateway's own
    * wait for a round: a shorter timeout abandons rounds the gateway is still running and the retry
@@ -155,6 +151,8 @@ export interface MolphaGatewayOptions {
   allowUnverifiedNodeKeysForPrivateApi?: boolean;
   /** Source of randomness in [0, 1) for retry jitter; defaults to `Math.random` (tests only). */
   random?: () => number;
+  /** Waits `ms` before a retry; defaults to a `setTimeout` timer (tests only). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -227,16 +225,10 @@ const ZERO_AUTH_SIG = new Uint8Array(64);
 /** Caller's unix SECONDS: the `authTimestamp` of a RequestAuth, not the round's timestamp. */
 const authTimestampNow = (): number => Math.floor(Date.now() / 1000);
 
-/** The gateway's default tick grid in milliseconds. */
-const DEFAULT_TICK_MS = 1000;
+const timerSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Milliseconds from `nowMs` to the start of the next tick, plus a millisecond of margin. */
-export function msUntilNextTick(nowMs: number, tickMs: number): number {
-  return tickMs - (nowMs % tickMs) + 1;
-}
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
+/** Jitter added to the one-tick wait after an HTTP 409, in ms. */
+const CONFLICT_JITTER_MS = 20;
 /** First delay of the exponential backoff, in ms. */
 const BACKOFF_BASE_MS = 250;
 /** Cap of the exponential backoff, in ms. */
@@ -252,9 +244,10 @@ export const DEFAULT_MAX_RETRIES = 6;
 
 /**
  * Why an attempt failed, as far as it decides how long to wait before the next one:
- *  - `conflict`: HTTP 409, this consumer already has a round for the source in this tick;
- *  - `busy`: HTTP 503 or 429, the gateway is at capacity or a node set is unavailable, optionally
- *    with the gateway's `Retry-After`;
+ *  - `conflict`: HTTP 409, this consumer already has a round for the source and quorum in the
+ *    current round tick;
+ *  - `busy`: HTTP 503 or 429, the gateway is at capacity, or too few nodes accepted the round
+ *    (unavailable, or busy), optionally with the gateway's `Retry-After`;
  *  - `error`: anything else that may be transient (timeout, network, other 5xx).
  */
 export type RetryCause =
@@ -263,32 +256,29 @@ export type RetryCause =
   | { kind: "error" };
 
 /**
- * How long to wait before the next attempt, in ms. Every delay reaches at least the start of the
- * next tick (a retry inside the tick that just failed would be a duplicate round), then adds jitter
- * so clients that failed together do not retry together:
- *  - conflict: the next tick plus up to half a tick;
- *  - busy: the later of the next tick and the gateway's `Retry-After` (a tick if absent), plus up to
- *    a tick;
- *  - error: capped exponential backoff (250 ms, 500 ms, ... 5 s) with half of it randomized.
- * `failures` is the number of attempts that have failed so far (1 after the first).
+ * How long to wait before the next attempt, in ms. Each delay carries jitter, so clients that
+ * failed together do not retry together:
+ *  - conflict: one full round tick ({@link ROUND_TICK_MS}) plus up to 20 ms. The gateway stamps a
+ *    round with the tick it is in, so a retry a full tick later is in a later tick whatever the
+ *    offset between the two clocks: no boundary is computed from the local clock;
+ *  - busy: the later of the gateway's `Retry-After` and the backoff step, plus up to one more step;
+ *  - error: the backoff step, half of it randomized.
+ * The backoff step is a capped exponential (250 ms, 500 ms, ... 5 s). `failures` is the number of
+ * attempts that have failed so far (1 after the first).
  */
 export function retryDelayMs(
   cause: RetryCause,
   failures: number,
-  nowMs: number,
-  tickMs: number,
   random: () => number = Math.random,
 ): number {
-  const nextTick = msUntilNextTick(nowMs, tickMs);
+  const backoff = Math.min(BACKOFF_BASE_MS * 2 ** Math.max(failures - 1, 0), BACKOFF_MAX_MS);
   switch (cause.kind) {
     case "conflict":
-      return nextTick + random() * (tickMs / 2);
+      return ROUND_TICK_MS + random() * CONFLICT_JITTER_MS;
     case "busy":
-      return Math.max(nextTick, cause.retryAfterMs ?? tickMs) + random() * tickMs;
-    case "error": {
-      const backoff = Math.min(BACKOFF_BASE_MS * 2 ** Math.max(failures - 1, 0), BACKOFF_MAX_MS);
-      return Math.max(nextTick, backoff / 2 + random() * (backoff / 2));
-    }
+      return Math.max(cause.retryAfterMs ?? 0, backoff) + random() * backoff;
+    case "error":
+      return backoff / 2 + random() * (backoff / 2);
   }
 }
 
@@ -337,9 +327,8 @@ export class MolphaGateway {
   private readonly programIdBytes: Uint8Array;
   /** Gateway PDA per endpoint URL; resolved once per client lifetime. */
   private readonly gatewayPdas = new Map<string, Promise<Uint8Array>>();
-  /** Advertised timing per endpoint URL, read lazily on the first retry. */
-  private readonly advertisedInfo = new Map<string, Promise<GatewayInfo | undefined>>();
   private readonly random: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(
     endpoints?: GatewayEndpointInput | GatewayEndpointInput[],
@@ -384,6 +373,7 @@ export class MolphaGateway {
     this.programId = options.programId ?? MOLPHA_PROGRAM_ID;
     this.programIdBytes = addressToBytes(this.programId);
     this.random = options.random ?? Math.random;
+    this.sleep = options.sleep ?? timerSleep;
   }
 
   /** The configured gateway base URLs, in failover order. */
@@ -470,10 +460,13 @@ export class MolphaGateway {
    * failover. The body is POSTed to each endpoint in order until one `completed`s.
    *
    * The round's `sourceId` is derived from `apiConfig`. The request carries no round timestamp:
-   * the gateway assigns the round's `timestamp` (unix milliseconds) from its own clock
-   * on a tick grid, and the committee follows from it. The result carries the assigned
-   * timestamp and the signers' bitmap. A retry waits for a later tick, because a round that was
-   * already reserved or dispatched cannot run again in the same one (HTTP 409).
+   * the gateway stamps the round with its own clock floored to the round tick (`timestamp`, unix
+   * milliseconds, a multiple of {@link ROUND_TICK_MS}), and the committee follows from it. The
+   * result carries the assigned timestamp and the signers' bitmap; the timestamp is taken as the
+   * gateway gave it. Requests for the same source, quorum and registry version inside one tick
+   * share one round. One consumer gets one round per tick per source and quorum: a second request
+   * in the tick is refused (HTTP 409) and retried one tick later. A retry is stamped anew, so it
+   * is a new round that spends another unit of round quota.
    *
    * The request is authorized by a `RequestAuth` signature (`authSig`) over the program id, the
    * endpoint's Gateway PDA, the source id, the quorum and `authTimestamp` (unix seconds, read
@@ -577,11 +570,6 @@ export class MolphaGateway {
     }
 
     let lastError: unknown;
-    // The gateway stamps a round with the tick it arrives in. A round already reserved for this
-    // consumer, or already dispatched to the nodes, cannot run again in that tick: so each retry
-    // waits for a later one (see retryDelayMs). The grid is the gateway's advertised one, read once
-    // on the first retry, unless the caller pinned it.
-    let tickMs = opts.tickMs;
     let groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
     // Every registry node, ascending: the committee is not known until the gateway has stamped
     // the round, so the envelope set cannot be narrowed here.
@@ -594,9 +582,10 @@ export class MolphaGateway {
     let refreshedOnce = false;
     let retryNow = false;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // The gateway stamps each attempt it accepts with the tick it arrives in, so a retry is a new
+      // round; why the last attempt failed decides how long to wait first (see retryDelayMs).
       if (attempt > 0 && !retryNow) {
-        tickMs ??= (await this.advertisedTickMs(timeoutMs)) ?? DEFAULT_TICK_MS;
-        await sleep(retryDelayMs(cause, attempt, Date.now(), tickMs, this.random));
+        await this.sleep(retryDelayMs(cause, attempt, this.random));
       }
       retryNow = false;
       cause = { kind: "error" };
@@ -724,8 +713,8 @@ export class MolphaGateway {
                 `Gateway reports ${quote.resource} is paywalled but the source returned no payment terms`,
               );
             }
-            // Recover in a later tick: this round is spent, so the next
-            // attempt is a new round rather than a retry of the failed one.
+            // This round is spent: the next attempt is a new round rather
+            // than a retry of the failed one.
             lastError = new UpstreamPaymentRequiredError(quote);
             requote = true;
             break;
@@ -769,7 +758,8 @@ export class MolphaGateway {
               formatGatewayErrorMessage("Gateway error", res.status, errorDetail),
               res.status,
             );
-            // This consumer already has a round for the source in this tick: wait for the next.
+            // This consumer already has a round for the source and quorum in this tick: retry one
+            // tick later.
             if (res.status === 409) cause = mergeCause(cause, { kind: "conflict" });
             continue;
           }
@@ -845,28 +835,6 @@ export class MolphaGateway {
     const registry = await registryPromise;
     if (registry.nodeCount !== undefined) return registry;
     return { ...registry, nodes: await this.getNodes() };
-  }
-
-  /**
-   * The gateway's advertised tick grid, read once per endpoint and only when a retry needs it. Any
-   * failure (an old gateway without `/v1/info`, a timeout) means "not advertised", so the caller
-   * falls back to the default; a failure is not cached.
-   */
-  private async advertisedTickMs(timeoutMs: number): Promise<number | undefined> {
-    for (const endpoint of this.endpoints) {
-      let pending = this.advertisedInfo.get(endpoint.url);
-      if (!pending) {
-        pending = this.fetchGatewayInfo(endpoint, Math.min(timeoutMs, 3_000)).catch(() => undefined);
-        this.advertisedInfo.set(endpoint.url, pending);
-      }
-      const info = await pending;
-      if (info === undefined) {
-        this.advertisedInfo.delete(endpoint.url);
-        continue;
-      }
-      if (info.tickMs !== undefined) return info.tickMs;
-    }
-    return undefined;
   }
 
   /** Gateway PDA bytes for an endpoint, cached per URL. A failed lookup is not cached. */

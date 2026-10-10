@@ -33,8 +33,6 @@ export interface GatewayInfo {
   gatewayAuthority: string;
   /** Program id the gateway settles against; must match the client's when present. */
   programId?: string;
-  /** The gateway's round timestamp grid in milliseconds (`round.tick_ms`), when advertised. */
-  tickMs?: number;
   /** Longest the gateway waits for a round, in seconds (`node.agg_wait_seconds`), when advertised. */
   roundTimeoutSeconds?: number;
   /** Rounds the gateway runs at once (`limits.max_inflight_rounds`); 0 or absent: not advertised. */
@@ -92,8 +90,6 @@ export function parseGatewayInfo(data: unknown): GatewayInfo {
   // Timing and capacity are advisory: take them when they are sensible positive numbers.
   const positive = (v: unknown): number | undefined =>
     typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
-  const tickMs = positive(record.tickMs);
-  if (tickMs !== undefined) info.tickMs = tickMs;
   const roundTimeoutSeconds = positive(record.roundTimeoutSeconds);
   if (roundTimeoutSeconds !== undefined) info.roundTimeoutSeconds = roundTimeoutSeconds;
   const maxInflightRounds = positive(record.maxInflightRounds);

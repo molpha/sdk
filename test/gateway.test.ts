@@ -355,8 +355,8 @@ describe("MolphaGateway request auth", () => {
         signer,
         SUBSCRIPTION_OWNER,
       );
-      // tickMs 1 keeps the (real) inter-attempt sleep negligible; Date is the faked clock.
-      await gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 2, tickMs: 1 });
+      // Only Date is faked: the wait after a 409 is one real tick (about 100 ms).
+      await gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 2 });
 
       expect(bodies).toHaveLength(2);
       // Seconds, not milliseconds: floor(ms / 1000).
@@ -543,6 +543,20 @@ describe("MolphaGateway round timestamp", () => {
     expect(result.signature.signersBitmap).toBe("00".repeat(31) + "05");
   });
 
+  it("returns the timestamp exactly as the gateway gave it, without checking it against a grid", async () => {
+    // The grid is the gateway's to stamp and the nodes' to enforce; the verifiers do not read it.
+    // The SDK neither rounds nor refuses a timestamp: it hands on what was signed.
+    for (const timestamp of [1_750_000_123_400, 1_750_000_123_456, 1_750_000_123_999]) {
+      globalThis.fetch = mockFetch({ execute: () => completed({ timestamp }) }) as unknown as typeof fetch;
+      const result = await new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER).requestSignedData({
+        signaturesRequired: 1,
+        apiConfig,
+        maxRetries: 1,
+      });
+      expect(result.payload.timestamp).toBe(timestamp);
+    }
+  });
+
   it("refuses a response without the assigned timestamp or the signers", async () => {
     for (const missing of ["timestamp", "signersBitmap"] as const) {
       globalThis.fetch = mockFetch({
@@ -558,21 +572,28 @@ describe("MolphaGateway round timestamp", () => {
     }
   });
 
-  it("a retry waits for a later tick: the same tick would be a duplicate round", async () => {
-    const posts: number[] = [];
+  it("a second request in the same tick (409) is retried one tick later, as a new request", async () => {
+    const bodies: Record<string, unknown>[] = [];
     globalThis.fetch = mockFetch({
-      execute: () => {
-        posts.push(Date.now());
-        return posts.length === 1 ? jsonResponse({ error: "duplicate round" }, 409) : completed();
+      execute: (_url, body) => {
+        bodies.push(body);
+        return bodies.length === 1 ? jsonResponse({ error: "duplicate round, retry" }, 409) : completed();
       },
     }) as unknown as typeof fetch;
 
-    const gw = new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER);
-    const result = await gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 3, tickMs: 40 });
+    const delays: number[] = [];
+    const gw = new MolphaGateway("http://gw1", registry, undefined, {
+      defaultSubscriptionOwner: SUBSCRIPTION_OWNER,
+      sleep: async (ms) => void delays.push(ms),
+    });
+    const result = await gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 3 });
     expect(result.value).toBe("1");
-    expect(posts).toHaveLength(2);
-    // The second attempt starts on a later 40 ms tick than the first.
-    expect(Math.floor(posts[1]! / 40)).toBeGreaterThan(Math.floor(posts[0]! / 40));
+    expect(bodies).toHaveLength(2);
+    // One wait of a tick, and the retry names no round: the gateway stamps it afresh.
+    expect(delays).toHaveLength(1);
+    expect(delays[0]).toBeGreaterThanOrEqual(100);
+    expect(delays[0]).toBeLessThan(120);
+    for (const body of bodies) expect(body).not.toHaveProperty("timestamp");
   });
 
   it("checks a gateway's program with fetchGatewayInfo, not on every request", async () => {

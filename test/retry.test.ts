@@ -5,10 +5,10 @@ import {
   DEFAULT_ROUND_TIMEOUT_MS,
   GatewayError,
   MolphaGateway,
-  msUntilNextTick,
   retryDelayMs,
 } from "../src/gateway/index.js";
 import { parseGatewayInfo } from "../src/gateway/identity.js";
+import { ROUND_TICK_MS } from "../src/core/timestamp.js";
 import { signedResponseBody } from "./fixtures/gatewayResponse.js";
 
 const OWNER = "9K9FknHzW7j8a88yKTrzxKfDrxnV2QLqSR58ETAVdc8P";
@@ -18,6 +18,11 @@ const completed = () => new Response(JSON.stringify(signedResponseBody({})), { s
 const json = (body: unknown, status: number, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 const request = { signaturesRequired: 1, apiConfig, subscriptionOwner: OWNER };
+/** A `sleep` that returns at once and records what it was asked to wait. */
+const recordingSleep = () => {
+  const delays: number[] = [];
+  return { delays, sleep: async (ms: number) => void delays.push(ms) };
+};
 
 afterEach(() => {
   vi.useRealTimers();
@@ -25,34 +30,34 @@ afterEach(() => {
 });
 
 describe("retryDelayMs", () => {
-  const tick = 1000;
-  const now = 5_000_100; // 100 ms into a tick: 901 ms to the next
-  const next = msUntilNextTick(now, tick);
-
-  it("never retries inside the tick that just failed, whatever the cause", () => {
-    for (const cause of [{ kind: "conflict" }, { kind: "busy" }, { kind: "error" }] as const) {
+  it("a conflict waits one full round tick plus a small jitter, whatever the attempt", () => {
+    expect(ROUND_TICK_MS).toBe(100);
+    expect(retryDelayMs({ kind: "conflict" }, 1, () => 0)).toBe(100);
+    expect(retryDelayMs({ kind: "conflict" }, 1, () => 0.5)).toBe(110);
+    for (const failures of [1, 3, 30]) {
       for (const r of [0, 0.5, 0.999]) {
-        expect(retryDelayMs(cause, 1, now, tick, () => r)).toBeGreaterThanOrEqual(next);
+        const delay = retryDelayMs({ kind: "conflict" }, failures, () => r);
+        // Never less than a tick: the retry then falls in a later tick whatever the clock offset.
+        expect(delay).toBeGreaterThanOrEqual(ROUND_TICK_MS);
+        expect(delay).toBeLessThan(ROUND_TICK_MS + 20);
       }
     }
   });
 
-  it("a conflict waits for the next tick plus up to half a tick of jitter", () => {
-    expect(retryDelayMs({ kind: "conflict" }, 1, now, tick, () => 0)).toBe(next);
-    expect(retryDelayMs({ kind: "conflict" }, 1, now, tick, () => 0.999)).toBeCloseTo(next + 499.5, 0);
-  });
-
-  it("a busy answer honours Retry-After when it is longer than the next tick, and adds jitter", () => {
-    expect(retryDelayMs({ kind: "busy", retryAfterMs: 3000 }, 1, now, tick, () => 0)).toBe(3000);
-    expect(retryDelayMs({ kind: "busy", retryAfterMs: 3000 }, 1, now, tick, () => 0.5)).toBe(3500);
-    // A Retry-After shorter than the next tick still waits for the tick; none given waits a tick.
-    expect(retryDelayMs({ kind: "busy", retryAfterMs: 1 }, 1, now, tick, () => 0)).toBe(next);
-    expect(retryDelayMs({ kind: "busy" }, 1, now, tick, () => 0)).toBe(Math.max(next, tick));
+  it("a busy answer waits out Retry-After, or the backoff step when that is longer, plus jitter", () => {
+    expect(retryDelayMs({ kind: "busy", retryAfterMs: 3000 }, 1, () => 0)).toBe(3000);
+    expect(retryDelayMs({ kind: "busy", retryAfterMs: 3000 }, 1, () => 0.5)).toBe(3125);
+    // A Retry-After shorter than the backoff step, or none, waits the step: 250, 500, ... 5000.
+    expect(retryDelayMs({ kind: "busy", retryAfterMs: 1 }, 1, () => 0)).toBe(250);
+    expect(retryDelayMs({ kind: "busy" }, 1, () => 0)).toBe(250);
+    expect(retryDelayMs({ kind: "busy" }, 1, () => 1)).toBe(500);
+    expect(retryDelayMs({ kind: "busy" }, 3, () => 0)).toBe(1000);
+    expect(retryDelayMs({ kind: "busy" }, 30, () => 0)).toBe(5000);
   });
 
   it("other failures back off exponentially, capped, with jitter", () => {
-    const at = (failures: number, r: number) => retryDelayMs({ kind: "error" }, failures, now, 10, () => r);
-    // With a 10 ms tick the backoff dominates: 250, 500, 1000, ... capped at 5000, half randomized.
+    const at = (failures: number, r: number) => retryDelayMs({ kind: "error" }, failures, () => r);
+    // 250, 500, 1000, ... capped at 5000, half randomized.
     expect(at(1, 0)).toBe(125);
     expect(at(1, 1)).toBe(250);
     expect(at(2, 1)).toBe(500);
@@ -62,9 +67,11 @@ describe("retryDelayMs", () => {
   });
 
   it("clients that failed together do not retry together", () => {
-    const delays = new Set<number>();
-    for (let i = 0; i < 50; i++) delays.add(Math.round(retryDelayMs({ kind: "error" }, 5, now, tick, Math.random)));
-    expect(delays.size).toBeGreaterThan(10);
+    for (const cause of [{ kind: "conflict" }, { kind: "busy" }, { kind: "error" }] as const) {
+      const delays = new Set<number>();
+      for (let i = 0; i < 50; i++) delays.add(retryDelayMs(cause, 5, Math.random));
+      expect(delays.size).toBeGreaterThan(10);
+    }
   });
 });
 
@@ -76,10 +83,10 @@ describe("defaults", () => {
 
   it("parseGatewayInfo reads advertised timing and capacity, and ignores nonsense", () => {
     const base = { gatewayAuthority: "A" };
-    expect(parseGatewayInfo({ ...base, tickMs: 500, roundTimeoutSeconds: 30, maxInflightRounds: 200 })).toEqual({
-      gatewayAuthority: "A", tickMs: 500, roundTimeoutSeconds: 30, maxInflightRounds: 200,
+    expect(parseGatewayInfo({ ...base, roundTimeoutSeconds: 30, maxInflightRounds: 200 })).toEqual({
+      gatewayAuthority: "A", roundTimeoutSeconds: 30, maxInflightRounds: 200,
     });
-    expect(parseGatewayInfo({ ...base, tickMs: -1, roundTimeoutSeconds: "30", maxInflightRounds: 0 })).toEqual({ gatewayAuthority: "A" });
+    expect(parseGatewayInfo({ ...base, roundTimeoutSeconds: "30", maxInflightRounds: 0 })).toEqual({ gatewayAuthority: "A" });
     expect(parseGatewayInfo(base)).toEqual({ gatewayAuthority: "A" });
   });
 });
@@ -97,7 +104,7 @@ describe("requestSignedData failure handling", () => {
     const execute = vi.fn(async () => json({ error: "forbidden: subscription or delegate round quota is exhausted" }, 403));
     globalThis.fetch = execute as unknown as typeof fetch;
     const gw = new MolphaGateway("http://gw", registry, undefined, OWNER);
-    await expect(gw.requestSignedData({ ...request, maxRetries: 5, tickMs: 1 })).rejects.toMatchObject({
+    await expect(gw.requestSignedData({ ...request, maxRetries: 5 })).rejects.toMatchObject({
       name: "GatewayError", status: 403,
     });
     expect(execute).toHaveBeenCalledTimes(1);
@@ -111,7 +118,7 @@ describe("requestSignedData failure handling", () => {
       return posts.length === 1 ? json({ error: "gateway at capacity" }, 503, { "retry-after": "3" }) : completed();
     }) as unknown as typeof fetch;
     const gw = new MolphaGateway("http://gw", registry, undefined, { defaultSubscriptionOwner: OWNER, random: () => 0 });
-    const promise = gw.requestSignedData({ ...request, maxRetries: 3, tickMs: 100 });
+    const promise = gw.requestSignedData({ ...request, maxRetries: 3 });
     await vi.advanceTimersByTimeAsync(2_900);
     expect(posts).toHaveLength(1); // still waiting out the 3 s Retry-After
     await vi.advanceTimersByTimeAsync(300);
@@ -123,9 +130,26 @@ describe("requestSignedData failure handling", () => {
   it("429 is treated as a transient busy answer", async () => {
     let n = 0;
     globalThis.fetch = (async () => (++n === 1 ? json({ error: "rate limited" }, 429, { "retry-after": "0" }) : completed())) as unknown as typeof fetch;
-    const gw = new MolphaGateway("http://gw", registry, undefined, OWNER);
-    await expect(gw.requestSignedData({ ...request, maxRetries: 3, tickMs: 5 })).resolves.toBeTruthy();
+    const { sleep, delays } = recordingSleep();
+    const gw = new MolphaGateway("http://gw", registry, undefined, { defaultSubscriptionOwner: OWNER, sleep });
+    await expect(gw.requestSignedData({ ...request, maxRetries: 3 })).resolves.toBeTruthy();
     expect(n).toBe(2);
+    // "Retry-After: 0" does not mean at once: the wait is still the backoff step plus jitter.
+    expect(delays).toHaveLength(1);
+    expect(delays[0]).toBeGreaterThanOrEqual(250);
+    expect(delays[0]).toBeLessThanOrEqual(500);
+  });
+
+  it("nodes that answer busy surface as 503: retried with backoff, then reported", async () => {
+    const execute = vi.fn(async () => json({ error: "nodes busy" }, 503));
+    globalThis.fetch = execute as unknown as typeof fetch;
+    const { sleep, delays } = recordingSleep();
+    const gw = new MolphaGateway("http://gw", registry, undefined, { defaultSubscriptionOwner: OWNER, random: () => 0, sleep });
+    await expect(gw.requestSignedData({ ...request, maxRetries: 4 })).rejects.toMatchObject({
+      name: "GatewayError", status: 503, message: "Gateway unavailable (503): nodes busy",
+    });
+    expect(execute).toHaveBeenCalledTimes(4);
+    expect(delays).toEqual([250, 500, 1000]);
   });
 
   it("a stale registry version refreshes the inputs once and retries without spending an attempt", async () => {
@@ -153,7 +177,7 @@ describe("requestSignedData failure handling", () => {
     const execute = vi.fn(async () => json({ error: "registryVersion: must equal current version 9" }, 400));
     globalThis.fetch = execute as unknown as typeof fetch;
     const gw = new MolphaGateway("http://gw", registry, undefined, OWNER);
-    await expect(gw.requestSignedData({ ...request, maxRetries: 5, tickMs: 1 })).rejects.toBeInstanceOf(GatewayError);
+    await expect(gw.requestSignedData({ ...request, maxRetries: 5 })).rejects.toBeInstanceOf(GatewayError);
     expect(execute).toHaveBeenCalledTimes(2); // the original and the one refreshed attempt
   });
 
@@ -162,38 +186,59 @@ describe("requestSignedData failure handling", () => {
     globalThis.fetch = execute as unknown as typeof fetch;
     const getRegistry = vi.fn(registry);
     const gw = new MolphaGateway("http://gw", getRegistry, undefined, OWNER);
-    await expect(gw.requestSignedData({ ...request, maxRetries: 5, tickMs: 1 })).rejects.toBeInstanceOf(GatewayError);
+    await expect(gw.requestSignedData({ ...request, maxRetries: 5 })).rejects.toBeInstanceOf(GatewayError);
     expect(execute).toHaveBeenCalledTimes(1);
     expect(getRegistry).toHaveBeenCalledTimes(1);
   });
 
-  it("the tick grid is learned from the gateway on the first retry, once", async () => {
-    let posts = 0;
-    const infoCalls = vi.fn();
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/v1/info")) {
-        infoCalls();
-        return json({ status: "ok", data: { gatewayAuthority: "A".repeat(32), tickMs: 20 } }, 200);
-      }
-      void init;
-      posts++;
-      return posts <= 2 ? json({ error: "duplicate round" }, 409) : completed();
+  it("a 409 is retried one tick later, without asking the gateway for anything", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return urls.length <= 2 ? json({ error: "duplicate round, retry" }, 409) : completed();
     }) as unknown as typeof fetch;
-    const gw = new MolphaGateway("http://gw", registry, undefined, OWNER);
-    await gw.requestSignedData({ ...request, maxRetries: 5 }); // no tickMs given
-    expect(posts).toBe(3);
-    expect(infoCalls).toHaveBeenCalledTimes(1);
+    const { sleep, delays } = recordingSleep();
+    const gw = new MolphaGateway("http://gw", registry, undefined, { defaultSubscriptionOwner: OWNER, sleep });
+    await expect(gw.requestSignedData({ ...request, maxRetries: 5 })).resolves.toBeTruthy();
+    // Three round requests and nothing else: the tick is a constant, so there is no /v1/info lookup.
+    expect(urls).toEqual(Array(3).fill("http://gw/v1/round/execute"));
+    expect(delays).toHaveLength(2);
+    for (const delay of delays) {
+      expect(delay).toBeGreaterThanOrEqual(100);
+      expect(delay).toBeLessThan(120);
+    }
   });
 
-  it("an old gateway without /v1/info still retries, on the default tick", async () => {
-    let posts = 0;
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      if (String(input).endsWith("/v1/info")) return json({ error: "not found" }, 404);
-      return ++posts === 1 ? json({ error: "duplicate round" }, 409) : completed();
-    }) as unknown as typeof fetch;
-    const gw = new MolphaGateway("http://gw", registry, undefined, OWNER);
-    await expect(gw.requestSignedData({ ...request, maxRetries: 3 })).resolves.toBeTruthy();
+  it("the wait after a 409 is a full tick wherever the local clock stands in its own tick", async () => {
+    vi.useFakeTimers();
+    // The start of a tick, the middle and the last millisecond: no boundary is computed locally.
+    for (const startMs of [1_750_000_000_000, 1_750_000_000_050, 1_750_000_000_099, 1_750_000_000_999]) {
+      vi.setSystemTime(startMs);
+      const posts: number[] = [];
+      globalThis.fetch = (async () => {
+        posts.push(Date.now());
+        return posts.length === 1 ? json({ error: "duplicate round, retry" }, 409) : completed();
+      }) as unknown as typeof fetch;
+      const gw = new MolphaGateway("http://gw", registry, undefined, { defaultSubscriptionOwner: OWNER, random: () => 0.5 });
+      const promise = gw.requestSignedData({ ...request, maxRetries: 2 });
+      await vi.advanceTimersByTimeAsync(109);
+      expect(posts).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(promise).resolves.toBeTruthy();
+      expect(posts[1]! - posts[0]!).toBe(110);
+    }
+  });
+
+  it("repeated 409s stop at maxRetries and report the conflict", async () => {
+    const execute = vi.fn(async () => json({ error: "duplicate round, retry" }, 409));
+    globalThis.fetch = execute as unknown as typeof fetch;
+    const { sleep, delays } = recordingSleep();
+    const gw = new MolphaGateway("http://gw", registry, undefined, { defaultSubscriptionOwner: OWNER, random: () => 0, sleep });
+    await expect(gw.requestSignedData({ ...request, maxRetries: 4 })).rejects.toMatchObject({
+      name: "GatewayError", status: 409,
+    });
+    expect(execute).toHaveBeenCalledTimes(4);
+    expect(delays).toEqual([100, 100, 100]);
   });
 
   it("derives the source id as before", () => {

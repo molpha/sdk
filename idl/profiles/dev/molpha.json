@@ -4,7 +4,7 @@
     "name": "molpha",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Molpha Oracle Solana Program - Merged from molpha-solana and molpha-feed"
+    "description": "Molpha Oracle Solana Program"
   },
   "instructions": [
     {
@@ -1462,6 +1462,16 @@
           "name": "authority",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "program",
+          "docs": [
+            "This program. Its account names the ProgramData account holding the upgrade authority."
+          ],
+          "address": "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt"
+        },
+        {
+          "name": "program_data"
         },
         {
           "name": "token_program",
@@ -4111,19 +4121,6 @@
       ]
     },
     {
-      "name": "DelegateStatusChanged",
-      "discriminator": [
-        188,
-        202,
-        137,
-        41,
-        54,
-        213,
-        14,
-        92
-      ]
-    },
-    {
       "name": "EpochClosed",
       "discriminator": [
         21,
@@ -4985,6 +4982,16 @@
       "code": 6101,
       "name": "InvalidInitialTau",
       "msg": "initial_tau is below the minimum ticket threshold"
+    },
+    {
+      "code": 6102,
+      "name": "InvalidProgramData",
+      "msg": "program data account is not this program's"
+    },
+    {
+      "code": 6103,
+      "name": "NotUpgradeAuthority",
+      "msg": "initialize must be signed by the program's upgrade authority"
     }
   ],
   "types": [
@@ -5067,6 +5074,9 @@
           },
           {
             "name": "timestamp",
+            "docs": [
+              "Gateway-assigned round time in unix **milliseconds**."
+            ],
             "type": "u64"
           }
         ]
@@ -5277,34 +5287,6 @@
           },
           {
             "name": "removed_at",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "DelegateStatusChanged",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "delegate",
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "type": "pubkey"
-          },
-          {
-            "name": "old_status",
-            "type": "u8"
-          },
-          {
-            "name": "new_status",
-            "type": "u8"
-          },
-          {
-            "name": "updated_at",
             "type": "i64"
           }
         ]
@@ -5718,6 +5700,9 @@
           },
           {
             "name": "timestamp",
+            "docs": [
+              "Unix milliseconds. Updates are strictly ordered on it, so two rounds in one second order."
+            ],
             "type": "u64"
           },
           {

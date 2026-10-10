@@ -6,16 +6,15 @@ Gateway-assigned millisecond timestamp.
 
 **Breaking**
 
-- `timestamp` is unix **milliseconds** and is assigned by the gateway on a tick grid; the
-  caller never chooses it. The request body carries no round timestamp. `requestSignedData` takes
-  `timestamp`, the signers' bitmap and the rest of the signed fields from the response and
-  refuses a response that lacks any of them. The response is the gateway's nested
+- `timestamp` is unix **milliseconds** and is the gateway's clock, floored to the 100 ms round tick,
+  at the moment it stamps the round; the caller never chooses it. The request body carries no round
+  timestamp. `requestSignedData` takes `timestamp`, the signers' bitmap and the rest of the signed
+  fields from the response and refuses a response that lacks any of them. The response is the gateway's nested
   `{ status, data: { attestation: { payload, signature }, value, fresh } }` shape only.
 - `deriveSelectionSeed` hashes the one-second window index, `timestamp / 1000`
   (`SELECTION_WINDOW_MS`), under `MOLPHA_SELECTION_V1`; committees follow the timestamp's second.
   `deriveSelectionBitmap`'s `ts` is in milliseconds.
-- A retry after a 409 (or any failed attempt) waits for the next gateway tick (`tickMs`, default 1000)
-  so it is a new round, not a duplicate of the last.
+- A retry is a new round: the gateway stamps it anew.
 - Private API secrets are encrypted for every registry node (the committee is unknown until the
   gateway has stamped the round); the gateway forwards only the selected nodes' envelopes.
   `NodeKeyVerifierArgs` is `{ sourceId, registryVersion, nodeIndexes, nodes }` and covers all of them.
