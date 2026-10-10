@@ -419,6 +419,34 @@ for (const r of results) {
 
 It reads the registry inputs once for the whole batch; bounds concurrency, starting from half the gateway's advertised `maxInflightRounds` (at most 64, else 32) and adapting (halving on a busy answer, growing back while requests succeed); runs Solana submits on their own smaller limiter (`submitConcurrency`, default 8); never discards the signed attestation of a round whose submit failed; and returns one result per feed in input order, so a failing feed does not stop the others. Pass `submit: false` to collect attestations only. Throughput is limited by the submit path (one transaction per attestation) long before it is limited by the gateway.
 
+### Batching attestations of one feed
+
+At a high update rate, submit several attestations of the same feed in one transaction:
+
+```ts
+const { signature, count } = await sdk.solana.submitAttestations([older, newer, newest]);
+```
+
+Each becomes its own `submit_attestation` instruction, sorted by timestamp, and instructions run in
+the order they are listed, so every attestation is applied, oldest first. Separate transactions give
+no such order. Sent a few hundred milliseconds apart they reach a leader in a different order often
+enough (about a third at 250 ms spacing in a devnet run) that the older one is refused with
+`FeedNotNewer`; a batch makes the spacing between transactions several times longer, and one
+transaction costs one fee.
+
+- All attestations must be for one feed (the same `sourceId` and `signaturesRequired`), with distinct
+  timestamps. They may differ in registry version and signer set.
+- The transaction is atomic. If a newer attestation of the feed has already landed, every
+  instruction is stale and none applies, so batch what is due together and send batches of one feed
+  in order.
+- A transaction holds 1232 bytes, which is about three attestations with three signers, two with
+  four or five. `maxAttestationsPerTransaction(signerCount, { distinctSigners })` estimates it, and a
+  batch that does not fit throws `BatchTooLargeError` before sending, with `fits` saying how many
+  go: submit those and the rest apart. A priority-fee instruction costs bytes too.
+- `rawValue` is not supported in a batch; use `submitAttestation` for values longer than 32 bytes.
+- An attestation waits for the others in its batch, so a batch of `n` made at an interval of `t`
+  delays the oldest by `(n - 1) * t`.
+
 ### Fast requests with a cached context
 
 By default every `requestSignedData` call reads the on-chain registry up front
