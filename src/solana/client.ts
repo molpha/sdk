@@ -75,6 +75,103 @@ export function estimateSubmitComputeUnits(signerCount: number): number {
   return Math.min(Math.round(measured * 1.15) + 10_000, MAX_COMPUTE_UNIT_LIMIT);
 }
 
+/**
+ * Compute-unit limit for one transaction that carries a `submit_attestation` per entry of
+ * `signerCounts`: the same margin as {@link estimateSubmitComputeUnits} on the sum, with the fixed
+ * 10k once for the transaction.
+ */
+export function estimateSubmitBatchComputeUnits(signerCounts: number[]): number {
+  if (signerCounts.length === 0 || signerCounts.some((n) => !Number.isInteger(n) || n < 1)) {
+    return MAX_COMPUTE_UNIT_LIMIT;
+  }
+  const measured = signerCounts.reduce((sum, n) => sum + 43_000 + 9_200 * n, 0);
+  return Math.min(Math.round(measured * 1.15) + 10_000, MAX_COMPUTE_UNIT_LIMIT);
+}
+
+/**
+ * Bytes of `submit_attestation` instruction data with no raw value: the 8 byte discriminator, the
+ * payload (32 + 32 + 4 + 1 + 8), the signature (32 + 20 + 32), the empty `Option` and the coalition
+ * key (32 + 32).
+ */
+export const SUBMIT_INSTRUCTION_DATA_BYTES = 234;
+
+const PLACEHOLDER_BLOCKHASH = "11111111111111111111111111111111";
+
+/** Bytes of a compact-u16 length prefix. */
+const shortVecBytes = (n: number): number => (n < 0x80 ? 1 : n < 0x4000 ? 2 : 3);
+
+/**
+ * Serialized size of a legacy transaction with one signature (the fee payer's). It is computed from
+ * the compiled message, not by serializing it: web3.js serializes into a fixed 1232 byte buffer and
+ * throws for exactly the transactions this has to measure.
+ */
+function transactionSize(payer: web3.PublicKey, instructions: web3.TransactionInstruction[]): number {
+  const tx = new web3.Transaction();
+  tx.feePayer = payer;
+  tx.recentBlockhash = PLACEHOLDER_BLOCKHASH;
+  tx.add(...instructions);
+  const message = tx.compileMessage();
+  const keys = message.accountKeys.length;
+  // signatures (count + one), header, account keys, recent blockhash, instruction count
+  let size = 1 + 64 + 3 + shortVecBytes(keys) + 32 * keys + 32 + shortVecBytes(message.instructions.length);
+  message.instructions.forEach((compiled, i) => {
+    const dataBytes = instructions[i]!.data.length;
+    size +=
+      1 + shortVecBytes(compiled.accounts.length) + compiled.accounts.length + shortVecBytes(dataBytes) + dataBytes;
+  });
+  return size;
+}
+
+/**
+ * Serialized size of a transaction with `count` attestations of `signerCount` signers each, to plan
+ * a batch before there is one. The signer `Node` accounts are shared between attestations, so the
+ * size depends on how many distinct ones there are: `distinctSigners` (default `signerCount`, the
+ * best case; the registry's node count is the worst).
+ */
+export function estimateSubmitTransactionSize(
+  count: number,
+  signerCount: number,
+  opts: { distinctSigners?: number; priorityFee?: boolean } = {},
+): number {
+  const key = () => web3.Keypair.generate().publicKey;
+  const [payer, registry, feed, protocolConfig, program] = [key(), key(), key(), key(), key()];
+  const distinct = Math.max(signerCount, opts.distinctSigners ?? signerCount);
+  const nodes = Array.from({ length: distinct }, key);
+  const instructions: web3.TransactionInstruction[] = [setComputeUnitLimit(1)];
+  if (opts.priorityFee) instructions.push(setComputeUnitPrice(1));
+  for (let i = 0; i < count; i++) {
+    instructions.push(
+      new web3.TransactionInstruction({
+        programId: program,
+        keys: [
+          { pubkey: payer, isSigner: true, isWritable: true },
+          { pubkey: registry, isSigner: false, isWritable: false },
+          { pubkey: feed, isSigner: false, isWritable: true },
+          { pubkey: protocolConfig, isSigner: false, isWritable: false },
+          { pubkey: new web3.PublicKey(SYSTEM_PROGRAM_ADDRESS), isSigner: false, isWritable: false },
+          ...Array.from({ length: signerCount }, (_, j) => ({
+            pubkey: nodes[(i * signerCount + j) % distinct]!,
+            isSigner: false,
+            isWritable: false,
+          })),
+        ],
+        data: Buffer.alloc(SUBMIT_INSTRUCTION_DATA_BYTES),
+      }),
+    );
+  }
+  return transactionSize(payer, instructions);
+}
+
+/** The most attestations of `signerCount` signers that fit in one transaction; see {@link estimateSubmitTransactionSize}. */
+export function maxAttestationsPerTransaction(
+  signerCount: number,
+  opts: { distinctSigners?: number; priorityFee?: boolean } = {},
+): number {
+  let count = 0;
+  while (estimateSubmitTransactionSize(count + 1, signerCount, opts) <= web3.PACKET_DATA_SIZE) count++;
+  return count;
+}
+
 /** How long a registry read is reused. A registry version's node list never changes. */
 const REGISTRY_CACHE_MS = 30_000;
 /** Cap on remembered node keys / coalition keys, so a long-lived client stays bounded. */
@@ -124,6 +221,33 @@ export interface SubmitResult {
   signature: string;
   /** Feed PDA written by this submit (`["molpha_feed", sourceId, [signaturesRequired], submitter]`). */
   feed: Address;
+}
+
+/** What {@link MolphaSolanaClient.submitAttestations} returns. */
+export interface SubmitAttestationsResult extends SubmitResult {
+  /** Attestations in the transaction. They were applied in timestamp order. */
+  count: number;
+}
+
+/**
+ * Thrown by {@link MolphaSolanaClient.submitAttestations} when the attestations do not fit in one
+ * transaction. Nothing was sent: submit the first `fits` of them (oldest first) and the rest apart.
+ */
+export class BatchTooLargeError extends RangeError {
+  constructor(
+    /** How many of the attestations, oldest first, do fit. */
+    readonly fits: number,
+    /** The serialized size of the whole batch, in bytes. */
+    readonly size: number,
+    /** The largest transaction the network accepts, in bytes. */
+    readonly limit: number,
+    readonly count: number,
+  ) {
+    super(
+      `${count} attestations need a ${size} byte transaction, over the ${limit} byte limit; ${fits} fit`,
+    );
+    this.name = "BatchTooLargeError";
+  }
 }
 
 /**
@@ -191,6 +315,12 @@ export interface SubmitAttestationOptions {
    */
   rawValue?: Uint8Array;
 }
+
+/** Options for {@link MolphaSolanaClient.submitAttestations}. */
+export type SubmitAttestationsOptions = Pick<
+  SubmitAttestationOptions,
+  "computeUnitLimit" | "priorityFeeMicroLamports"
+>;
 
 interface NodeAccount {
   secp256k1PubkeyX?: Uint8Array | number[];
@@ -412,6 +542,111 @@ export class MolphaSolanaClient {
     attestation: Attestation,
     opts?: SubmitAttestationOptions,
   ): Promise<SubmitResult> {
+    const { args, accounts, remaining, feed } = await this.prepareSubmit(attestation, opts);
+    const preInstructions = [
+      setComputeUnitLimit(opts?.computeUnitLimit ?? estimateSubmitComputeUnits(remaining.length)),
+    ];
+    const price = await this.resolvePriorityFee(opts?.priorityFeeMicroLamports, feed);
+    if (price > 0) preInstructions.push(setComputeUnitPrice(price));
+
+    const signature = await this.methods
+      .submitAttestation(args)
+      .accountsPartial(accounts)
+      .remainingAccounts(remaining)
+      .preInstructions(preInstructions)
+      .rpc();
+    return { signature, feed };
+  }
+
+  /**
+   * Submit several attestations of one feed in one transaction.
+   *
+   * Each becomes its own `submit_attestation` instruction, in timestamp order, and instructions run
+   * in the order they are listed: all of them are applied, oldest first, whatever order other
+   * transactions reach the leader in. That is what separate submits cannot promise. Transactions sent
+   * milliseconds apart for one feed are overtaken by a newer one often enough (about a third at 250 ms
+   * spacing in a devnet run) that the older one fails with `FeedNotNewer`; a batch makes the spacing
+   * between transactions several times longer and spends one fee and one signature for them all.
+   *
+   * The transaction is atomic: if one instruction fails (typically because a newer attestation
+   * of the feed landed first, so every instruction is stale) none of them applies. Batch only what
+   * is due together, and keep batches of one feed in the order they were made.
+   *
+   * All attestations must be for one feed (the same `sourceId` and `signaturesRequired`) with
+   * distinct timestamps. They need not share a registry version or a signer set. Values longer than
+   * 32 bytes (`rawValue`) are not supported here: submit those with {@link submitAttestation}.
+   *
+   * @throws {BatchTooLargeError} when they do not fit in one transaction (about three do with
+   *   three signers; see {@link maxAttestationsPerTransaction}). Nothing is sent.
+   */
+  async submitAttestations(
+    attestations: Attestation[],
+    opts?: SubmitAttestationsOptions,
+  ): Promise<SubmitAttestationsResult> {
+    if (attestations.length === 0) {
+      throw new RangeError("submitAttestations needs at least one attestation");
+    }
+    const sorted = [...attestations].sort((a, b) => a.payload.timestamp - b.payload.timestamp);
+    const feedKey = (a: Attestation) =>
+      `${bytesToHex(toFixedBytes(a.payload.sourceId, 32, "sourceId"))}:${a.payload.signaturesRequired}`;
+    const first = feedKey(sorted[0]!);
+    sorted.forEach((a, i) => {
+      if (feedKey(a) !== first) {
+        throw new RangeError(
+          "submitAttestations: every attestation must be for the same feed (sourceId and signaturesRequired)",
+        );
+      }
+      if (i > 0 && a.payload.timestamp === sorted[i - 1]!.payload.timestamp) {
+        throw new RangeError(
+          `submitAttestations: two attestations have timestamp ${a.payload.timestamp}; the second would be refused as not newer`,
+        );
+      }
+    });
+    if (sorted.length === 1) return { ...(await this.submitAttestation(sorted[0]!, opts)), count: 1 };
+
+    const prepared = await Promise.all(sorted.map((a) => this.prepareSubmit(a)));
+    const instructions: web3.TransactionInstruction[] = await Promise.all(
+      prepared.map((p) =>
+        this.methods
+          .submitAttestation(p.args)
+          .accountsPartial(p.accounts)
+          .remainingAccounts(p.remaining)
+          .instruction(),
+      ),
+    );
+    const feed = prepared[0]!.feed;
+    const budget = [
+      setComputeUnitLimit(
+        opts?.computeUnitLimit ?? estimateSubmitBatchComputeUnits(prepared.map((p) => p.remaining.length)),
+      ),
+    ];
+    const price = await this.resolvePriorityFee(opts?.priorityFeeMicroLamports, feed);
+    if (price > 0) budget.push(setComputeUnitPrice(price));
+
+    const payer = this.provider.wallet.publicKey;
+    const size = transactionSize(payer, [...budget, ...instructions]);
+    if (size > web3.PACKET_DATA_SIZE) {
+      let fits = 0;
+      while (
+        fits < instructions.length &&
+        transactionSize(payer, [...budget, ...instructions.slice(0, fits + 1)]) <= web3.PACKET_DATA_SIZE
+      ) {
+        fits++;
+      }
+      throw new BatchTooLargeError(fits, size, web3.PACKET_DATA_SIZE, instructions.length);
+    }
+    const signature = await this.provider.sendAndConfirm(new web3.Transaction().add(...budget, ...instructions));
+    return { signature, feed, count: instructions.length };
+  }
+
+  /**
+   * Everything one `submit_attestation` instruction needs: the arguments, the named accounts, the
+   * signer `Node` accounts (ascending bit order) and the feed address.
+   */
+  private async prepareSubmit(
+    attestation: Attestation,
+    opts?: { coalitionKey?: CoalitionKey; rawValue?: Uint8Array },
+  ) {
     const { payload, signature: schnorr } = attestation;
     const sourceId = toFixedBytes(payload.sourceId, 32, "sourceId");
     const submitter = this.wallet;
@@ -422,27 +657,18 @@ export class MolphaSolanaClient {
       opts?.coalitionKey ??
       (await this.computeSignerCoalitionKey(remaining, registry, schnorr.signersBitmap));
     const feed = feedPda(sourceId, payload.signaturesRequired, submitter, this.programId);
-    const preInstructions = [
-      setComputeUnitLimit(opts?.computeUnitLimit ?? estimateSubmitComputeUnits(remaining.length)),
-    ];
-    const price = await this.resolvePriorityFee(opts?.priorityFeeMicroLamports, feed);
-    if (price > 0) preInstructions.push(setComputeUnitPrice(price));
-
-    const signature = await this.methods
-      .submitAttestation(
-        buildSubmitAttestationArgs(attestation, coalitionKey, opts?.rawValue),
-      )
-      .accountsPartial({
+    return {
+      args: buildSubmitAttestationArgs(attestation, coalitionKey, opts?.rawValue),
+      accounts: {
         submitter,
         registry: registryPda(payload.registryVersion, this.programId),
         feed,
         protocolConfig: protocolConfigPda(this.programId),
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
-      })
-      .remainingAccounts(remaining)
-      .preInstructions(preInstructions)
-      .rpc();
-    return { signature, feed };
+      },
+      remaining,
+      feed,
+    };
   }
 
   /** The registry for `version`, reused for {@link REGISTRY_CACHE_MS}. */
