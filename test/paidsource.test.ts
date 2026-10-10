@@ -136,7 +136,6 @@ const request = (extra: Record<string, unknown> = {}) => ({
   apiConfig,
   subscriptionOwner: SUBSCRIPTION_OWNER,
   maxRetries: 3,
-  tickMs: 10, // retries wait for the next tick; keep it short in tests
   ...extra,
 });
 

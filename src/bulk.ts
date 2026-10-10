@@ -37,8 +37,8 @@ export interface BulkOptions {
    */
   concurrency?: number;
   /**
-   * Spread request starts over this many ms by a hash of the feed's source id. Feeds that are due on
-   * the same tick otherwise arrive together and queue at the gateway. Default 0 (no spreading).
+   * Spread request starts over this many ms by a hash of the feed's source id. Feeds that are due at
+   * the same moment otherwise arrive together and queue at the gateway. Default 0 (no spreading).
    */
   spreadMs?: number;
   /** Submit each attestation to Solana after its round. Default true. */

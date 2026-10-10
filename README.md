@@ -193,29 +193,45 @@ A `programId` that differs from the client's is rejected. Because the hash diffe
 
 ### Round timestamp
 
-The request body carries `authSig` and `authTimestamp` but no round timestamp. The gateway assigns the
-round's `timestamp` from its own clock, in unix **milliseconds**, on a tick grid
-(`floor(now / tickMs) * tickMs`, one second by default), and the result carries it in
-`payload.timestamp`. Committee selection reads only the timestamp's one-second window, so
+The request body carries `authSig` and `authTimestamp` but no round timestamp. The gateway stamps the
+round with its own clock, in unix **milliseconds**, floored to a fixed 100 ms tick
+(`floor(nowMs / 100) * 100`), and the result carries the stamp in `payload.timestamp`. The tick is a
+protocol constant, exported as `ROUND_TICK_MS`: it is the same on every gateway and node, it is not
+configurable, and `GET /v1/info` does not report it. Stamping does not wait for a tick boundary, so
+it adds no latency. Committee selection reads only the timestamp's one-second window (ten ticks), so
 nobody can pick a committee by picking a time.
 
+- One feed (a source, a quorum and a registry version) runs at most 10 rounds per second, whatever
+  the request rate.
+- Requests for the same feed inside one tick share one round: the nodes run it once and every caller
+  gets the result. Each caller still spends its own unit of round quota, or its own payment.
+- One consumer gets one round per tick per feed, so at most 10 per second. A second request by the
+  same consumer for the same source and quorum inside the tick is refused with HTTP 409; the SDK
+  retries it after one tick.
 - The message the nodes sign is `keccak256(MOLPHA_MESSAGE_V1 || value || sourceId || u32be(registryVersion) || u8(quorum) || u64be(timestamp) || signersBitmap)`.
 - Chain clocks, epochs and `maxAge`/staleness are in **seconds**: compare with
   `timestampSeconds(payload.timestamp)` (floored `ts / 1000`). `timestampAgeSeconds(ts, nowSeconds)` saturates at 0.
-- A round that was already reserved for this consumer, or dispatched to the nodes, cannot run again in the same tick (HTTP 409), so a retry waits for the next one. `tickMs` defaults to the gateway's advertised `tickMs` (read once, on the first retry, from `GET /v1/info`), else 1000.
+- The SDK returns `payload.timestamp` exactly as the gateway gave it. Nodes enforce the grid when
+  they sign; the on-chain verifiers do not check it.
 
 ### Retries and timeouts
 
-`requestSignedData` makes up to `maxRetries` attempts (default 6) and chooses the wait before each by why the last one failed (`retryDelayMs`). Every wait reaches at least the next tick, then adds jitter so clients that failed together do not retry together:
+`requestSignedData` makes up to `maxRetries` attempts (default 6) and chooses the wait before each by why the last one failed (`retryDelayMs`). Every wait carries jitter so clients that failed together do not retry together. The backoff step is a capped exponential: 250 ms, 500 ms, up to 5 s.
 
 | Last attempt | Wait before the next |
 | --- | --- |
-| 409 (this consumer already has a round for the source in this tick) | next tick, plus up to half a tick |
-| 503 or 429 (gateway at capacity, or nodes unavailable) | the later of the next tick and the gateway's `Retry-After`, plus up to a tick |
-| timeout, network error, other 5xx | capped exponential backoff (250 ms up to 5 s), half of it randomized |
+| 409 (this consumer already has a round for the source and quorum in the current tick) | one tick (`ROUND_TICK_MS`, 100 ms), plus up to 20 ms |
+| 503 or 429 (gateway at capacity, or too few nodes accepted the round) | the later of the gateway's `Retry-After` and the backoff step, plus up to one more step |
+| timeout, network error, other 5xx | the backoff step, half of it randomized |
 | 400, 401, 402, 403 | none: terminal. 403 means the subscription is inactive or its round quota for the term is spent |
 
 A 400 saying the `registryVersion` is not the current one (a cached context, or a registry roll between your read and the request) is the exception: the SDK reads the registry afresh and retries once, without spending an attempt.
+
+The wait after a 409 is a full tick rather than the time left to the next boundary: a full tick puts the retry in a later tick whatever the offset between the client's clock and the gateway's, so the SDK never computes a boundary from the local clock. A caller polling one feed gains nothing by asking more often than once per tick: space the requests at least `ROUND_TICK_MS` apart.
+
+A retry is a new request, and the gateway stamps it anew, so it is a **new round**: it spends another unit of round quota or needs another payment, and with a paywalled source another set of payment authorizations. Nothing ties a retry to the attempt before it; there is no idempotency key. Set `maxRetries: 1` to make a single attempt and decide about a retry yourself.
+
+The gateway limits the total load: at capacity it answers HTTP 503 with a `Retry-After`, and a consumer over its request rate gets HTTP 429. It also answers 503 when too few nodes accept a round. The SDK treats them alike: it backs off and retries, and throws a `GatewayError` with the status when the attempts run out.
 
 `timeoutMs` defaults to 35 s, above the gateway's own wait for a round (`roundTimeoutSeconds` in `/v1/info`, 30 s by default). A shorter timeout abandons a round the gateway is still running, and the retry then starts another. A source that cannot be fetched is reported as soon as enough nodes have failed (usually well under a second), not after the wait.
 
@@ -917,7 +933,7 @@ Current scope:
 
 - Solana subscription and extend flow;
 - deterministic source id and attestation message hashing;
-- gateway signed-data requests (failover, tick-aware retries, per-gateway request auth, context cache);
+- gateway signed-data requests (failover, retries with backoff, per-gateway request auth, context cache);
 - Solana attestation submission and feed/registry reads;
 - private API encryption helpers (pre-production);
 - caller-funded x402 payments for paywalled API sources (Base USDC, pre-production);
