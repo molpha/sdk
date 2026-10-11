@@ -3,8 +3,8 @@
   "stable": {
     "gatewayUrl": "https://gateway.molpha.io/",
     "solanaProgramId": "MoLF3pgVA9MENSuEujxNNSMaTo71aLyewaH5nrWfUZs",
-    "evmVerifier": "0xE1fd792b7E54e0C8F0Cd1c8055E446ff36d233eB",
-    "starknetSepolia": "0x0378df4dbecf8f0c7daa801282932f7011c7a5e5773bab9eaf68f5fa5e7530ef"
+    "evmVerifier": "0xA6e49A3A1caf3E110cC04765B934C8FF118C2568",
+    "starknetSepolia": "0x032b9f47f12189668b94a5d62fb7d60f968ed0dbaf22090649d1d7a91d79cc38"
   },
   "dev": {
     "gatewayUrl": "https://dev-gateway.molpha.io/",
