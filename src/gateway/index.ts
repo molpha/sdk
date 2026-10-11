@@ -1,58 +1,108 @@
 /**
  * `MolphaGateway` — isomorphic HTTP client with multi-endpoint failover.
  */
-import {
-  bytesToHex,
-  bytesToHex0x,
-  hexToBytes,
-} from "../core/encoding.js";
+import { assertAggregationQuorum, canonicalizeAggregation } from "../core/aggregation.js";
+import { canonicalizeAPIConfig, deriveSourceId } from "../core/apiconfig.js";
+import { MOLPHA_PROGRAM_ID } from "../core/constants.js";
+import { DEFAULT_GATEWAY_ENDPOINT } from "../deployment.generated.js";
+import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
+import { formatInt256Decimal } from "../core/int256.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
-import { canonicalizeAPIConfig } from "../core/apiconfig.js";
-import {
-  deriveGroupBitmap,
-  deriveSelectionSeed,
-  effectiveSelectionSize,
-  selectedIndices,
-} from "../core/selection.js";
+import { effectiveSelectionSize } from "../core/selection.js";
+import { ROUND_TICK_MS } from "../core/timestamp.js";
 import type {
+  AggregationConfig,
   APIConfig,
-  DataUpdateResult,
+  Attestation,
   Node,
   NodeKeyVerifier,
+  NodesInfo,
   RegistrySelectionConfig,
   Signer,
+  SourcePaymentOptions,
+  UpstreamTerms,
 } from "../core/types.js";
-import { authMessage } from "./auth.js";
+import { hashRequestAuth } from "./auth.js";
 import { encryptForNodes } from "./encryption.js";
+import {
+  UpstreamPaymentRequiredError,
+  parseUpstreamQuote,
+  probeSource,
+  signSourcePayments,
+  validateSuppliedTerms,
+} from "./x402.js";
+import {
+  addressToBytes,
+  deriveGatewayPda,
+  normalizeEndpoint,
+  parseGatewayInfo,
+  type GatewayEndpoint,
+  type GatewayEndpointInput,
+  type GatewayInfo,
+} from "./identity.js";
 
 export type { RegistrySelectionConfig } from "../core/types.js";
+export * from "./auth.js";
+export * from "./identity.js";
+export * from "./x402.js";
 
 export interface RequestSignedDataOptions {
-  feedId: string;
-  signaturesRequired: number;
+  /**
+   * The API definition to resolve. Its canonical form determines the round's
+   * `sourceId = keccak256(JSON.stringify(canonicalizeAPIConfig(apiConfig)))`, so pass the
+   * same config (including `{{secret.*}}` placeholders) every time.
+   */
   apiConfig: APIConfig;
+  /**
+   * Requested quorum (u8, ≥ the protocol `min_signers`). Median tolerance mode
+   * (`apiConfig.aggregation`) additionally requires `>= 3`; lower values are rejected
+   * before any request is made.
+   */
+  signaturesRequired: number;
   /**
    * Solana pubkey (base58) of the subscription owner.
    * Overrides the gateway's `defaultSubscriptionOwner` when set.
    */
   subscriptionOwner?: string;
   /**
-   * Solana pubkey (base58) of the consumer authority that signs gateway auth.
+   * Solana pubkey (base58) of the consumer: the subscription owner, or a delegate of it.
    * Overrides the gateway's `defaultConsumerAuthority` when set.
    */
   consumerAuthority?: string;
   /**
-   * Signs `authMessage(feedId, timestamp)`. Overrides the gateway's
-   * `defaultSigner` when set. When both are omitted, sends all-zero authSig
-   * (dev only).
+   * Signs `hashRequestAuth({ programId, gateway, sourceId, signaturesRequired, authTimestamp })`.
+   * The hash binds the gateway's on-chain account, so it is computed — and the signer
+   * invoked — once per endpoint actually tried, with a fresh `authTimestamp` each time.
+   * Overrides the gateway's `defaultSigner` when set. When both are omitted, sends an all-zero
+   * authSig (a gateway rejects it with 401; for tests and local tooling only).
    */
   signer?: Signer;
   encrypt?: { secrets: Record<string, string> };
+  /**
+   * Pays an API source that is itself x402-paywalled. The SDK reads the source's
+   * own 402, signs one authorization per node in the round's eligible set, and
+   * sends them with the round as `sourcePayments`.
+   *
+   * Payment goes to the source, never to Molpha: the round still costs exactly
+   * one round of subscription quota. Only authorizations a node actually spends
+   * ever settle, so the redundancy buffer costs nothing when it goes unused.
+   * Without this, a paywalled source throws {@link UpstreamPaymentRequiredError}.
+   */
+  sourcePayment?: SourcePaymentOptions;
   /** Max accepted value age in seconds. Default 60. */
   maxAge?: number;
-  /** Each retry re-rolls the timestamp. Default 15. */
+  /**
+   * Max attempts. The wait before each retry depends on why the last attempt failed: one round
+   * tick after a duplicate (HTTP 409), the gateway's `Retry-After` or a capped exponential backoff
+   * after a busy answer, the backoff after anything else; see {@link retryDelayMs}. Every attempt
+   * the gateway accepts spends another unit of round quota. Default {@link DEFAULT_MAX_RETRIES}.
+   */
   maxRetries?: number;
-  /** Per-request timeout in ms. Default 5000. */
+  /**
+   * Per-request timeout in ms. Default {@link DEFAULT_ROUND_TIMEOUT_MS}, above the gateway's own
+   * wait for a round: a shorter timeout abandons rounds the gateway is still running and the retry
+   * then starts another.
+   */
   timeoutMs?: number;
   /**
    * Pre-fetched round inputs. Any field present here skips its network/on-chain
@@ -61,8 +111,8 @@ export interface RequestSignedDataOptions {
    * {@link MolphaGateway.prepareContext}.
    *
    * Caching is opt-in because these inputs can drift: a stale `registryVersion`,
-   * `redundancyBuffer`, or `nodes` set produces a result the chain will reject.
-   * Refresh the context when the on-chain registry version changes.
+   * `redundancyBuffer`, `nodeCount`, or `nodes` set produces a result the chain will
+   * reject. Refresh the context when the on-chain registry version changes.
    */
   context?: Partial<RoundContext>;
   /**
@@ -84,6 +134,12 @@ export interface MolphaGatewayOptions {
   /** Solana pubkey (base58) of the consumer authority used when a request omits it. */
   defaultConsumerAuthority?: string;
   /**
+   * Molpha program id the request authorization is bound to (and that `fetchGatewayInfo`
+   * checks the gateway settles against). Defaults to the vendored `MOLPHA_PROGRAM_ID`;
+   * must match the gateway's deployment.
+   */
+  programId?: string;
+  /**
    * Authenticates selected gateway node encryption keys before private API
    * secrets are encrypted.
    */
@@ -93,15 +149,24 @@ export interface MolphaGatewayOptions {
    * may use gateway-provided node keys without authentication. Defaults to false.
    */
   allowUnverifiedNodeKeysForPrivateApi?: boolean;
+  /** Source of randomness in [0, 1) for retry jitter; defaults to `Math.random` (tests only). */
+  random?: () => number;
+  /** Waits `ms` before a retry; defaults to a `setTimeout` timer (tests only). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
  * The slow-changing inputs a `requestSignedData` round binds to. Fetch once with
- * {@link MolphaGateway.prepareContext} and reuse across many rounds
+ * {@link MolphaGateway.prepareContext} and reuse across many rounds.
  */
 export interface RoundContext extends RegistrySelectionConfig {
-  /** Full node set used to derive the selection bitmap. */
+  /** Full registry node set: private API secrets are encrypted for every node in it. */
   nodes: Node[];
+}
+
+/** Round inputs after resolution; `nodes` is only fetched when a round needs it. */
+interface ResolvedRound extends RegistrySelectionConfig {
+  nodes?: Node[];
 }
 
 interface GatewaySignedDataResponse {
@@ -109,8 +174,36 @@ interface GatewaySignedDataResponse {
   data?: GatewaySignedData;
 }
 
+/**
+ * The gateway's `attestation` object (`AttestationData.attestation`): the signed struct as the
+ * on-chain `Attestation`, with `payload.value` the packed 32-byte value.
+ */
+interface GatewayAttestation {
+  payload?: {
+    value?: string;
+    sourceId?: string;
+    registryVersion?: number;
+    signaturesRequired?: number;
+    /** Legacy wire name on some gateways; newer responses use `timestamp`. */
+    canonicalTimestamp?: number;
+    /** Gateway-assigned round time, unix milliseconds. */
+    timestamp?: number;
+  };
+  signature?: {
+    signature?: string;
+    commitment?: string;
+    signersBitmap?: string;
+  };
+}
+
 interface GatewaySignedData {
-  feedId?: string;
+  /** Current gateways nest the signed struct here; the flat fields below are the older shape. */
+  attestation?: GatewayAttestation;
+  sourceId?: string;
+  /** Echo of the canonical apiConfig hash; equals `sourceId`. */
+  configHash?: string;
+  /** Echo of the request's tolerance policy; present only for tolerance rounds. */
+  aggregation?: unknown;
   value?: string;
   valuePacked?: string;
   timestamp?: number;
@@ -129,8 +222,86 @@ interface GatewayEnvelope<T> {
 
 const ZERO_AUTH_SIG = new Uint8Array(64);
 
-/** Default gateway base URL when `endpoints` is omitted. */
-export const DEFAULT_GATEWAY_ENDPOINT = "https://dev-gateway.molpha.io/";
+/** Caller's unix SECONDS: the `authTimestamp` of a RequestAuth, not the round's timestamp. */
+const authTimestampNow = (): number => Math.floor(Date.now() / 1000);
+
+const timerSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Jitter added to the one-tick wait after an HTTP 409, in ms. */
+const CONFLICT_JITTER_MS = 20;
+/** First delay of the exponential backoff, in ms. */
+const BACKOFF_BASE_MS = 250;
+/** Cap of the exponential backoff, in ms. */
+const BACKOFF_MAX_MS = 5_000;
+/**
+ * Default per-request timeout: above the gateway's own wait for a round (`node.agg_wait_seconds`,
+ * 30 s by default), so the client does not abandon a round the gateway is still running and then
+ * start a second one. A gateway advertises its value as `roundTimeoutSeconds` in `GET /v1/info`.
+ */
+export const DEFAULT_ROUND_TIMEOUT_MS = 35_000;
+/** Default number of attempts. */
+export const DEFAULT_MAX_RETRIES = 6;
+
+/**
+ * Why an attempt failed, as far as it decides how long to wait before the next one:
+ *  - `conflict`: HTTP 409, this consumer already has a round for the source and quorum in the
+ *    current round tick;
+ *  - `busy`: HTTP 503 or 429, the gateway is at capacity, or too few nodes accepted the round
+ *    (unavailable, or busy), optionally with the gateway's `Retry-After`;
+ *  - `error`: anything else that may be transient (timeout, network, other 5xx).
+ */
+export type RetryCause =
+  | { kind: "conflict" }
+  | { kind: "busy"; retryAfterMs?: number }
+  | { kind: "error" };
+
+/**
+ * How long to wait before the next attempt, in ms. Each delay carries jitter, so clients that
+ * failed together do not retry together:
+ *  - conflict: one full round tick ({@link ROUND_TICK_MS}) plus up to 20 ms. The gateway stamps a
+ *    round with the tick it is in, so a retry a full tick later is in a later tick whatever the
+ *    offset between the two clocks: no boundary is computed from the local clock;
+ *  - busy: the later of the gateway's `Retry-After` and the backoff step, plus up to one more step;
+ *  - error: the backoff step, half of it randomized.
+ * The backoff step is a capped exponential (250 ms, 500 ms, ... 5 s). `failures` is the number of
+ * attempts that have failed so far (1 after the first).
+ */
+export function retryDelayMs(
+  cause: RetryCause,
+  failures: number,
+  random: () => number = Math.random,
+): number {
+  const backoff = Math.min(BACKOFF_BASE_MS * 2 ** Math.max(failures - 1, 0), BACKOFF_MAX_MS);
+  switch (cause.kind) {
+    case "conflict":
+      return ROUND_TICK_MS + random() * CONFLICT_JITTER_MS;
+    case "busy":
+      return Math.max(cause.retryAfterMs ?? 0, backoff) + random() * backoff;
+    case "error":
+      return backoff / 2 + random() * (backoff / 2);
+  }
+}
+
+/** The more demanding of two causes, so one endpoint's busy answer is not hidden by another's error. */
+function mergeCause(a: RetryCause, b: RetryCause): RetryCause {
+  if (a.kind === "busy" || b.kind === "busy") {
+    const waits = [a, b].flatMap((c) => (c.kind === "busy" && c.retryAfterMs !== undefined ? [c.retryAfterMs] : []));
+    return waits.length ? { kind: "busy", retryAfterMs: Math.max(...waits) } : { kind: "busy" };
+  }
+  if (a.kind === "conflict" || b.kind === "conflict") return { kind: "conflict" };
+  return { kind: "error" };
+}
+
+/** Parse a `Retry-After` header given in seconds into ms; HTTP dates and junk are ignored. */
+function retryAfterMs(res: Response): number | undefined {
+  const raw = res.headers.get("retry-after");
+  if (raw === null) return undefined;
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 60) * 1000 : undefined;
+}
+
+/** Default gateway base URL when `endpoints` is omitted (from the active deployment profile). */
+export { DEFAULT_GATEWAY_ENDPOINT };
 
 /** Thrown for terminal gateway errors (400/401) — never retried. */
 export class GatewayError extends Error {
@@ -144,25 +315,32 @@ export class GatewayError extends Error {
 }
 
 export class MolphaGateway {
-  private readonly endpoints: string[];
+  private readonly endpoints: GatewayEndpoint[];
   private readonly getRegistrySelectionConfig: () => Promise<RegistrySelectionConfig>;
   private readonly defaultSigner?: Signer;
   private readonly defaultSubscriptionOwner?: string;
   private readonly defaultConsumerAuthority?: string;
   private readonly verifyNodeKeys?: NodeKeyVerifier;
   private readonly allowUnverifiedNodeKeysForPrivateApi: boolean;
+  /** Program id the request authorization is bound to (base58). */
+  readonly programId: string;
+  private readonly programIdBytes: Uint8Array;
+  /** Gateway PDA per endpoint URL; resolved once per client lifetime. */
+  private readonly gatewayPdas = new Map<string, Promise<Uint8Array>>();
+  private readonly random: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(
-    endpoints?: string | string[],
+    endpoints?: GatewayEndpointInput | GatewayEndpointInput[],
     getRegistrySelectionConfig: () => Promise<RegistrySelectionConfig> = async () => {
       throw new Error(
-        "MolphaGateway requires getRegistrySelectionConfig to request signed data — pass the current on-chain registry version and redundancy buffer (e.g. () => solana.getRegistrySelectionConfig())",
+        "MolphaGateway requires getRegistrySelectionConfig to request signed data — pass the current on-chain registry version, redundancy buffer and node count (e.g. () => solana.getRegistrySelectionConfig())",
       );
     },
     defaultSigner?: Signer,
     /**
-     * Either a default subscription owner (base58) or gateway options. A string
-     * keeps the previous positional form used by standalone callers/tests.
+     * Either a default subscription owner (base58) or gateway options. A string is the
+     * shorthand for `{ defaultSubscriptionOwner }` used by standalone callers/tests.
      */
     defaultSubscriptionOwnerOrOptions?: string | MolphaGatewayOptions,
     defaultConsumerAuthority?: string,
@@ -174,7 +352,7 @@ export class MolphaGateway {
           ? endpoints
           : [endpoints];
     if (list.length === 0) throw new Error("At least one endpoint is required");
-    this.endpoints = list.map((e) => e.replace(/\/$/, ""));
+    this.endpoints = list.map(normalizeEndpoint);
     this.getRegistrySelectionConfig = getRegistrySelectionConfig;
     this.defaultSigner = defaultSigner;
 
@@ -192,18 +370,43 @@ export class MolphaGateway {
     this.verifyNodeKeys = options.verifyNodeKeys;
     this.allowUnverifiedNodeKeysForPrivateApi =
       options.allowUnverifiedNodeKeysForPrivateApi ?? false;
+    this.programId = options.programId ?? MOLPHA_PROGRAM_ID;
+    this.programIdBytes = addressToBytes(this.programId);
+    this.random = options.random ?? Math.random;
+    this.sleep = options.sleep ?? timerSleep;
+  }
+
+  /** The configured gateway base URLs, in failover order. */
+  endpointUrls(): string[] {
+    return this.endpoints.map((e) => e.url);
   }
 
   /** Tries endpoints in order; returns the first node list it can fetch. */
   async getNodes(): Promise<Node[]> {
-    const data = await this.firstReachableData<{ nodes: Node[] } | Node[]>("/v1/nodes");
-    return Array.isArray(data) ? data : data.nodes;
+    return (await this.getNodesInfo()).nodes;
+  }
+
+  /**
+   * `GET /v1/nodes` — the peer set plus the gateway's view of the registry
+   * selection policy, which sizes the eligible set a paid source must fund.
+   *
+   * The `registry` block is advisory: it is whatever the gateway read from the
+   * chain, and is absent when that read failed. Prefer the
+   * on-chain read (`MolphaSolanaClient.getRegistrySelectionConfig`) whenever a
+   * Solana connection is available — `requestSignedData` already does.
+   */
+  async getNodesInfo(): Promise<NodesInfo> {
+    const data = await this.firstReachableData<NodesInfo>("/v1/nodes");
+    return {
+      nodes: data.nodes,
+      ...(data.registry ? { registry: data.registry } : {}),
+    };
   }
 
   async isHealthy(): Promise<boolean> {
     for (const endpoint of this.endpoints) {
       try {
-        const res = await fetch(`${endpoint}/health`, { method: "GET" });
+        const res = await fetch(`${endpoint.url}/health`, { method: "GET" });
         if (res.ok) return true;
       } catch {
         // try next
@@ -213,15 +416,38 @@ export class MolphaGateway {
   }
 
   /**
-   * Fetch the slow-changing round inputs (registry version, redundancy buffer,
-   * node set) once so they can be reused across many {@link requestSignedData}
-   * calls. Pass the result back via `requestSignedData({ ..., context })` to
-   * skip the prelude and run a single-round "short" flow.
-   *
-   * Both fetches run in parallel. Registry version and redundancy buffer come
-   * from a single on-chain `RegistryState` read.
+   * `GET {url}/v1/info` — the gateway's on-chain identity. Throws when the gateway
+   * reports a `programId` different from this client's.
    */
-  async prepareContext(_feedId: string): Promise<RoundContext> {
+  async fetchGatewayInfo(
+    endpoint: GatewayEndpointInput,
+    timeoutMs?: number,
+  ): Promise<GatewayInfo> {
+    const { url } = normalizeEndpoint(endpoint);
+    const res = await this.fetchWithTimeout(`${url}/v1/info`, { method: "GET" }, timeoutMs);
+    if (!res.ok) {
+      throw new GatewayError(`GET /v1/info failed (${res.status})`, res.status);
+    }
+    const info = parseGatewayInfo(unwrapEnvelope(await res.json(), "/v1/info"));
+    if (info.programId !== undefined && info.programId !== this.programId) {
+      throw new GatewayError(
+        `Gateway ${url} settles against program ${info.programId}, but this client is bound to ${this.programId}`,
+      );
+    }
+    return info;
+  }
+
+  /**
+   * Fetch the slow-changing round inputs (registry version, redundancy buffer,
+   * node count, node set) once so they can be reused across many
+   * {@link requestSignedData} calls. Pass the result back via
+   * `requestSignedData({ ..., context })` to skip the prelude and run a
+   * single-round "short" flow.
+   *
+   * Both fetches run in parallel. Registry version, redundancy buffer and node
+   * count come from the on-chain registry read.
+   */
+  async prepareContext(): Promise<RoundContext> {
     const [registry, nodes] = await Promise.all([
       this.getRegistrySelectionConfig(),
       this.getNodes(),
@@ -231,24 +457,48 @@ export class MolphaGateway {
 
   /**
    * Request a threshold-signed data update from the gateway, with retry +
-   * failover. Per attempt a fresh timestamp yields a fresh selection bitmap; the
-   * body is POSTed to each endpoint in order until one `completed`s.
+   * failover. The body is POSTed to each endpoint in order until one `completed`s.
    *
-   * By default this fetches the registry selection config and node set up front
-   * (in parallel). Supply `opts.context` (e.g. from {@link prepareContext}) to
-   * reuse cached inputs and skip those fetches — a fully-populated context
-   * collapses the call to a single POST round.
+   * The round's `sourceId` is derived from `apiConfig`. The request carries no round timestamp:
+   * the gateway stamps the round with its own clock floored to the round tick (`timestamp`, unix
+   * milliseconds, a multiple of {@link ROUND_TICK_MS}), and the committee follows from it. The
+   * result carries the assigned timestamp and the signers' bitmap; the timestamp is taken as the
+   * gateway gave it. Requests for the same source, quorum and registry version inside one tick
+   * share one round. One consumer gets one round per tick per source and quorum: a second request
+   * in the tick is refused (HTTP 409) and retried one tick later. A retry is stamped anew, so it
+   * is a new round that spends another unit of round quota.
+   *
+   * The request is authorized by a `RequestAuth` signature (`authSig`) over the program id, the
+   * endpoint's Gateway PDA, the source id, the quorum and `authTimestamp` (unix seconds, read
+   * from the local clock for every attempt). It only proves the caller may spend the
+   * subscription's rounds; it is not part of the round, so the signature is recomputed for every
+   * endpoint tried.
+   *
+   * Because the committee is unknown until the gateway stamps the round, private API
+   * secrets are encrypted for **every** node of the registry; the gateway forwards only the
+   * selected nodes' envelopes.
+   *
+   * By default this fetches the registry selection config up front and the node
+   * set only when the round needs it (private API encryption, or when the registry
+   * read does not report `nodeCount`). Supply `opts.context` (e.g. from
+   * {@link prepareContext}) to reuse cached inputs and skip those fetches — a
+   * fully-populated context collapses the call to a single POST round.
+   *
+   * When the API source is itself x402-paywalled, pass `opts.sourcePayment` to
+   * fund it; without that, such a source throws
+   * {@link UpstreamPaymentRequiredError} carrying the gateway's quote.
    */
-  async requestSignedData(opts: RequestSignedDataOptions): Promise<DataUpdateResult> {
+  async requestSignedData(opts: RequestSignedDataOptions): Promise<Attestation> {
     const {
-      feedId,
       apiConfig,
       signer,
       encrypt,
+      sourcePayment,
       maxAge = 60,
-      maxRetries = 15,
-      timeoutMs = 5000,
+      maxRetries = DEFAULT_MAX_RETRIES,
+      timeoutMs = DEFAULT_ROUND_TIMEOUT_MS,
     } = opts;
+    const signaturesRequired = assertSignaturesRequired(opts.signaturesRequired);
 
     const verifyNodeKeys = opts.verifyNodeKeys ?? this.verifyNodeKeys;
     const allowUnverified =
@@ -260,13 +510,13 @@ export class MolphaGateway {
       );
     }
 
-    const feedIdBytes = hexToBytes(feedId);
-    const { registryVersion, redundancyBuffer, nodes } = await this.resolveContext(
-      feedId,
-      opts.context,
-    );
-
+    // Validates `aggregation` (rejects `mode: "exact"`, unsupported rules, bad numbers) as
+    // part of canonicalization; tolerance additionally needs a quorum of at least 3.
     const requestApiConfig = canonicalizeAPIConfig(apiConfig);
+    assertAggregationQuorum(requestApiConfig.aggregation, signaturesRequired);
+    const sourceIdBytes = deriveSourceId(requestApiConfig);
+    const sourceId = bytesToHex(sourceIdBytes);
+
     const subscriptionOwner = opts.subscriptionOwner ?? this.defaultSubscriptionOwner;
     if (!subscriptionOwner) {
       throw new Error(
@@ -275,74 +525,232 @@ export class MolphaGateway {
     }
     const consumerAuthority =
       opts.consumerAuthority ?? this.defaultConsumerAuthority ?? subscriptionOwner;
+    const authSigner = signer ?? this.defaultSigner;
+
+    let round = await this.resolveContext(opts.context, encrypt !== undefined);
+    let { registryVersion, redundancyBuffer } = round;
+    const nodeCountOf = (r: ResolvedRound): number => {
+      if (r.nodeCount !== undefined && r.nodes !== undefined && r.nodes.length !== r.nodeCount) {
+        throw new Error(
+          `Gateway node list has ${r.nodes.length} nodes but registry ${r.registryVersion} has node_count ${r.nodeCount} — refresh the round context`,
+        );
+      }
+      const n = r.nodeCount ?? r.nodes?.length;
+      if (n === undefined) throw new Error("Round context resolved neither nodeCount nor nodes");
+      return n;
+    };
+    let nodeCount = nodeCountOf(round);
+
+    // A paywalled source is paid by the caller, per node fetch, from their own
+    // wallet. Read the source's terms once, then sign fresh authorizations per
+    // attempt so a retry never reuses a nonce. The registry already tells us the
+    // eligible set size, so no quote round trip is needed in the common case.
+    let terms: UpstreamTerms | null = null;
+    let authorizations = 0;
+    let requoted = false;
+    if (sourcePayment) {
+      terms = sourcePayment.terms
+        ? validateSuppliedTerms(
+            sourcePayment.terms,
+            requestApiConfig.url,
+            sourcePayment.assetDomain,
+          )
+        : await probeSource(apiConfig, {
+            ...(encrypt ? { secrets: encrypt.secrets } : {}),
+            ...(sourcePayment.assetDomain ? { assetDomain: sourcePayment.assetDomain } : {}),
+            timeoutMs,
+          });
+      if (terms) {
+        authorizations = effectiveSelectionSize(
+          signaturesRequired,
+          redundancyBuffer,
+          nodeCount,
+        );
+      }
+    }
 
     let lastError: unknown;
+    let groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
+    // Every registry node, ascending: the committee is not known until the gateway has stamped
+    // the round, so the envelope set cannot be narrowed here.
+    let registryIndexes = Array.from({ length: nodeCount }, (_, index) => index);
+    // What made the last attempt fail decides how long to wait before the next.
+    let cause: RetryCause = { kind: "error" };
+    // A stale registry version is refreshed at most once per call, and the refreshed attempt is
+    // neither counted nor delayed. `refreshedOnce` is never reset: a registry that is still stale
+    // after the refresh is a terminal error, not a reason to refresh again.
+    let refreshedOnce = false;
+    let retryNow = false;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const timestamp = Math.floor(Date.now() / 1000);
-
-      const seed = deriveSelectionSeed(feedIdBytes, registryVersion, timestamp);
-      const groupSize = effectiveSelectionSize(
-        opts.signaturesRequired,
-        redundancyBuffer,
-        nodes.length,
-      );
-      const bitmap = deriveGroupBitmap(seed, nodes.length, groupSize);
-      const indices = selectedIndices(bitmap, nodes.length);
+      // The gateway stamps each attempt it accepts with the tick it arrives in, so a retry is a new
+      // round; why the last attempt failed decides how long to wait first (see retryDelayMs).
+      if (attempt > 0 && !retryNow) {
+        await this.sleep(retryDelayMs(cause, attempt, this.random));
+      }
+      retryNow = false;
+      cause = { kind: "error" };
 
       let encKeyBundle: ReturnType<typeof encryptForNodes> | undefined;
       if (encrypt) {
-        const selected = selectedNodesForPrivateApiEncryption(nodes, indices);
+        const recipients = selectedNodesForPrivateApiEncryption(round.nodes ?? [], registryIndexes);
 
         if (verifyNodeKeys) {
           await verifyNodeKeys({
-            feedId,
+            sourceId,
             registryVersion,
-            timestamp,
-            selectedIndexes: [...indices],
-            selectedNodes: selected.map((node) => ({ ...node })),
+            nodeIndexes: [...registryIndexes],
+            nodes: recipients.map((node) => ({ ...node })),
           });
         }
 
-        encKeyBundle = encryptForNodes(requestApiConfig, encrypt.secrets, selected);
+        encKeyBundle = encryptForNodes(requestApiConfig, encrypt.secrets, recipients);
       }
 
-      const authSigner = signer ?? this.defaultSigner;
-      const authSig = authSigner
-        ? await authSigner(authMessage(feedIdBytes, timestamp))
-        : ZERO_AUTH_SIG;
+      // Fresh authorizations per attempt: each carries a unique nonce, which is
+      // what keeps one from settling twice.
+      let sourcePayments: string[] | undefined;
+      if (terms && sourcePayment && authorizations > 0) {
+        sourcePayments = await signSourcePayments(
+          terms,
+          sourcePayment.signer,
+          authorizations,
+        );
+      }
 
-      const body: Record<string, unknown> = {
-        feedId,
+      const baseBody: Record<string, unknown> = {
+        sourceId,
         registryVersion,
-        timestamp,
         maxAge,
-        signaturesRequired: opts.signaturesRequired,
+        signaturesRequired,
         subscriptionOwner,
         consumerAuthority,
-        authSig: bytesToHex0x(authSig),
         apiConfig: requestApiConfig,
       };
-      if (encKeyBundle) body.encKeyBundle = encKeyBundle;
+      if (encKeyBundle) baseBody.encKeyBundle = encKeyBundle;
+      if (sourcePayments) baseBody.sourcePayments = sourcePayments;
 
+      /** Set when a relayed source quote makes this attempt's round obsolete. */
+      let requote = false;
+      /** Set when the gateway says the registry version is stale. */
+      let restartForRefresh = false;
       for (const endpoint of this.endpoints) {
         try {
+          // Fresh per attempt and per endpoint: the stamp is read from the local clock each time,
+          // so a retry after a 409 never reuses an old one.
+          let authSig: Uint8Array = ZERO_AUTH_SIG;
+          let authTimestamp = authTimestampNow();
+          if (authSigner) {
+            const gateway = await this.resolveGatewayPda(endpoint, timeoutMs);
+            authTimestamp = authTimestampNow();
+            authSig = await authSigner(
+              hashRequestAuth({
+                programId: this.programIdBytes,
+                gateway,
+                sourceId: sourceIdBytes,
+                signaturesRequired,
+                authTimestamp,
+              }),
+            );
+          }
+          const body = { ...baseBody, authSig: bytesToHex0x(authSig), authTimestamp };
+
           const res = await this.post(
-            `${endpoint}/v1/round/execute`,
+            `${endpoint.url}/v1/round/execute`,
             body,
             timeoutMs,
           );
+
+          // The API source itself wants paying, so the gateway relays its quote
+          // instead of a fetch failure. Payment is required, just not to Molpha.
+          if (res.status === 402) {
+            const quote = parseUpstreamQuote(
+              await res.json().catch(() => null),
+            );
+            if (!quote) {
+              throw new GatewayError(
+                "Gateway requires payment but returned no upstream source quote",
+                402,
+              );
+            }
+            if (!sourcePayment) throw new UpstreamPaymentRequiredError(quote);
+            // Already funded to the quoted size and still refused: the source
+            // rejected the payment material, which resigning cannot fix.
+            if (terms && requoted && authorizations >= quote.eligibleSetSize) {
+              throw new UpstreamPaymentRequiredError(
+                quote,
+                `Source payment was not accepted for ${quote.resource}: ${quote.error ?? "no detail"}`,
+              );
+            }
+            requoted = true;
+            if (quote.eligibleSetSize !== groupSize) {
+              throw new GatewayError(
+                `Gateway upstream quote eligibleSetSize ${quote.eligibleSetSize} does not match this round's selection size ${groupSize} (min(signaturesRequired + redundancyBuffer, nodeCount))`,
+                402,
+              );
+            }
+            authorizations = groupSize;
+            if (!terms) {
+              // Terms we cannot sign are terminal, not transient: surface them
+              // with the quote instead of re-probing once per attempt.
+              try {
+                terms = await probeSource(apiConfig, {
+                  ...(encrypt ? { secrets: encrypt.secrets } : {}),
+                  ...(sourcePayment.assetDomain
+                    ? { assetDomain: sourcePayment.assetDomain }
+                    : {}),
+                  timeoutMs,
+                });
+              } catch (err) {
+                throw new UpstreamPaymentRequiredError(
+                  quote,
+                  `Cannot pay ${quote.resource}: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            }
+            if (!terms) {
+              throw new UpstreamPaymentRequiredError(
+                quote,
+                `Gateway reports ${quote.resource} is paywalled but the source returned no payment terms`,
+              );
+            }
+            // This round is spent: the next attempt is a new round rather
+            // than a retry of the failed one.
+            lastError = new UpstreamPaymentRequiredError(quote);
+            requote = true;
+            break;
+          }
+
           const errorDetail = !res.ok ? await parseGatewayErrorDetail(res) : undefined;
-          if (res.status === 400 || res.status === 401) {
+          // The registry rolled since the inputs were read (a cached context, or a roll between
+          // the read and the request). Read it afresh and retry once, without spending an attempt.
+          if (
+            res.status === 400 &&
+            !refreshedOnce &&
+            !restartForRefresh &&
+            /registryVersion.*current version/i.test(errorDetail ?? "")
+          ) {
+            restartForRefresh = true;
+            break;
+          }
+          // 400 and 401 are the request's fault; 403 is the subscription's (inactive, or the
+          // round quota for the term is spent): none of them improves by trying again.
+          if (res.status === 400 || res.status === 401 || res.status === 403) {
             throw new GatewayError(
               formatGatewayErrorMessage("Gateway rejected request", res.status, errorDetail),
               res.status,
             );
           }
-          if (res.status === 503) {
+          if (res.status === 503 || res.status === 429) {
             lastError = new GatewayError(
-              formatGatewayErrorMessage("Gateway unavailable", 503, errorDetail),
-              503,
+              formatGatewayErrorMessage(
+                res.status === 429 ? "Gateway rate limited" : "Gateway unavailable",
+                res.status,
+                errorDetail,
+              ),
+              res.status,
             );
+            const wait = retryAfterMs(res);
+            cause = mergeCause(cause, wait === undefined ? { kind: "busy" } : { kind: "busy", retryAfterMs: wait });
             continue; // a different gateway may already hold the AggSig
           }
           if (!res.ok) {
@@ -350,29 +758,47 @@ export class MolphaGateway {
               formatGatewayErrorMessage("Gateway error", res.status, errorDetail),
               res.status,
             );
+            // This consumer already has a round for the source and quorum in this tick: retry one
+            // tick later.
+            if (res.status === 409) cause = mergeCause(cause, { kind: "conflict" });
             continue;
           }
           const json = (await res.json()) as GatewaySignedDataResponse;
-          const payload = json.data ?? (
-            json.status === "completed" ? (json as unknown as GatewaySignedData) : undefined
-          );
-          if (json.status === "completed" && payload) {
-            return toResult(payload, {
-              feedId,
-              registryVersion,
-              timestamp,
-              signaturesRequired: opts.signaturesRequired,
-              bitmap,
+          if (json.status === "completed" && json.data) {
+            return toResult(json.data, {
+              sourceId,
+              signaturesRequired,
+              ...(requestApiConfig.aggregation
+                ? { aggregation: requestApiConfig.aggregation }
+                : {}),
             });
           }
           lastError = new Error(`Gateway returned status: ${json.status}`);
         } catch (err) {
-          if (err instanceof GatewayError && (err.status === 400 || err.status === 401)) {
+          // An unpayable or refused source is terminal — never retried blindly.
+          if (err instanceof UpstreamPaymentRequiredError) throw err;
+          if (
+            err instanceof GatewayError &&
+            (err.status === 400 || err.status === 401 || err.status === 402 || err.status === 403)
+          ) {
             throw err;
           }
-          lastError = err; // timeout / network → next endpoint
+          lastError = err; // timeout / network / identity lookup → next endpoint
         }
       }
+      if (restartForRefresh) {
+        round = await this.resolveContext(undefined, encrypt !== undefined);
+        ({ registryVersion, redundancyBuffer } = round);
+        nodeCount = nodeCountOf(round);
+        groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
+        registryIndexes = Array.from({ length: nodeCount }, (_, index) => index);
+        refreshedOnce = true;
+        retryNow = true;
+        attempt--; // the refreshed request is the same attempt, with the right inputs
+        continue;
+      }
+      // A requote invalidates this attempt's body for every endpoint alike.
+      if (requote) continue;
     }
     throw lastError instanceof Error
       ? lastError
@@ -381,44 +807,69 @@ export class MolphaGateway {
 
   /**
    * Resolve the round inputs, fetching only the fields absent from `cached`.
-   * Registry version and redundancy buffer are treated as a unit (one account
-   * read). Whatever fetching remains runs in parallel.
+   * Registry version, redundancy buffer and node count are treated as a unit (one
+   * snapshot read). The node list is fetched only when `needNodes` (private API
+   * encryption) or when nothing else can tell us the node count.
    */
   private async resolveContext(
-    _feedId: string,
-    cached?: Partial<RoundContext>,
-  ): Promise<RoundContext> {
+    cached: Partial<RoundContext> | undefined,
+    needNodes: boolean,
+  ): Promise<ResolvedRound> {
     const hasRegistry =
       cached?.registryVersion !== undefined && cached?.redundancyBuffer !== undefined;
-    const [registry, nodes] = await Promise.all([
-      hasRegistry
-        ? Promise.resolve({
-            registryVersion: cached.registryVersion!,
-            redundancyBuffer: cached.redundancyBuffer!,
-          })
-        : this.getRegistrySelectionConfig(),
-      cached?.nodes !== undefined
-        ? Promise.resolve(cached.nodes)
-        : this.getNodes(),
-    ]);
-    return { ...registry, nodes };
+    const registryPromise: Promise<RegistrySelectionConfig> = hasRegistry
+      ? Promise.resolve({
+          registryVersion: cached.registryVersion!,
+          redundancyBuffer: cached.redundancyBuffer!,
+          ...(cached.nodeCount !== undefined ? { nodeCount: cached.nodeCount } : {}),
+        })
+      : this.getRegistrySelectionConfig();
+
+    if (cached?.nodes !== undefined) {
+      return { ...(await registryPromise), nodes: cached.nodes };
+    }
+    if (needNodes) {
+      const [registry, nodes] = await Promise.all([registryPromise, this.getNodes()]);
+      return { ...registry, nodes };
+    }
+    const registry = await registryPromise;
+    if (registry.nodeCount !== undefined) return registry;
+    return { ...registry, nodes: await this.getNodes() };
+  }
+
+  /** Gateway PDA bytes for an endpoint, cached per URL. A failed lookup is not cached. */
+  private resolveGatewayPda(
+    endpoint: GatewayEndpoint,
+    timeoutMs: number,
+  ): Promise<Uint8Array> {
+    let pending = this.gatewayPdas.get(endpoint.url);
+    if (!pending) {
+      pending = this.lookupGatewayPda(endpoint, timeoutMs).catch((err: unknown) => {
+        this.gatewayPdas.delete(endpoint.url);
+        throw err;
+      });
+      this.gatewayPdas.set(endpoint.url, pending);
+    }
+    return pending;
+  }
+
+  private async lookupGatewayPda(
+    endpoint: GatewayEndpoint,
+    timeoutMs: number,
+  ): Promise<Uint8Array> {
+    const authority =
+      endpoint.gatewayAuthority ??
+      (await this.fetchGatewayInfo(endpoint, timeoutMs)).gatewayAuthority;
+    return deriveGatewayPda(authority, this.programId);
   }
 
   private async firstReachableData<T>(path: string): Promise<T> {
     let lastError: unknown;
     for (const endpoint of this.endpoints) {
       try {
-        const res = await fetch(`${endpoint}${path}`, { method: "GET" });
+        const res = await fetch(`${endpoint.url}${path}`, { method: "GET" });
         if (res.ok) {
-          const json = (await res.json()) as unknown;
-          if (json && typeof json === "object" && "data" in json) {
-            const wrapped = json as Partial<GatewayEnvelope<T>>;
-            if (wrapped.data === undefined) {
-              throw new GatewayError(`GET ${path} returned malformed payload`, res.status);
-            }
-            return wrapped.data;
-          }
-          return json as T;
+          return unwrapEnvelope(await res.json(), path, res.status) as T;
         }
         lastError = new GatewayError(`GET ${path} failed (${res.status})`, res.status);
       } catch (err) {
@@ -433,19 +884,49 @@ export class MolphaGateway {
     body: unknown,
     timeoutMs: number,
   ): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, {
+    return this.fetchWithTimeout(
+      url,
+      {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      },
+      timeoutMs,
+    );
+  }
+
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs?: number,
+  ): Promise<Response> {
+    if (timeoutMs === undefined) {
+      return fetch(url, init);
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
     } finally {
       clearTimeout(timer);
     }
   }
+}
+
+function assertSignaturesRequired(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > 255) {
+    throw new RangeError(`signaturesRequired must be an integer in 1..255, got ${value}`);
+  }
+  return value;
+}
+
+/** Unwrap the gateway `{ status, data }` envelope. */
+function unwrapEnvelope(json: unknown, path: string, status?: number): unknown {
+  const wrapped = json as Partial<GatewayEnvelope<unknown>> | null;
+  if (wrapped === null || typeof wrapped !== "object" || wrapped.data === undefined) {
+    throw new GatewayError(`GET ${path} returned malformed payload`, status);
+  }
+  return wrapped.data;
 }
 
 function selectedNodesForPrivateApiEncryption(
@@ -538,26 +1019,136 @@ async function parseGatewayErrorDetail(res: Response): Promise<string | undefine
   }
 }
 
-function toResult(
-  data: GatewaySignedData,
-  ctx: {
-    feedId: string;
-    registryVersion: number;
-    timestamp: number;
-    signaturesRequired: number;
-    bitmap: Uint8Array;
-  },
-): DataUpdateResult {
+function normalizeHex(value: string): string {
+  return (value.startsWith("0x") || value.startsWith("0X") ? value.slice(2) : value).toLowerCase();
+}
+
+/**
+ * Lift a nested `attestation` (current gateways) into the flat field names the rest of this
+ * module reads, leaving the older flat body untouched. Top-level `value`, `fresh`,
+ * `configHash` and `aggregation` are the same in both shapes.
+ */
+function flattenGatewayData(data: GatewaySignedData): GatewaySignedData {
+  const nested = data.attestation;
+  if (!nested) return data;
+  const { attestation: _nested, ...rest } = data;
+  const { payload, signature } = nested;
+  const timestamp = payload?.timestamp ?? payload?.canonicalTimestamp;
   return {
-    feedId: data.feedId ?? ctx.feedId,
-    value: data.value ?? "",
-    valuePacked: data.valuePacked ?? "",
-    timestamp: data.timestamp ?? ctx.timestamp,
-    registryVersion: data.registryVersion ?? ctx.registryVersion,
-    signaturesRequired: data.signaturesRequired ?? ctx.signaturesRequired,
-    signersBitmap: data.signersBitmap ?? bytesToHex(ctx.bitmap),
-    s: data.s ?? "",
-    commitmentAddr: data.commitmentAddr ?? "",
+    ...rest,
+    ...(payload?.sourceId !== undefined ? { sourceId: payload.sourceId } : {}),
+    ...(payload?.value !== undefined ? { valuePacked: payload.value } : {}),
+    ...(timestamp !== undefined ? { timestamp } : {}),
+    ...(payload?.registryVersion !== undefined ? { registryVersion: payload.registryVersion } : {}),
+    ...(payload?.signaturesRequired !== undefined
+      ? { signaturesRequired: payload.signaturesRequired }
+      : {}),
+    ...(signature?.signersBitmap !== undefined ? { signersBitmap: signature.signersBitmap } : {}),
+    ...(signature?.signature !== undefined ? { s: signature.signature } : {}),
+    ...(signature?.commitment !== undefined ? { commitmentAddr: signature.commitment } : {}),
+  };
+}
+
+/**
+ * Shape the gateway payload into an {@link Attestation}. `sourceId` and
+ * `signaturesRequired` must echo the request (they key the feed and the signed message).
+ * Everything else the verifiers recompute comes from the response and is refused when absent
+ * rather than filled in locally: the gateway assigns `timestamp` (unix milliseconds), so
+ * the caller cannot know it, and the signing set is whoever the nodes signed with.
+ *
+ * Tolerance mode: `value` is rendered from the signed `payload.value` at the source's
+ * `decimals` rather than trusted as sent.
+ */
+function toResult(
+  raw: GatewaySignedData,
+  ctx: {
+    sourceId: string;
+    signaturesRequired: number;
+    aggregation?: AggregationConfig;
+  },
+): Attestation {
+  if (raw.attestation) {
+    const { payload, signature } = raw.attestation;
+    if (!payload || !signature) {
+      throw new GatewayError("Gateway response is missing the attestation");
+    }
+  }
+  const data = flattenGatewayData(raw);
+  if (data.sourceId !== undefined && normalizeHex(data.sourceId) !== ctx.sourceId) {
+    throw new GatewayError(
+      `Gateway response sourceId ${data.sourceId} does not match the requested ${ctx.sourceId}`,
+    );
+  }
+  if (data.configHash !== undefined && normalizeHex(data.configHash) !== ctx.sourceId) {
+    throw new GatewayError(
+      `Gateway response configHash ${data.configHash} does not match the requested sourceId ${ctx.sourceId}`,
+    );
+  }
+  if (
+    data.signaturesRequired !== undefined &&
+    data.signaturesRequired !== ctx.signaturesRequired
+  ) {
+    throw new GatewayError(
+      `Gateway response signaturesRequired ${data.signaturesRequired} does not match the requested ${ctx.signaturesRequired}`,
+    );
+  }
+  if (data.aggregation !== undefined && data.aggregation !== null) {
+    let echoed: AggregationConfig | undefined;
+    try {
+      echoed = canonicalizeAggregation(data.aggregation as AggregationConfig);
+    } catch (err) {
+      throw new GatewayError(
+        `Gateway response carries an invalid aggregation echo: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (!ctx.aggregation) {
+      throw new GatewayError(
+        "Gateway response carries an aggregation, but the request was exact mode (no aggregation)",
+      );
+    }
+    if (JSON.stringify(echoed) !== JSON.stringify(ctx.aggregation)) {
+      throw new GatewayError(
+        `Gateway response aggregation ${JSON.stringify(echoed)} does not match the requested ${JSON.stringify(ctx.aggregation)}`,
+      );
+    }
+  }
+  const fields = {
+    timestamp: data.timestamp,
+    registryVersion: data.registryVersion,
+    value: data.valuePacked,
+    signersBitmap: data.signersBitmap,
+    s: data.s,
+    commitmentAddr: data.commitmentAddr,
+  };
+  for (const [name, field] of Object.entries(fields)) {
+    if (field === undefined || field === "") {
+      throw new GatewayError(`Gateway response is missing ${name}`);
+    }
+  }
+  let value = data.value ?? "";
+  if (ctx.aggregation) {
+    try {
+      value = formatInt256Decimal(fields.value!, ctx.aggregation.numeric.decimals);
+    } catch (err) {
+      throw new GatewayError(
+        `Gateway tolerance response value is not an int256 word: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  return {
+    payload: {
+      sourceId: ctx.sourceId,
+      value: fields.value!,
+      timestamp: fields.timestamp!,
+      registryVersion: fields.registryVersion!,
+      signaturesRequired: ctx.signaturesRequired,
+    },
+    signature: {
+      signersBitmap: fields.signersBitmap!,
+      s: fields.s!,
+      commitmentAddr: fields.commitmentAddr!,
+    },
+    value,
     fresh: data.fresh ?? true,
   };
 }

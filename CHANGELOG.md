@@ -4,4 +4,4 @@
 
 ### Minor Changes
 
-- cd8ad49: Rename package from `@molpha-oracle/sdk` to `@molpha/sdk`. `@molpha-oracle/sdk` is deprecated; migrate imports to `@molpha/sdk`.
+- cd8ad49: Rename package to `@molpha/sdk`.

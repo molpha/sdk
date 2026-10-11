@@ -10,6 +10,14 @@ import { concatBytes, ensureLength, u32be, u64be, utf8 } from "./encoding.js";
 const SELECTION_SEED_DOMAIN = keccak_256(utf8("MOLPHA_SELECTION_V1"));
 const SELECTION_DERIVE_DOMAIN = keccak_256(utf8("MOLPHA_SELECTION_DERIVE"));
 
+/**
+ * Width in milliseconds of the window selection reads from the timestamp. The timestamp
+ * is unix milliseconds; the seed uses `floor(timestamp / SELECTION_WINDOW_MS)`, so
+ * sub-second precision never changes the committee. Changing it is a consensus break and must
+ * bump the selection prefix.
+ */
+export const SELECTION_WINDOW_MS = 1000n;
+
 /** Maximum hashing rounds before giving up (matches on-chain cap). */
 const MAX_ROUNDS = 65_536;
 
@@ -18,20 +26,21 @@ const MAX_NODES = BITMAP_BYTES * 8; // 256
 const U32_MAX = 0xffff_ffff;
 
 /**
- * `seed = keccak256(keccak256("MOLPHA_SELECTION_V1") || feedId || be32(rv) || be64(ts))`.
+ * `seed = keccak256(keccak256("MOLPHA_SELECTION_V1") || sourceId || be32(rv) || be64(ts / 1000))`,
+ * where `ts` is the timestamp in unix MILLISECONDS (its 1 s window index is hashed).
  */
 export function deriveSelectionSeed(
-  feedId: Uint8Array,
+  sourceId: Uint8Array,
   registryVersion: number,
-  canonicalTimestamp: number | bigint,
+  timestamp: number | bigint,
 ): Uint8Array {
-  ensureLength(feedId, 32, "feedId");
+  ensureLength(sourceId, 32, "sourceId");
   return keccak_256(
     concatBytes(
       SELECTION_SEED_DOMAIN,
-      feedId,
+      sourceId,
       u32be(registryVersion),
-      u64be(canonicalTimestamp),
+      u64be(BigInt(timestamp) / SELECTION_WINDOW_MS),
     ),
   );
 }
@@ -130,17 +139,18 @@ export function deriveGroupBitmap(
 
 /**
  * Convenience orchestrator: derive the selection bitmap end-to-end.
- * `redundancy` defaults to 0; `ts` defaults to the current unix second.
+ * `redundancy` defaults to 0; `ts` is the timestamp in unix MILLISECONDS and defaults
+ * to now. The gateway assigns the real timestamp of a round, so this is for tests and tools.
  */
 export function deriveSelectionBitmap(
-  feedId: Uint8Array,
+  sourceId: Uint8Array,
   registryVersion: number,
   nodeCount: number,
   signaturesRequired: number,
   redundancy = 0,
-  ts: number | bigint = Math.floor(Date.now() / 1000),
+  ts: number | bigint = Date.now(),
 ): Uint8Array {
-  const seed = deriveSelectionSeed(feedId, registryVersion, ts);
+  const seed = deriveSelectionSeed(sourceId, registryVersion, ts);
   const size = effectiveSelectionSize(signaturesRequired, redundancy, nodeCount);
   return deriveGroupBitmap(seed, nodeCount, size);
 }

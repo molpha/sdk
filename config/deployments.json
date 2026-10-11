@@ -1,0 +1,16 @@
+{
+  "$comment": "Build-time deployment profiles for @molpha/sdk. Selected by MOLPHA_SDK_PROFILE (stable | dev). Scripts copy the matching IDL and generate src/deployment.generated.ts.",
+  "stable": {
+    "gatewayUrl": "https://gateway.molpha.io/",
+    "solanaProgramId": "MoLF3pgVA9MENSuEujxNNSMaTo71aLyewaH5nrWfUZs",
+    "evmVerifier": "0xA6e49A3A1caf3E110cC04765B934C8FF118C2568",
+    "starknetSepolia": "0x032b9f47f12189668b94a5d62fb7d60f968ed0dbaf22090649d1d7a91d79cc38"
+  },
+  "dev": {
+    "gatewayUrl": "https://dev-gateway.molpha.io/",
+    "solanaProgramId": "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt",
+    "evmVerifier": null,
+    "starknetSepolia": null,
+    "note": "EVM/Starknet verifier addresses are unset until the Attestation-interface redeploy. Codegen falls back to stable addresses and sets MOLPHA_DEV_VERIFIERS_PROVISIONAL."
+  }
+}

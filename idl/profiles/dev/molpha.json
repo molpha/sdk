@@ -1,0 +1,7826 @@
+{
+  "address": "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt",
+  "metadata": {
+    "name": "molpha",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Molpha Oracle Solana Program"
+  },
+  "instructions": [
+    {
+      "name": "add_delegate",
+      "discriminator": [
+        3,
+        67,
+        128,
+        218,
+        69,
+        139,
+        53,
+        88
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "subscription",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  115,
+                  117,
+                  98,
+                  115,
+                  99,
+                  114,
+                  105,
+                  112,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "delegate_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "args.delegate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "AddDelegateArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "add_plan",
+      "discriminator": [
+        199,
+        79,
+        170,
+        244,
+        91,
+        21,
+        110,
+        218
+      ],
+      "accounts": [
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "plan",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "config",
+          "type": {
+            "defined": {
+              "name": "PlanConfig"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "claim_node_rewards",
+      "discriminator": [
+        151,
+        201,
+        146,
+        161,
+        104,
+        100,
+        214,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "node"
+          ]
+        },
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "node",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  110,
+                  111,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_epoch",
+      "discriminator": [
+        13,
+        87,
+        7,
+        133,
+        109,
+        14,
+        83,
+        25
+      ],
+      "accounts": [
+        {
+          "name": "epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "open_epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "open_epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_payer",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "open_epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_ticket_marker",
+      "discriminator": [
+        26,
+        65,
+        122,
+        188,
+        125,
+        132,
+        159,
+        107
+      ],
+      "accounts": [
+        {
+          "name": "ticket_marker",
+          "writable": true
+        },
+        {
+          "name": "submitter",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "credit_epoch_rewards",
+      "discriminator": [
+        212,
+        185,
+        139,
+        96,
+        103,
+        248,
+        140,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "slots",
+          "type": {
+            "vec": "u16"
+          }
+        }
+      ]
+    },
+    {
+      "name": "deactivate_gateway",
+      "discriminator": [
+        2,
+        119,
+        77,
+        158,
+        3,
+        8,
+        116,
+        252
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "gateway",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deactivate_node",
+      "discriminator": [
+        242,
+        185,
+        114,
+        146,
+        22,
+        248,
+        23,
+        157
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.current_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.next_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "node",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  110,
+                  111,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "node_owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "node_owner",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "extend_subscription",
+      "discriminator": [
+        47,
+        230,
+        116,
+        118,
+        171,
+        228,
+        24,
+        46
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "subscription",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  115,
+                  117,
+                  98,
+                  115,
+                  99,
+                  114,
+                  105,
+                  112,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "plan"
+        },
+        {
+          "name": "owner_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "finalize_epoch",
+      "discriminator": [
+        159,
+        93,
+        117,
+        217,
+        63,
+        44,
+        249,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "target",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "next",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch.saturating_add(1)"
+              }
+            ]
+          }
+        },
+        {
+          "name": "successor",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch.saturating_add(2)"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "node_deposit_vault",
+          "docs": [
+            "One vault for every node's security deposit, held apart from protocol revenue."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "registry_state"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "epoch0",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch1",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "program",
+          "docs": [
+            "This program. Its account names the ProgramData account holding the upgrade authority."
+          ],
+          "address": "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt"
+        },
+        {
+          "name": "program_data"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "InitializeArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "register_gateway",
+      "discriminator": [
+        183,
+        184,
+        135,
+        228,
+        71,
+        191,
+        76,
+        222
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "gateway",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  103,
+                  97,
+                  116,
+                  101,
+                  119,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "args.authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "RegisterGatewayArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "register_node",
+      "discriminator": [
+        102,
+        85,
+        117,
+        114,
+        194,
+        188,
+        211,
+        168
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "node_owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.current_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.next_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "node",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  110,
+                  111,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "node_owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "secp256k1_key_claim",
+          "writable": true
+        },
+        {
+          "name": "owner_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "node_owner"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "node_deposit_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "registry_state"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "RegisterNodeArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "reinstate_node",
+      "discriminator": [
+        13,
+        253,
+        148,
+        213,
+        56,
+        50,
+        49,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Permissionless after `frozen_until`; authority may reinstate earlier."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.current_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.next_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "node",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  110,
+                  111,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "node.authority",
+                "account": "Node"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "remove_delegate",
+      "discriminator": [
+        94,
+        37,
+        16,
+        59,
+        7,
+        84,
+        97,
+        211
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "subscription",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  115,
+                  117,
+                  98,
+                  115,
+                  99,
+                  114,
+                  105,
+                  112,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "delegate_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "args.delegate"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "RemoveDelegateArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "slash_offence",
+      "discriminator": [
+        108,
+        88,
+        94,
+        69,
+        17,
+        2,
+        103,
+        124
+      ],
+      "accounts": [
+        {
+          "name": "reporter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "evidence_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "offence"
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.current_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.next_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "punishment_case",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  112,
+                  117,
+                  110,
+                  105,
+                  115,
+                  104,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "offence"
+              }
+            ]
+          }
+        },
+        {
+          "name": "node_deposit_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "registry_state"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "reporter_usdc",
+          "docs": [
+            "Must already exist. Creating it here would cost two more transaction slots, which the",
+            "signer list needs more than a reporter needs the convenience."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "reporter"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "offence",
+          "type": {
+            "defined": {
+              "name": "Offence"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "submit_attestation",
+      "discriminator": [
+        238,
+        220,
+        255,
+        105,
+        183,
+        211,
+        40,
+        83
+      ],
+      "accounts": [
+        {
+          "name": "submitter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "args.attestation.payload.registry_version"
+              }
+            ]
+          }
+        },
+        {
+          "name": "feed",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  102,
+                  101,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "args.attestation.payload.source_id"
+              },
+              {
+                "kind": "arg",
+                "path": "args.attestation.payload.signatures_required"
+              },
+              {
+                "kind": "account",
+                "path": "submitter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "SubmitAttestationArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "submit_ticket",
+      "discriminator": [
+        180,
+        57,
+        11,
+        108,
+        162,
+        36,
+        145,
+        150
+      ],
+      "accounts": [
+        {
+          "name": "submitter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "attestation.payload.registry_version"
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "gateway",
+          "docs": [
+            "Gateway whose authority signed the round dispatch."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  103,
+                  97,
+                  116,
+                  101,
+                  119,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "gateway.authority",
+                "account": "Gateway"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket_marker",
+          "writable": true
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "attestation",
+          "type": {
+            "defined": {
+              "name": "Attestation"
+            }
+          }
+        },
+        {
+          "name": "roster_slots",
+          "type": {
+            "vec": "u16"
+          }
+        },
+        {
+          "name": "coalition_key",
+          "type": {
+            "defined": {
+              "name": "CoalitionKey"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "subscribe",
+      "discriminator": [
+        254,
+        28,
+        191,
+        138,
+        156,
+        179,
+        183,
+        53
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "plan"
+        },
+        {
+          "name": "subscription",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  115,
+                  117,
+                  98,
+                  115,
+                  99,
+                  114,
+                  105,
+                  112,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "plan_type",
+          "type": {
+            "defined": {
+              "name": "PlanType"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sweep_treasury_revenue",
+      "discriminator": [
+        72,
+        190,
+        138,
+        104,
+        78,
+        128,
+        112,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "epoch_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  101,
+                  112,
+                  111,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "open_epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "open_epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_config",
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "UpdateConfigArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_node_endpoint",
+      "discriminator": [
+        63,
+        119,
+        147,
+        11,
+        73,
+        81,
+        230,
+        155
+      ],
+      "accounts": [
+        {
+          "name": "node_owner",
+          "signer": true
+        },
+        {
+          "name": "node",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  110,
+                  111,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "node_owner"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "UpdateNodeEndpointArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_plan",
+      "discriminator": [
+        119,
+        112,
+        58,
+        60,
+        76,
+        205,
+        1,
+        100
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "plan",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "config",
+          "type": {
+            "defined": {
+              "name": "PlanConfig"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_registry_policy",
+      "discriminator": [
+        89,
+        241,
+        118,
+        140,
+        129,
+        101,
+        42,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.current_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.next_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "redundancy_buffer",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_node_deposit",
+      "discriminator": [
+        53,
+        141,
+        47,
+        100,
+        83,
+        245,
+        210,
+        6
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "node",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  110,
+                  111,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "node_deposit_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "registry_state"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw_protocol_reserve",
+      "discriminator": [
+        68,
+        111,
+        180,
+        79,
+        228,
+        72,
+        116,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "protocol_config"
+          ]
+        },
+        {
+          "name": "protocol_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "protocol_config"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "protocol_config.usdc_mint",
+                "account": "ProtocolConfig"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Delegate",
+      "discriminator": [
+        92,
+        145,
+        166,
+        111,
+        11,
+        38,
+        38,
+        247
+      ]
+    },
+    {
+      "name": "EpochState",
+      "discriminator": [
+        191,
+        63,
+        139,
+        237,
+        144,
+        12,
+        223,
+        210
+      ]
+    },
+    {
+      "name": "Feed",
+      "discriminator": [
+        69,
+        191,
+        16,
+        227,
+        132,
+        187,
+        84,
+        227
+      ]
+    },
+    {
+      "name": "Gateway",
+      "discriminator": [
+        210,
+        132,
+        162,
+        254,
+        10,
+        224,
+        45,
+        86
+      ]
+    },
+    {
+      "name": "Node",
+      "discriminator": [
+        208,
+        53,
+        1,
+        3,
+        49,
+        122,
+        180,
+        49
+      ]
+    },
+    {
+      "name": "Plan",
+      "discriminator": [
+        161,
+        231,
+        251,
+        119,
+        2,
+        12,
+        162,
+        2
+      ]
+    },
+    {
+      "name": "ProtocolConfig",
+      "discriminator": [
+        207,
+        91,
+        250,
+        28,
+        152,
+        179,
+        215,
+        209
+      ]
+    },
+    {
+      "name": "PunishmentCase",
+      "discriminator": [
+        215,
+        186,
+        32,
+        101,
+        142,
+        74,
+        46,
+        130
+      ]
+    },
+    {
+      "name": "Registry",
+      "discriminator": [
+        47,
+        174,
+        110,
+        246,
+        184,
+        182,
+        252,
+        218
+      ]
+    },
+    {
+      "name": "RegistryState",
+      "discriminator": [
+        29,
+        34,
+        224,
+        195,
+        175,
+        183,
+        99,
+        97
+      ]
+    },
+    {
+      "name": "Secp256k1KeyClaim",
+      "discriminator": [
+        128,
+        160,
+        40,
+        228,
+        165,
+        251,
+        194,
+        86
+      ]
+    },
+    {
+      "name": "Subscription",
+      "discriminator": [
+        64,
+        7,
+        26,
+        135,
+        102,
+        132,
+        98,
+        33
+      ]
+    },
+    {
+      "name": "TicketMarker",
+      "discriminator": [
+        1,
+        117,
+        194,
+        234,
+        146,
+        15,
+        115,
+        255
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "DelegateAdded",
+      "discriminator": [
+        96,
+        159,
+        58,
+        144,
+        26,
+        171,
+        141,
+        70
+      ]
+    },
+    {
+      "name": "DelegateRemoved",
+      "discriminator": [
+        91,
+        243,
+        235,
+        175,
+        109,
+        235,
+        217,
+        84
+      ]
+    },
+    {
+      "name": "EpochClosed",
+      "discriminator": [
+        21,
+        4,
+        48,
+        56,
+        29,
+        169,
+        77,
+        42
+      ]
+    },
+    {
+      "name": "EpochCreated",
+      "discriminator": [
+        191,
+        150,
+        240,
+        63,
+        59,
+        212,
+        233,
+        124
+      ]
+    },
+    {
+      "name": "EpochFinalized",
+      "discriminator": [
+        109,
+        54,
+        231,
+        81,
+        101,
+        249,
+        145,
+        107
+      ]
+    },
+    {
+      "name": "EpochRewardCredited",
+      "discriminator": [
+        12,
+        42,
+        166,
+        244,
+        196,
+        241,
+        134,
+        186
+      ]
+    },
+    {
+      "name": "FeedUpdated",
+      "discriminator": [
+        200,
+        60,
+        190,
+        86,
+        247,
+        9,
+        50,
+        81
+      ]
+    },
+    {
+      "name": "GatewayDeactivated",
+      "discriminator": [
+        67,
+        206,
+        26,
+        221,
+        251,
+        18,
+        50,
+        73
+      ]
+    },
+    {
+      "name": "GatewayRegistered",
+      "discriminator": [
+        171,
+        121,
+        170,
+        61,
+        195,
+        155,
+        35,
+        98
+      ]
+    },
+    {
+      "name": "NodeDeactivated",
+      "discriminator": [
+        74,
+        15,
+        22,
+        250,
+        74,
+        89,
+        202,
+        244
+      ]
+    },
+    {
+      "name": "NodeDepositWithdrawn",
+      "discriminator": [
+        144,
+        148,
+        204,
+        72,
+        127,
+        171,
+        1,
+        39
+      ]
+    },
+    {
+      "name": "NodeEndpointUpdated",
+      "discriminator": [
+        121,
+        121,
+        209,
+        202,
+        113,
+        134,
+        46,
+        240
+      ]
+    },
+    {
+      "name": "NodePunished",
+      "discriminator": [
+        5,
+        220,
+        63,
+        21,
+        153,
+        202,
+        80,
+        79
+      ]
+    },
+    {
+      "name": "NodeRegistered",
+      "discriminator": [
+        15,
+        57,
+        183,
+        59,
+        93,
+        55,
+        157,
+        195
+      ]
+    },
+    {
+      "name": "NodeReinstated",
+      "discriminator": [
+        45,
+        0,
+        72,
+        79,
+        131,
+        183,
+        198,
+        205
+      ]
+    },
+    {
+      "name": "OffenceProven",
+      "discriminator": [
+        33,
+        127,
+        13,
+        247,
+        209,
+        98,
+        62,
+        116
+      ]
+    },
+    {
+      "name": "PlanAdded",
+      "discriminator": [
+        253,
+        31,
+        157,
+        223,
+        171,
+        1,
+        203,
+        207
+      ]
+    },
+    {
+      "name": "PlanUpdated",
+      "discriminator": [
+        49,
+        51,
+        198,
+        31,
+        170,
+        70,
+        253,
+        195
+      ]
+    },
+    {
+      "name": "ProtocolConfigUpdated",
+      "discriminator": [
+        20,
+        99,
+        32,
+        237,
+        111,
+        86,
+        195,
+        199
+      ]
+    },
+    {
+      "name": "ProtocolInitialized",
+      "discriminator": [
+        173,
+        122,
+        168,
+        254,
+        9,
+        118,
+        76,
+        132
+      ]
+    },
+    {
+      "name": "ProtocolReserveWithdrawn",
+      "discriminator": [
+        116,
+        158,
+        232,
+        233,
+        174,
+        58,
+        218,
+        183
+      ]
+    },
+    {
+      "name": "RegistryUpdated",
+      "discriminator": [
+        152,
+        3,
+        201,
+        176,
+        91,
+        63,
+        47,
+        83
+      ]
+    },
+    {
+      "name": "RevenueSwept",
+      "discriminator": [
+        57,
+        110,
+        215,
+        130,
+        155,
+        53,
+        55,
+        28
+      ]
+    },
+    {
+      "name": "RewardsClaimed",
+      "discriminator": [
+        75,
+        98,
+        88,
+        18,
+        219,
+        112,
+        88,
+        121
+      ]
+    },
+    {
+      "name": "Subscribed",
+      "discriminator": [
+        135,
+        59,
+        105,
+        76,
+        190,
+        236,
+        138,
+        228
+      ]
+    },
+    {
+      "name": "SubscriptionExtended",
+      "discriminator": [
+        149,
+        17,
+        152,
+        209,
+        131,
+        145,
+        5,
+        6
+      ]
+    },
+    {
+      "name": "TicketMarkerClosed",
+      "discriminator": [
+        109,
+        122,
+        80,
+        119,
+        203,
+        4,
+        131,
+        160
+      ]
+    },
+    {
+      "name": "TicketRosterOverflow",
+      "discriminator": [
+        147,
+        69,
+        132,
+        24,
+        191,
+        8,
+        117,
+        185
+      ]
+    },
+    {
+      "name": "TicketSubmitted",
+      "discriminator": [
+        190,
+        48,
+        169,
+        171,
+        61,
+        217,
+        169,
+        249
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidMinSigners",
+      "msg": "invalid min signers"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidTimestamp",
+      "msg": "invalid timestamp"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidMint",
+      "msg": "invalid usdc mint"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidNodeIndex",
+      "msg": "Signer index outside node_count(version)"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidNodeAccount",
+      "msg": "Node account does not match expected index/owner"
+    },
+    {
+      "code": 6005,
+      "name": "UnauthorizedNodeAuthority",
+      "msg": "Caller is not node.owner or registry.authority"
+    },
+    {
+      "code": 6006,
+      "name": "NodeCapExceeded",
+      "msg": "pending_node_count >= registry.node_count or node_index_hint >= registry.node_count"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidPoP",
+      "msg": "PoP Schnorr verification failed at registration"
+    },
+    {
+      "code": 6008,
+      "name": "NodeNotActive",
+      "msg": "Instruction requires Active node status"
+    },
+    {
+      "code": 6009,
+      "name": "PubkeyNotOnCurve",
+      "msg": "Submitted compressed pubkey does not decompress to a valid curve point"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidRegistryVersion",
+      "msg": "registry version or version-addressed registry account is invalid"
+    },
+    {
+      "code": 6011,
+      "name": "RegistryNotActive",
+      "msg": "registry is not active"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidSourceId",
+      "msg": "source_id does not match feed.source_id"
+    },
+    {
+      "code": 6013,
+      "name": "RegistryPolicyUnchanged",
+      "msg": "new redundancy buffer must differ from the current registry policy"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidRedundancyBuffer",
+      "msg": "redundancy buffer must be between 1 and 8"
+    },
+    {
+      "code": 6015,
+      "name": "InvalidGatewayEndpoint",
+      "msg": "Gateway endpoint is invalid"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidNodeEndpoint",
+      "msg": "Node endpoint is invalid"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidSignature",
+      "msg": "Invalid aggregate signature"
+    },
+    {
+      "code": 6018,
+      "name": "GroupBitmapDerivationFailed",
+      "msg": "Could not derive group bitmap"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidSignersBitmap",
+      "msg": "Signers bitmap contains out-of-range indices"
+    },
+    {
+      "code": 6020,
+      "name": "PlanNotActive",
+      "msg": "plan exists but is_active is false"
+    },
+    {
+      "code": 6021,
+      "name": "InvalidPlanParams",
+      "msg": "invalid plan quorum or signer parameters"
+    },
+    {
+      "code": 6022,
+      "name": "InvalidDelegateLimits",
+      "msg": "invalid delegate limit parameters"
+    },
+    {
+      "code": 6023,
+      "name": "DelegateCannotBeOwner",
+      "msg": "delegate cannot be the owner"
+    },
+    {
+      "code": 6024,
+      "name": "DelegateCapReached",
+      "msg": "subscription delegate_count >= plan.max_delegates"
+    },
+    {
+      "code": 6025,
+      "name": "InvalidRegistrationSalt",
+      "msg": "registration_salt must not be zero"
+    },
+    {
+      "code": 6026,
+      "name": "InsufficientSigners",
+      "msg": "popcount(signers_bitmap) < signatures_required"
+    },
+    {
+      "code": 6027,
+      "name": "SignaturesBelowMinSigners",
+      "msg": "signatures_required is below protocol min_signers"
+    },
+    {
+      "code": 6028,
+      "name": "SignersNotSubsetOfSelection",
+      "msg": "Signer bits outside selection bitmap"
+    },
+    {
+      "code": 6029,
+      "name": "InvalidAggregateSignature",
+      "msg": "PoP-Schnorr aggregate verification failed"
+    },
+    {
+      "code": 6030,
+      "name": "FeedNotNewer",
+      "msg": "timestamp <= feed.timestamp"
+    },
+    {
+      "code": 6031,
+      "name": "SignaturesRequiredMismatch",
+      "msg": "signatures_required does not match feed.signatures_required"
+    },
+    {
+      "code": 6032,
+      "name": "MissingSignerAccount",
+      "msg": "Missing or mis-ordered signer slot version account"
+    },
+    {
+      "code": 6033,
+      "name": "SubscriptionNotActive",
+      "msg": "subscription has expired"
+    },
+    {
+      "code": 6034,
+      "name": "QuorumBelowThreshold",
+      "msg": "popcount(signers_bitmap) < signatures_required"
+    },
+    {
+      "code": 6035,
+      "name": "GatewayNotActive",
+      "msg": "gateway is not active"
+    },
+    {
+      "code": 6036,
+      "name": "NothingToClaim",
+      "msg": "no claimable rewards"
+    },
+    {
+      "code": 6037,
+      "name": "InvalidWithdrawalState",
+      "msg": "account is not in a state that permits withdrawal"
+    },
+    {
+      "code": 6038,
+      "name": "NothingToWithdraw",
+      "msg": "withdrawable balance is zero"
+    },
+    {
+      "code": 6039,
+      "name": "WithdrawalCooldownActive",
+      "msg": "withdrawal cooldown has not elapsed"
+    },
+    {
+      "code": 6040,
+      "name": "WithdrawalArithmeticOverflow",
+      "msg": "withdrawal deadline arithmetic overflow"
+    },
+    {
+      "code": 6041,
+      "name": "InvalidWithdrawalCooldown",
+      "msg": "withdrawal cooldown must be positive and fit a slot deadline"
+    },
+    {
+      "code": 6042,
+      "name": "InvalidInstructionsSysvar",
+      "msg": "instructions sysvar account is invalid"
+    },
+    {
+      "code": 6043,
+      "name": "CreditedExceedsSelection",
+      "msg": "credited signer count exceeds signatures_required + redundancy_buffer"
+    },
+    {
+      "code": 6044,
+      "name": "InvalidRawValue",
+      "msg": "raw value exceeds Feed::MAX_VALUE_LEN or does not match the hash of the attestation value"
+    },
+    {
+      "code": 6045,
+      "name": "EquivocationSameStatement",
+      "msg": "equivocation requires two attestations for one duty with different values"
+    },
+    {
+      "code": 6046,
+      "name": "NotEquivocation",
+      "msg": "attestations do not sign different values for one duty"
+    },
+    {
+      "code": 6047,
+      "name": "EvidenceHashMismatch",
+      "msg": "recomputed evidence hash does not match the supplied evidence_hash"
+    },
+    {
+      "code": 6048,
+      "name": "GuiltySetEmpty",
+      "msg": "intersection of the two signer bitmaps is empty"
+    },
+    {
+      "code": 6049,
+      "name": "NodeTombstoned",
+      "msg": "node is permanently tombstoned"
+    },
+    {
+      "code": 6050,
+      "name": "NodeNotFrozen",
+      "msg": "node is not Frozen"
+    },
+    {
+      "code": 6051,
+      "name": "NodeStillFrozen",
+      "msg": "node is still inside its freeze window"
+    },
+    {
+      "code": 6052,
+      "name": "NodeAlreadyInRegistry",
+      "msg": "node is already present in the current registry"
+    },
+    {
+      "code": 6053,
+      "name": "SignersFullySelected",
+      "msg": "every signer was within the derived selection - no unsolicited signer"
+    },
+    {
+      "code": 6054,
+      "name": "NothingToPunish",
+      "msg": "every guilty node is already tombstoned"
+    },
+    {
+      "code": 6055,
+      "name": "NonceCommitmentMismatch",
+      "msg": "attestations do not share an aggregate nonce commitment"
+    },
+    {
+      "code": 6056,
+      "name": "RegistryVersionMismatch",
+      "msg": "attestations have different registry versions, or one older than the feed's"
+    },
+    {
+      "code": 6057,
+      "name": "NonceReuseSameMessage",
+      "msg": "attestations sign the same message"
+    },
+    {
+      "code": 6058,
+      "name": "PreferEquivocation",
+      "msg": "same duty with different values is equivocation - file it as one"
+    },
+    {
+      "code": 6059,
+      "name": "AttestationTooStale",
+      "msg": "timestamp is older than now - max_settlement_delay_seconds"
+    },
+    {
+      "code": 6060,
+      "name": "AttestationInFuture",
+      "msg": "timestamp is further ahead of cluster time than the allowed drift"
+    },
+    {
+      "code": 6061,
+      "name": "InvalidMaxReceiptDelay",
+      "msg": "max_settlement_delay_seconds must be positive and fit a timestamp deadline"
+    },
+    {
+      "code": 6062,
+      "name": "TreasuryInsolvent",
+      "msg": "treasury balance cannot back the protocol's reward liability"
+    },
+    {
+      "code": 6063,
+      "name": "InvalidChallengerBounty",
+      "msg": "challenger_bounty_bps must not exceed 10000"
+    },
+    {
+      "code": 6064,
+      "name": "RewardLiabilityUnderflow",
+      "msg": "reward liability underflow"
+    },
+    {
+      "code": 6065,
+      "name": "DepositVaultUnderfunded",
+      "msg": "node deposit vault does not cover the recorded total deposits"
+    },
+    {
+      "code": 6066,
+      "name": "TranscriptContextsEqual",
+      "msg": "both transcripts carry the same (b, c) challenge pair"
+    },
+    {
+      "code": 6067,
+      "name": "NonCanonicalScalar",
+      "msg": "scalar is zero or not below the secp256k1 curve order"
+    },
+    {
+      "code": 6068,
+      "name": "MerkleProofTooDeep",
+      "msg": "merkle proof exceeds the maximum accepted depth"
+    },
+    {
+      "code": 6069,
+      "name": "InvalidMerkleProof",
+      "msg": "merkle proof does not connect the leaf to the signed batch root"
+    },
+    {
+      "code": 6070,
+      "name": "InvalidBatchSignature",
+      "msg": "commitment batch signature does not verify against the node key"
+    },
+    {
+      "code": 6071,
+      "name": "InvalidPartialSignature",
+      "msg": "partial signature does not satisfy the nonce equation"
+    },
+    {
+      "code": 6072,
+      "name": "InvalidNoncePoint",
+      "msg": "committed nonce is not a valid secp256k1 point"
+    },
+    {
+      "code": 6073,
+      "name": "InvalidMinimumNodeDeposit",
+      "msg": "minimum node deposit must be positive"
+    },
+    {
+      "code": 6074,
+      "name": "InvalidRoundPrice",
+      "msg": "base price plus rewards for the maximum signer count must fit u64"
+    },
+    {
+      "code": 6075,
+      "name": "RewardOverflow",
+      "msg": "reward or reward liability arithmetic overflowed"
+    },
+    {
+      "code": 6076,
+      "name": "UnexpectedSignerAccounts",
+      "msg": "signer account list must contain exactly one account per signer"
+    },
+    {
+      "code": 6077,
+      "name": "InvalidCoalitionKey",
+      "msg": "coalition key is not the sum of the signer keys"
+    },
+    {
+      "code": 6078,
+      "name": "InvalidEpochLength",
+      "msg": "epoch_len_seconds is outside the allowed bounds"
+    },
+    {
+      "code": 6079,
+      "name": "InvalidTicketGrace",
+      "msg": "ticket_grace_seconds must be positive and shorter than the epoch"
+    },
+    {
+      "code": 6080,
+      "name": "InvalidTicketTarget",
+      "msg": "target_tickets_per_epoch is outside the allowed bounds"
+    },
+    {
+      "code": 6081,
+      "name": "InvalidAvailabilityFloor",
+      "msg": "availability floor must not exceed 10000 bps and needs a positive sample minimum"
+    },
+    {
+      "code": 6082,
+      "name": "InvalidProtocolFee",
+      "msg": "protocol_fee_bps must not exceed 10000"
+    },
+    {
+      "code": 6083,
+      "name": "EpochNotOpen",
+      "msg": "epoch is not open at the current cluster time"
+    },
+    {
+      "code": 6084,
+      "name": "TicketWindowClosed",
+      "msg": "epoch no longer accepts tickets"
+    },
+    {
+      "code": 6085,
+      "name": "RoundOutsideEpoch",
+      "msg": "timestamp is outside the epoch window"
+    },
+    {
+      "code": 6086,
+      "name": "NotATicket",
+      "msg": "round does not fall under the epoch ticket threshold"
+    },
+    {
+      "code": 6087,
+      "name": "DispatchSigInvalid",
+      "msg": "gateway dispatch signature missing or invalid"
+    },
+    {
+      "code": 6088,
+      "name": "InvalidRosterSlot",
+      "msg": "roster slot hint does not match the epoch roster"
+    },
+    {
+      "code": 6089,
+      "name": "TicketCapReached",
+      "msg": "epoch ticket cap reached"
+    },
+    {
+      "code": 6090,
+      "name": "TicketMarkerNotExpired",
+      "msg": "ticket marker is still inside its epoch ticket window"
+    },
+    {
+      "code": 6091,
+      "name": "EpochNotFinalizable",
+      "msg": "epoch ticket window has not ended"
+    },
+    {
+      "code": 6092,
+      "name": "EpochNotFinalized",
+      "msg": "epoch is not finalized"
+    },
+    {
+      "code": 6093,
+      "name": "InvalidEpochSequence",
+      "msg": "next epoch account does not follow the finalized epoch"
+    },
+    {
+      "code": 6094,
+      "name": "NothingToCredit",
+      "msg": "roster slot has no weight or was already credited"
+    },
+    {
+      "code": 6095,
+      "name": "EpochNotClosable",
+      "msg": "epoch still has uncredited nodes or is inside its evidence window"
+    },
+    {
+      "code": 6096,
+      "name": "NothingToSweep",
+      "msg": "treasury holds no unswept income"
+    },
+    {
+      "code": 6097,
+      "name": "InsufficientProtocolReserve",
+      "msg": "amount exceeds the protocol reserve"
+    },
+    {
+      "code": 6098,
+      "name": "AvailabilityAboveFloor",
+      "msg": "node availability is not below the epoch payout floor"
+    },
+    {
+      "code": 6099,
+      "name": "InactivityAlreadyPunished",
+      "msg": "node was already frozen during this epoch"
+    },
+    {
+      "code": 6100,
+      "name": "InvalidRentReceiver",
+      "msg": "rent receiver must be the account that paid for the closed account"
+    },
+    {
+      "code": 6101,
+      "name": "InvalidInitialTau",
+      "msg": "initial_tau is below the minimum ticket threshold"
+    },
+    {
+      "code": 6102,
+      "name": "InvalidProgramData",
+      "msg": "program data account is not this program's"
+    },
+    {
+      "code": 6103,
+      "name": "NotUpgradeAuthority",
+      "msg": "initialize must be signed by the program's upgrade authority"
+    }
+  ],
+  "types": [
+    {
+      "name": "AddDelegateArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "delegate",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_data_requests",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Attestation",
+      "docs": [
+        "Payload plus aggregate Schnorr signature."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "payload",
+            "type": {
+              "defined": {
+                "name": "AttestationPayload"
+              }
+            }
+          },
+          {
+            "name": "signature",
+            "type": {
+              "defined": {
+                "name": "SchnorrSignature"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AttestationPayload",
+      "docs": [
+        "Signed oracle attestation payload."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "source_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "signatures_required",
+            "type": "u8"
+          },
+          {
+            "name": "timestamp",
+            "docs": [
+              "Gateway-assigned round time in unix **milliseconds**."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CoalitionKey",
+      "docs": [
+        "Affine coalition key `Σ X_i = (x, y)`, big-endian: an untrusted verification input.",
+        "",
+        "Supplying it lets the verifier check its Jacobian sum against the key instead of normalizing",
+        "the sum with a field inversion (see [`CoalitionAccumulator::compressed_pubkey_with_key`]).",
+        "It is a property of the point, not of the verifier's arithmetic: any secp256k1 library",
+        "computes it as the plain sum of the signers' public keys, in any order.",
+        "",
+        "Not part of the signed message or the cross-VM [`crate::Attestation`]; carry it next to the",
+        "attestation, e.g. in Solana instruction data."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CommitmentReuseEvidence",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "attestation_a",
+            "type": {
+              "defined": {
+                "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "attestation_b",
+            "type": {
+              "defined": {
+                "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "coalition_key_a",
+            "docs": [
+              "Affine sum of `attestation_a`'s signer keys. A verification input, not evidence: it is",
+              "left out of [`Evidence::hash`], so the case PDA derives from the attestations alone."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
+            }
+          },
+          {
+            "name": "coalition_key_b",
+            "docs": [
+              "Affine sum of `attestation_b`'s signer keys; see `coalition_key_a`."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CommittedNoncePair",
+      "docs": [
+        "The nonce pair committed for one slot, as affine coordinates.",
+        "",
+        "Points travel uncompressed so the program never pays for a field square root; both are",
+        "re-checked on-curve during equation verification."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "r1_x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "r1_y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "r2_x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "r2_y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Delegate",
+      "docs": [
+        "Owner-scoped delegate authorization. `max_data_requests` is enforced by the gateway at",
+        "admission, not on chain."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "delegate",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_data_requests",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DelegateAdded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "delegate",
+            "type": "pubkey"
+          },
+          {
+            "name": "delegate_count",
+            "type": "u32"
+          },
+          {
+            "name": "added_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DelegateRemoved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "delegate",
+            "type": "pubkey"
+          },
+          {
+            "name": "delegate_count",
+            "type": "u32"
+          },
+          {
+            "name": "removed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "residual",
+            "type": "u64"
+          },
+          {
+            "name": "rolled_into",
+            "type": "u64"
+          },
+          {
+            "name": "closed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "start",
+            "type": "i64"
+          },
+          {
+            "name": "end",
+            "type": "i64"
+          },
+          {
+            "name": "ticket_grace",
+            "type": "i64"
+          },
+          {
+            "name": "tau",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "pool",
+            "type": "u64"
+          },
+          {
+            "name": "tickets",
+            "type": "u32"
+          },
+          {
+            "name": "roster_len",
+            "type": "u16"
+          },
+          {
+            "name": "weight_total",
+            "type": "u64"
+          },
+          {
+            "name": "weighted_count",
+            "type": "u16"
+          },
+          {
+            "name": "finalized_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochRewardCredited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "weight",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "forfeited",
+            "docs": [
+              "The node was tombstoned; its share stays in the epoch residual."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochState",
+      "docs": [
+        "One epoch of the reward pool: its window, pinned ticket threshold, swept income and the",
+        "per-node participation counters fed by tickets.",
+        "",
+        "Counters are keyed by an epoch-local roster of `Node` PDAs rather than by registry position,",
+        "because registry positions move between versions (swap-remove) while one epoch spans several.",
+        "The roster fills lazily as tickets name nodes for the first time.",
+        "",
+        "PDA: `[SEED_PREFIX, epoch.to_le_bytes()]`. Layout has no implicit padding."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "start",
+            "docs": [
+              "Inclusive window start (unix seconds). Equals the previous epoch's `end`."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "end",
+            "docs": [
+              "Exclusive window end (unix seconds)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "ticket_grace",
+            "docs": [
+              "Snapshot of `ticket_grace_seconds` at creation."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "tau",
+            "docs": [
+              "A round is a ticket when the big-endian `u64` prefix of its ticket hash is below this."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "pool",
+            "docs": [
+              "USDC swept into this epoch while it was open."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "docs": [
+              "Sum of payouts credited to nodes."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "weight_total",
+            "docs": [
+              "`Σ weight(slot)`, frozen at finalization."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "tickets",
+            "type": "u32"
+          },
+          {
+            "name": "sum_signed",
+            "docs": [
+              "`Σ signed`, maintained per ticket."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "sum_selected",
+            "docs": [
+              "`Σ selected`, maintained per ticket."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "docs": [
+              "Snapshot: availability floor relative to the network inclusion rate, in bps."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "min_samples",
+            "docs": [
+              "Snapshot: samples below which the availability floor does not apply."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "roster_len",
+            "type": "u16"
+          },
+          {
+            "name": "weighted_count",
+            "docs": [
+              "Roster slots with non-zero weight, frozen at finalization."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "credited_count",
+            "docs": [
+              "Weighted slots already processed by `credit_epoch_rewards`."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "finalized",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "rent_payer",
+            "docs": [
+              "Receives this account's rent when the epoch is closed."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "credited",
+            "docs": [
+              "Bitmap over roster slots already credited."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "signed",
+            "type": {
+              "array": [
+                "u16",
+                256
+              ]
+            }
+          },
+          {
+            "name": "selected",
+            "type": {
+              "array": [
+                "u16",
+                256
+              ]
+            }
+          },
+          {
+            "name": "roster",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                256
+              ]
+            }
+          },
+          {
+            "name": "min_signers",
+            "docs": [
+              "Snapshot of the admission quorum floor for rounds counted in this epoch."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EquivocationEvidence",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "attestation_a",
+            "type": {
+              "defined": {
+                "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "attestation_b",
+            "type": {
+              "defined": {
+                "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "coalition_key_a",
+            "docs": [
+              "Affine sum of `attestation_a`'s signer keys. A verification input, not evidence: it is",
+              "left out of [`Evidence::hash`], so the case PDA derives from the attestations alone."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
+            }
+          },
+          {
+            "name": "coalition_key_b",
+            "docs": [
+              "Affine sum of `attestation_b`'s signer keys; see `coalition_key_a`."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Feed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "source_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "value",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "value_kind",
+            "type": {
+              "defined": {
+                "name": "FeedValueKind"
+              }
+            }
+          },
+          {
+            "name": "submitter",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "docs": [
+              "Unix milliseconds. Updates are strictly ordered on it, so two rounds in one second order."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "signatures_required",
+            "type": "u8"
+          },
+          {
+            "name": "signers_bitmap",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeedUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "source_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "timestamp",
+            "type": "u64"
+          },
+          {
+            "name": "value",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "value_kind",
+            "type": {
+              "defined": {
+                "name": "FeedValueKind"
+              }
+            }
+          },
+          {
+            "name": "signers_bitmap",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "last_updated_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeedValueKind",
+      "docs": [
+        "How to read [`Feed::value`], which is always the signed `AttestationPayload::value`."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Value"
+          },
+          {
+            "name": "Hash"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Gateway",
+      "docs": [
+        "Protocol-authorized gateway identified by its Solana authority.",
+        "",
+        "Holds endpoint metadata and activation status. Keyed by the gateway's authority key, which",
+        "signs the round dispatches tickets must carry. Gateways hold no funds: x402 payers pay the",
+        "protocol treasury directly."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "ip",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "port",
+            "type": "u16"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "GatewayStatus"
+              }
+            }
+          },
+          {
+            "name": "registered_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GatewayDeactivated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "gateway",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "deactivated_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GatewayRegistered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "ip",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "port",
+            "type": "u16"
+          },
+          {
+            "name": "registered_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GatewayStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Deactivated"
+          }
+        ]
+      }
+    },
+    {
+      "name": "InactivityEvidence",
+      "docs": [
+        "A node whose availability in a finalized epoch fell below that epoch's payout floor.",
+        "",
+        "Proven from the epoch's own counters; `registry_version` / `node_index` locate the node in the",
+        "current registry so it can be removed. The case hash covers only `(epoch, roster_slot)`, so a",
+        "node can be punished at most once per epoch, including after reinstatement.",
+        "",
+        "Remaining accounts: `[node, epoch_state]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "roster_slot",
+            "type": "u16"
+          },
+          {
+            "name": "registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "node_index",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "InitializeArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "withdrawal_cooldown_slots",
+            "type": "u64"
+          },
+          {
+            "name": "redundancy_buffer",
+            "type": "u8"
+          },
+          {
+            "name": "minimum_node_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "reward_per_signature",
+            "type": "u64"
+          },
+          {
+            "name": "max_settlement_delay_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "challenger_bounty_bps",
+            "type": "u16"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "x402_round_base",
+            "type": "u64"
+          },
+          {
+            "name": "min_signers",
+            "type": "u8"
+          },
+          {
+            "name": "epoch_len_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_grace_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "target_tickets_per_epoch",
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_availability_samples",
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "initial_tau",
+            "docs": [
+              "Ticket threshold of the two genesis epochs: a round is a ticket when the 64-bit prefix of its",
+              "ticket hash is below it, so the sampling probability is `initial_tau / 2^64`. Size it as",
+              "`2^64 * target_tickets_per_epoch / expected_rounds_per_epoch`. `u64::MAX` samples every round",
+              "(every round then costs a ticket transaction until the controller, which moves the",
+              "threshold at most 8x per epoch with a two-epoch lag, brings it down). Must be at least",
+              "`TAU_MIN`."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Node",
+      "docs": [
+        "Permanent node identity and reward account; never closed or re-keyed."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "secp256k1_pubkey_x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "secp256k1_pubkey_y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "NodeStatus"
+              }
+            }
+          },
+          {
+            "name": "ip",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "port",
+            "type": "u16"
+          },
+          {
+            "name": "locked_amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimable_rewards",
+            "type": "u64"
+          },
+          {
+            "name": "registered_at",
+            "type": "i64"
+          },
+          {
+            "name": "withdrawable_slot",
+            "type": "u64"
+          },
+          {
+            "name": "frozen_until",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NodeDeactivated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "node_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "deactivated_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NodeDepositWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "node_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "withdrawn_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NodeEndpointUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "node_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "ip",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "port",
+            "type": "u16"
+          },
+          {
+            "name": "updated_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NodePunished",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "offence",
+            "type": {
+              "defined": {
+                "name": "OffenceKind"
+              }
+            }
+          },
+          {
+            "name": "slashed_locked",
+            "type": "u64"
+          },
+          {
+            "name": "slashed_rewards",
+            "type": "u64"
+          },
+          {
+            "name": "new_status",
+            "type": {
+              "defined": {
+                "name": "NodeStatus"
+              }
+            }
+          },
+          {
+            "name": "punished_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NodeRegistered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u32"
+          },
+          {
+            "name": "registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "ip",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "port",
+            "type": "u16"
+          },
+          {
+            "name": "security_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "registered_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NodeReinstated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "node_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u32"
+          },
+          {
+            "name": "registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "reinstated_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NodeStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Deactivated"
+          },
+          {
+            "name": "Frozen"
+          },
+          {
+            "name": "Tombstoned"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NonceReuseEvidence",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "registry_version",
+            "docs": [
+              "Registry version that `node_index` indexes into; also bound into the batch signature."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "node_index",
+            "type": "u32"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "batch_meta",
+            "docs": [
+              "Opaque batch header bytes, covered by the signature but not interpreted on-chain."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "batch_root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "batch_sig_s",
+            "docs": [
+              "Single-key EVM-Schnorr signature over the batch message."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "batch_commitment_addr",
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "nonces",
+            "type": {
+              "defined": {
+                "name": "CommittedNoncePair"
+              }
+            }
+          },
+          {
+            "name": "merkle_proof",
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "transcript_a",
+            "type": {
+              "defined": {
+                "name": "PartialTranscript"
+              }
+            }
+          },
+          {
+            "name": "transcript_b",
+            "type": {
+              "defined": {
+                "name": "PartialTranscript"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Offence",
+      "docs": [
+        "Node-fault offence types. Each carries a fixed [`Penalty`] — see [`OffenceKind::penalty`]."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Equivocation",
+            "fields": [
+              {
+                "defined": {
+                  "name": "EquivocationEvidence"
+                }
+              }
+            ]
+          },
+          {
+            "name": "UnsolicitedSigning",
+            "fields": [
+              {
+                "defined": {
+                  "name": "UnsolicitedSigningEvidence"
+                }
+              }
+            ]
+          },
+          {
+            "name": "CommitmentReuse",
+            "fields": [
+              {
+                "defined": {
+                  "name": "CommitmentReuseEvidence"
+                }
+              }
+            ]
+          },
+          {
+            "name": "NonceReuse",
+            "fields": [
+              {
+                "defined": {
+                  "name": "NonceReuseEvidence"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Inactivity",
+            "fields": [
+              {
+                "defined": {
+                  "name": "InactivityEvidence"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "OffenceKind",
+      "docs": [
+        "Fieldless offence identity stored on `PunishmentCase` and in events."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Equivocation"
+          },
+          {
+            "name": "UnsolicitedSigning"
+          },
+          {
+            "name": "CommitmentReuse"
+          },
+          {
+            "name": "NonceReuse"
+          },
+          {
+            "name": "Inactivity"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OffenceProven",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "offence",
+            "type": {
+              "defined": {
+                "name": "OffenceKind"
+              }
+            }
+          },
+          {
+            "name": "guilty_bitmap",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "evidence_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "reporter",
+            "type": "pubkey"
+          },
+          {
+            "name": "slashed_total",
+            "type": "u64"
+          },
+          {
+            "name": "bounty_paid",
+            "type": "u64"
+          },
+          {
+            "name": "proven_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PartialTranscript",
+      "docs": [
+        "One partial-signature transcript: the challenge scalars and the resulting share.",
+        "",
+        "The program never recomputes `b` or `c` from a signing context — the offence is defined purely",
+        "by the equation `s*G == R1 + b*R2 + c*X`, which is why message transport and commitment lists",
+        "stay off-chain."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "b",
+            "docs": [
+              "Binding factor."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "c",
+            "docs": [
+              "Challenge."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "s",
+            "docs": [
+              "The node's partial signature scalar."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Plan",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "plan_type",
+            "type": {
+              "defined": {
+                "name": "PlanType"
+              }
+            }
+          },
+          {
+            "name": "subscription_price",
+            "type": "u64"
+          },
+          {
+            "name": "max_signers",
+            "type": "u8"
+          },
+          {
+            "name": "max_delegates",
+            "docs": [
+              "Max delegates/agents an owner on this plan may provision."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "max_rounds",
+            "type": "u64"
+          },
+          {
+            "name": "private_api_enabled",
+            "type": "bool"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlanAdded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "plan_type",
+            "type": "u8"
+          },
+          {
+            "name": "subscription_price",
+            "type": "u64"
+          },
+          {
+            "name": "max_signers",
+            "type": "u8"
+          },
+          {
+            "name": "max_delegates",
+            "type": "u32"
+          },
+          {
+            "name": "private_api_enabled",
+            "type": "bool"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlanConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "plan_type",
+            "type": {
+              "defined": {
+                "name": "PlanType"
+              }
+            }
+          },
+          {
+            "name": "subscription_price",
+            "type": "u64"
+          },
+          {
+            "name": "max_signers",
+            "type": "u8"
+          },
+          {
+            "name": "max_delegates",
+            "type": "u32"
+          },
+          {
+            "name": "max_rounds",
+            "type": "u64"
+          },
+          {
+            "name": "private_api_enabled",
+            "type": "bool"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlanType",
+      "repr": {
+        "kind": "rust"
+      },
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Basic"
+          },
+          {
+            "name": "Standard"
+          },
+          {
+            "name": "Professional"
+          },
+          {
+            "name": "Enterprise"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlanUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "plan_type",
+            "type": "u8"
+          },
+          {
+            "name": "subscription_price",
+            "type": "u64"
+          },
+          {
+            "name": "max_signers",
+            "type": "u8"
+          },
+          {
+            "name": "max_delegates",
+            "type": "u32"
+          },
+          {
+            "name": "private_api_enabled",
+            "type": "bool"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "reward_per_signature",
+            "docs": [
+              "Published x402 pricing input: `x402_round_base + (k + b) · reward_per_signature`.",
+              "Not read on chain; payouts come from the epoch pool."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_settlement_delay_seconds",
+            "docs": [
+              "Max age in seconds of `timestamp` relative to cluster time at attestation",
+              "ingress, and the grace period of a superseded registry version."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "challenger_bounty_bps",
+            "type": "u16"
+          },
+          {
+            "name": "minimum_node_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "withdrawal_cooldown_slots",
+            "type": "u64"
+          },
+          {
+            "name": "x402_round_base",
+            "docs": [
+              "Published x402 pricing input; see `reward_per_signature`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reward_liability",
+            "docs": [
+              "Sum of every `Node.claimable_rewards`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "min_signers",
+            "docs": [
+              "Current feed-admission floor; copied into each new epoch for ticket verification."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "epoch_len_seconds",
+            "docs": [
+              "Length of epochs created from now on."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "ticket_grace_seconds",
+            "docs": [
+              "Late-ticket window after an epoch ends, for epochs created from now on."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "target_tickets_per_epoch",
+            "docs": [
+              "Ticket count per epoch the threshold controller aims for."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "docs": [
+              "Payout floor relative to the network inclusion rate, in bps, for new epochs."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "min_availability_samples",
+            "docs": [
+              "Selections below which the availability floor does not apply, for new epochs."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "docs": [
+              "Share of all swept income kept by the protocol; the rest joins the epoch pool."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "pool_liability",
+            "docs": [
+              "Sum of `pool - paid` over every epoch not yet closed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "protocol_reserved",
+            "docs": [
+              "Protocol fees and slashing proceeds held in the treasury."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolConfigUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reward_per_signature",
+            "type": "u64"
+          },
+          {
+            "name": "max_settlement_delay_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "challenger_bounty_bps",
+            "type": "u16"
+          },
+          {
+            "name": "minimum_node_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "withdrawal_cooldown_slots",
+            "type": "u64"
+          },
+          {
+            "name": "x402_round_base",
+            "type": "u64"
+          },
+          {
+            "name": "min_signers",
+            "type": "u8"
+          },
+          {
+            "name": "epoch_len_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_grace_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "target_tickets_per_epoch",
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_availability_samples",
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "protocol_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "registry_state",
+            "type": "pubkey"
+          },
+          {
+            "name": "registry",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "node_deposit_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "initialized_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolReserveWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "withdrawn_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PunishmentCase",
+      "docs": [
+        "Permanent, on-chain record of an executed node punishment.",
+        "",
+        "The PDA is seeded by `evidence_hash`, so `init` doubles as the anti-replay guard: the same",
+        "evidence can only ever be submitted once, independent of any per-offence terminal-status guard."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "offence",
+            "type": {
+              "defined": {
+                "name": "OffenceKind"
+              }
+            }
+          },
+          {
+            "name": "reporter",
+            "type": "pubkey"
+          },
+          {
+            "name": "registry_version",
+            "docs": [
+              "Registry version the guilty bitmap indexes into."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "guilty_bitmap",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "guilty_count",
+            "type": "u16"
+          },
+          {
+            "name": "slashed_total",
+            "type": "u64"
+          },
+          {
+            "name": "bounty_paid",
+            "type": "u64"
+          },
+          {
+            "name": "evidence_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "executed_slot",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RegisterGatewayArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "ip",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "port",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RegisterNodeArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "registration_salt",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ip",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "port",
+            "type": "u16"
+          },
+          {
+            "name": "secp256k1_pubkey_compressed",
+            "type": {
+              "array": [
+                "u8",
+                33
+              ]
+            }
+          },
+          {
+            "name": "pop_sig_r",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "pop_sig_s",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Registry",
+      "docs": [
+        "Immutable, version-addressed snapshot of the ordered node set and selection policy.",
+        "",
+        "Only `nodes[..node_count]` is populated. Node addresses are stored as bytes to keep the",
+        "zero-copy layout POD-safe. `SPACE` includes the Anchor discriminator."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "type": "u32"
+          },
+          {
+            "name": "node_count",
+            "type": "u16"
+          },
+          {
+            "name": "redundancy_buffer",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "nodes",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                256
+              ]
+            }
+          },
+          {
+            "name": "grace_active_until",
+            "type": "i64"
+          },
+          {
+            "name": "active_from",
+            "docs": [
+              "Inclusive creation time. A version cannot verify a round dated before it existed."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RegistryState",
+      "docs": [
+        "Mutable pointer to the current immutable registry snapshot."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "current_version",
+            "type": "u32"
+          },
+          {
+            "name": "next_version",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RegistryUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "new_version",
+            "type": "u32"
+          },
+          {
+            "name": "node_count",
+            "type": "u16"
+          },
+          {
+            "name": "redundancy_buffer",
+            "type": "u8"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "RegistryVersionReason"
+              }
+            }
+          },
+          {
+            "name": "updated_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RegistryVersionReason",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "NodeAdded"
+          },
+          {
+            "name": "NodeRemoved"
+          },
+          {
+            "name": "PolicyChanged"
+          },
+          {
+            "name": "NodePunished"
+          },
+          {
+            "name": "NodeReinstated"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RemoveDelegateArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "delegate",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueSwept",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "gross",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee",
+            "type": "u64"
+          },
+          {
+            "name": "pool_share",
+            "type": "u64"
+          },
+          {
+            "name": "swept_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RewardsClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "beneficiary",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SchnorrSignature",
+      "docs": [
+        "Aggregate Schnorr signature material."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agg_sig_s",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "commitment",
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "signers_bitmap",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Secp256k1KeyClaim",
+      "docs": [
+        "Permanent reservation for a secp256k1 node key."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "node_pubkey",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SubmitAttestationArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "attestation",
+            "type": {
+              "defined": {
+                "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "raw_value",
+            "docs": [
+              "Preimage of `attestation.payload.value` for values longer than 32 bytes. When present the",
+              "signed value must be `keccak256(raw_value)` and the feed stores it as",
+              "[`FeedValueKind::Hash`]."
+            ],
+            "type": {
+              "option": "bytes"
+            }
+          },
+          {
+            "name": "coalition_key",
+            "docs": [
+              "Affine sum of the signers' secp256k1 keys (`molpha_verifier::coalition_key`, or any",
+              "library's point sum over their `Node` accounts). Unsigned and untrusted: the verifier",
+              "checks it projectively against its own sum instead of inverting. A wrong key only fails",
+              "the instruction."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Subscribed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "plan_type",
+            "type": "u8"
+          },
+          {
+            "name": "prepaid_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "price_snapshot",
+            "type": "u64"
+          },
+          {
+            "name": "subscribed_at",
+            "type": "i64"
+          },
+          {
+            "name": "valid_until",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Subscription",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "plan_type",
+            "type": {
+              "defined": {
+                "name": "PlanType"
+              }
+            }
+          },
+          {
+            "name": "valid_until",
+            "type": "i64"
+          },
+          {
+            "name": "max_rounds",
+            "docs": [
+              "Round quota per plan snapshot. Enforced by the gateway at admission, not on chain."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "delegate_count",
+            "type": "u32"
+          },
+          {
+            "name": "max_delegates",
+            "type": "u32"
+          },
+          {
+            "name": "max_signers",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SubscriptionExtended",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "plan_type",
+            "type": "u8"
+          },
+          {
+            "name": "extended_at",
+            "type": "i64"
+          },
+          {
+            "name": "valid_until",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketMarker",
+      "docs": [
+        "Existence marker for a submitted ticket; blocks resubmitting the same round.",
+        "",
+        "PDA: `[SEED_PREFIX, ticket_id]`. Once the round's epoch stops accepting tickets the round can",
+        "never be submitted again, so the marker becomes closable and returns its rent."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "closable_after",
+            "docs": [
+              "The round's epoch ticket deadline (`end + ticket_grace`)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "submitter",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketMarkerClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket_marker",
+            "type": "pubkey"
+          },
+          {
+            "name": "submitter",
+            "type": "pubkey"
+          },
+          {
+            "name": "closed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketRosterOverflow",
+      "docs": [
+        "Selected nodes left uncounted because the epoch roster was full."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "uncounted",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketSubmitted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "gateway",
+            "docs": [
+              "Gateway PDA whose authority signed the round dispatch."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "submitter",
+            "type": "pubkey"
+          },
+          {
+            "name": "registry_version",
+            "type": "u32"
+          },
+          {
+            "name": "signers_bitmap",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "UnsolicitedSigningEvidence",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "attestation",
+            "type": {
+              "defined": {
+                "name": "Attestation"
+              }
+            }
+          },
+          {
+            "name": "coalition_key",
+            "docs": [
+              "Affine sum of the attestation's signer keys, intruders included. A verification input,",
+              "not evidence: it is left out of [`Evidence::hash`], so the case PDA derives from the",
+              "attestation alone."
+            ],
+            "type": {
+              "defined": {
+                "name": "CoalitionKey"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpdateConfigArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "withdrawal_cooldown_slots",
+            "type": "u64"
+          },
+          {
+            "name": "minimum_node_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "reward_per_signature",
+            "type": "u64"
+          },
+          {
+            "name": "max_settlement_delay_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "challenger_bounty_bps",
+            "type": "u16"
+          },
+          {
+            "name": "x402_round_base",
+            "type": "u64"
+          },
+          {
+            "name": "min_signers",
+            "type": "u8"
+          },
+          {
+            "name": "epoch_len_seconds",
+            "docs": [
+              "Epoch parameters apply to epochs created after this update, never to existing ones."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "ticket_grace_seconds",
+            "type": "u64"
+          },
+          {
+            "name": "target_tickets_per_epoch",
+            "type": "u32"
+          },
+          {
+            "name": "min_availability_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_availability_samples",
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpdateNodeEndpointArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ip",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "port",
+            "type": "u16"
+          }
+        ]
+      }
+    }
+  ]
+}

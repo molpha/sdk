@@ -1,11 +1,11 @@
 {
   "name": "@molpha/sdk",
   "version": "0.1.0",
-  "description": "Molpha Consumer SDK — subscribe, create feeds, run gateway rounds, submit and read on-chain data.",
+  "description": "Molpha Consumer SDK — subscribe, request signed data from the gateway, submit attestations and read on-chain feeds.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Molpha/sdk.git"
+    "url": "https://github.com/molpha/sdk"
   },
   "homepage": "https://github.com/Molpha/sdk#readme",
   "bugs": {
@@ -40,8 +40,12 @@
     }
   },
   "scripts": {
+    "select-profile": "tsx scripts/select-profile.ts",
+    "prebuild": "pnpm select-profile",
     "build": "tsup",
+    "pretypecheck": "pnpm select-profile",
     "typecheck": "tsc --noEmit",
+    "pretest": "pnpm select-profile",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf dist",
@@ -50,7 +54,7 @@
     "version-packages": "changeset version",
     "e2e-demo": "tsx scripts/molpha-consumer-e2e-demo.ts",
     "release": "pnpm build && changeset publish",
-    "release:dev": "changeset version --snapshot dev && pnpm build && changeset publish --no-git-tag --tag dev"
+    "release:dev": "changeset version --snapshot dev && pnpm build && npm publish --tag dev"
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",

@@ -1,9 +1,9 @@
 /** On-chain subscription plan (`PlanType` in the Molpha program IDL). */
 export enum PlanType {
   Basic = 0,
-  // Standard = 1,
-  // Professional = 2,
-  // Enterprise = 3,
+  Standard = 1,
+  Professional = 2,
+  Enterprise = 3,
 }
 
 /** Numeric plan index used for PDA derivation and on-chain reads. */
