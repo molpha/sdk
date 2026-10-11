@@ -77,7 +77,7 @@ const EVM_FIXTURE_CALLDATA = [
 describe("Molpha Starknet verifier addresses", () => {
   it("exports the expected deployed addresses", () => {
     expect(MOLPHA_VERIFIER_STARKNET_SEPOLIA).toBe(
-      "0x0378df4dbecf8f0c7daa801282932f7011c7a5e5773bab9eaf68f5fa5e7530ef",
+      "0x032b9f47f12189668b94a5d62fb7d60f968ed0dbaf22090649d1d7a91d79cc38",
     );
   });
 

@@ -69,7 +69,7 @@ describe("deployment profile", () => {
     expect(manifest.stable.evmVerifier).toMatch(/^0x[0-9a-fA-F]{40}$/);
     expect(manifest.stable.starknetSepolia).toMatch(/^0x[0-9a-fA-F]+$/);
     expect(manifest.stable.solanaProgramId).toBe(
-      "MoLFGDpFoVnQgwbkTNScKPohCxhbfd61JjFrnotuwzh",
+      "MoLF3pgVA9MENSuEujxNNSMaTo71aLyewaH5nrWfUZs",
     );
     expect(manifest.stable.gatewayUrl).toContain("gateway.molpha.io");
     expect(manifest.dev.solanaProgramId).toBe(
