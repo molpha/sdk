@@ -84,7 +84,7 @@ Defaults are baked at publish time from `config/deployments.json` (`MOLPHA_SDK_P
 
 | npm dist-tag | Profile | Default gateway | Solana program | EVM / Starknet |
 |---|---|---|---|---|
-| `latest` | `stable` | `https://gateway.molpha.io/` | `MoLFGDpFoVnQgwbkTNScKPohCxhbfd61JjFrnotuwzh` | Documented CREATE2 / Sepolia addresses |
+| `latest` | `stable` | `https://gateway.molpha.io/` | `MoLF3pgVA9MENSuEujxNNSMaTo71aLyewaH5nrWfUZs` | Documented CREATE2 / Sepolia addresses |
 | `dev` | `dev` | `https://dev-gateway.molpha.io/` | `chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt` | Provisional until redeploy (`MOLPHA_DEV_VERIFIERS_PROVISIONAL`); falls back to stable addresses |
 
 Inspect the active profile via `MOLPHA_SDK_PROFILE` and `MOLPHA_DEV_VERIFIERS_PROVISIONAL`. Local builds: `MOLPHA_SDK_PROFILE=stable pnpm build` or `MOLPHA_SDK_PROFILE=dev pnpm build` (default `dev`).

@@ -2,7 +2,7 @@
   "$comment": "Build-time deployment profiles for @molpha/sdk. Selected by MOLPHA_SDK_PROFILE (stable | dev). Scripts copy the matching IDL and generate src/deployment.generated.ts.",
   "stable": {
     "gatewayUrl": "https://gateway.molpha.io/",
-    "solanaProgramId": "MoLFGDpFoVnQgwbkTNScKPohCxhbfd61JjFrnotuwzh",
+    "solanaProgramId": "MoLF3pgVA9MENSuEujxNNSMaTo71aLyewaH5nrWfUZs",
     "evmVerifier": "0xE1fd792b7E54e0C8F0Cd1c8055E446ff36d233eB",
     "starknetSepolia": "0x0378df4dbecf8f0c7daa801282932f7011c7a5e5773bab9eaf68f5fa5e7530ef"
   },
