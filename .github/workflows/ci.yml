@@ -36,7 +36,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Match release.yml; @changesets/cli@3 needs Node ^22.11 (enableCompileCache).
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -67,7 +68,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
