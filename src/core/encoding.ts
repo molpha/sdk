@@ -20,12 +20,14 @@ export const bytesToHex = (bytes: Uint8Array): string => nobleBytesToHex(bytes);
 
 /** Accepts an optional leading `0x`; case-insensitive. */
 export function hexToBytes(hex: string): Uint8Array {
-  const clean = hex.startsWith("0x") || hex.startsWith("0X") ? hex.slice(2) : hex;
+  const clean =
+    hex.startsWith("0x") || hex.startsWith("0X") ? hex.slice(2) : hex;
   return nobleHexToBytes(clean);
 }
 
 /** Hex with a leading `0x`. */
-export const bytesToHex0x = (bytes: Uint8Array): string => "0x" + bytesToHex(bytes);
+export const bytesToHex0x = (bytes: Uint8Array): string =>
+  "0x" + bytesToHex(bytes);
 
 /** u8 → 1 byte. Range-checked: `Uint8Array.of` would silently wrap an out-of-range value. */
 export function u8(value: number): Uint8Array {
@@ -92,9 +94,15 @@ export function bigIntFromBytesBe(bytes: Uint8Array): bigint {
 }
 
 /** Throw unless `bytes.length === len`. Returns the input for chaining. */
-export function ensureLength(bytes: Uint8Array, len: number, label: string): Uint8Array {
+export function ensureLength(
+  bytes: Uint8Array,
+  len: number,
+  label: string,
+): Uint8Array {
   if (bytes.length !== len) {
-    throw new RangeError(`${label}: expected ${len} bytes, got ${bytes.length}`);
+    throw new RangeError(
+      `${label}: expected ${len} bytes, got ${bytes.length}`,
+    );
   }
   return bytes;
 }
@@ -130,7 +138,8 @@ export function bytesToBase64(bytes: Uint8Array): string {
 
 /** Accepts padded or unpadded standard base64. */
 export function base64ToBytes(value: string): Uint8Array {
-  const padded = value.length % 4 === 0 ? value : value + "=".repeat(4 - (value.length % 4));
+  const padded =
+    value.length % 4 === 0 ? value : value + "=".repeat(4 - (value.length % 4));
   const binary = atob(padded);
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);

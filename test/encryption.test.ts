@@ -2,33 +2,47 @@ import { describe, expect, it } from "vitest";
 import { gcm } from "@noble/ciphers/aes.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { deriveSourceId } from "../src/core/apiconfig.js";
+import { jsonPriceSource } from "../src/core/sourcebuild.js";
 import { bytesToHex, hexToBytes, utf8 } from "../src/core/encoding.js";
 import {
   normalizeSecp256k1PublicKeyHex,
   secp256k1PublicKeyFromCoordinates,
 } from "../src/core/nodeKeys.js";
 import type { Node } from "../src/core/types.js";
-import { encryptForNodes, resolveAPIConfig } from "../src/gateway/encryption.js";
+import { encryptForNodes, resolveSource } from "../src/gateway/encryption.js";
 
-describe("resolveAPIConfig", () => {
-  it("substitutes {{secret.*}} placeholders in string fields", () => {
-    const resolved = resolveAPIConfig(
-      {
-        url: "https://api/{{secret.path}}",
-        headers: { Authorization: "Bearer {{secret.token}}" },
-        responseParser: "$.price",
-      },
+const publicSource = (url: string, headers?: Record<string, string>, tolerance = false) =>
+  jsonPriceSource({
+    url, path: "$.price", decimals: 8, ...(headers ? { headers } : {}),
+    ...(tolerance ? { tolerance: { maxDeviationBps: 50, maxAgeMs: 2000 } } : {}),
+  });
+
+describe("resolveSource", () => {
+  it("substitutes {{secret.*}} placeholders in a URL and header values", () => {
+    const resolved = resolveSource(
+      publicSource("https://api/{{secret.path}}", { authorization: "Bearer {{secret.token}}" }),
       { path: "v1/price", token: "abc123" },
     );
-    expect(resolved.url).toBe("https://api/v1/price");
-    expect(resolved.headers?.Authorization).toBe("Bearer abc123");
+    const read = (resolved.doc.inputs as Record<string, any>).px.read;
+    expect(read.url).toBe("https://api/v1/price");
+    expect(read.headers.authorization).toBe("Bearer abc123");
   });
 
   it("throws on a missing secret", () => {
-    expect(() =>
-      resolveAPIConfig({ url: "{{secret.missing}}", responseParser: "x" }, {}),
-    ).toThrow(/Missing secret/);
+    expect(() => resolveSource(publicSource("https://api/{{secret.missing}}"), {})).toThrow(/Missing secret/);
+  });
+
+  it("leaves everything but the placeholders alone, including the aggregation", () => {
+    const pub = publicSource("https://api/{{secret.path}}", undefined, true);
+    const resolved = resolveSource(pub, { path: "v1" });
+    expect((resolved.doc.aggregation as object)).toEqual((pub.doc.aggregation as object));
+    expect(resolved.output).toEqual(pub.output);
+  });
+
+  it("refuses a secret that would move the request to another host", () => {
+    // A placeholder cannot be in the host at all; and what fills one in the path cannot leave it.
+    expect(() => publicSource("https://{{secret.h}}.example/p")).toThrow(/host and port must be literal/);
+    expect(() => resolveSource(publicSource("https://api/{{secret.p}}"), { p: "a#b" })).toThrow(/fragment/);
   });
 });
 
@@ -40,11 +54,7 @@ describe("encryptForNodes", () => {
       address: "a",
       signingKey: bytesToHex(secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true)),
     };
-    const bundle = encryptForNodes(
-      { url: "https://api", responseParser: "$.price" },
-      {},
-      [node],
-    );
+    const bundle = encryptForNodes(publicSource("https://api"), {}, [node]);
     expect(Object.keys(bundle.envelopes)).toEqual(["3"]);
     expect(bundle.ephemeralPub.length).toBeGreaterThan(0);
     expect(bundle.ciphertext.length).toBeGreaterThan(0);
@@ -67,11 +77,7 @@ describe("encryptForNodes", () => {
     ];
 
     expect(() =>
-      encryptForNodes(
-        { url: "{{secret.missing}}", responseParser: "$.price" },
-        {},
-        duplicateIndexNodes,
-      ),
+      encryptForNodes(publicSource("https://api/{{secret.missing}}"), {}, duplicateIndexNodes),
     ).toThrow(/Duplicate selected node index/);
   });
 
@@ -85,11 +91,7 @@ describe("encryptForNodes", () => {
     ];
 
     expect(() =>
-      encryptForNodes(
-        { url: "https://api", responseParser: "$.price" },
-        {},
-        duplicateKeyNodes,
-      ),
+      encryptForNodes(publicSource("https://api"), {}, duplicateKeyNodes),
     ).toThrow(/Duplicate selected node signingKey/);
   });
 });
@@ -124,16 +126,8 @@ describe("secp256k1 node key helpers", () => {
   });
 });
 
-describe("encryptForNodes with aggregation (tolerance mode)", () => {
-  const aggregation = {
-    mode: "tolerance" as const,
-    rule: "median" as const,
-    maxDeviationBps: 50,
-    maxAgeMs: 2000,
-    numeric: { type: "int256" as const, decimals: 8 },
-  };
-
-  /** Node-side decrypt, mirroring `new/codec/private_api.go` `decryptAPIConfig`. */
+describe("encryptForNodes with a tolerance source", () => {
+  /** Node-side decrypt, mirroring `new/codec/private_api.go` `decryptSource`. */
   function decrypt(
     bundle: ReturnType<typeof encryptForNodes>,
     index: number,
@@ -158,60 +152,23 @@ describe("encryptForNodes with aggregation (tolerance mode)", () => {
     return { node, secret };
   }
 
-  it("keeps aggregation through secret resolution (and never substitutes inside it)", () => {
-    const resolved = resolveAPIConfig(
-      {
-        url: "https://api/{{secret.path}}",
-        responseParser: "$.price",
-        aggregation,
-      },
-      { path: "v1" },
-    );
-    expect(resolved.url).toBe("https://api/v1");
-    expect(resolved.aggregation).toEqual(aggregation);
-  });
-
-  it("encrypts the canonical JSON, byte-identical to the sourceId preimage when no secrets are used", () => {
+  it("encrypts the canonical bytes, byte-identical to the sourceId preimage when no secrets are used", () => {
     const { node, secret } = nodeWithKey(2);
-    const config = { url: "https://api", responseParser: "$.price", aggregation };
-    const bundle = encryptForNodes(config, {}, [node]);
-    const plaintext = decrypt(bundle, 2, secret);
+    const source = publicSource("https://api", undefined, true);
+    const plaintext = decrypt(encryptForNodes(source, {}, [node]), 2, secret);
 
-    expect(plaintext).toBe(
-      '{"url":"https://api","method":"GET","headers":{},"responseParser":"$.price","valueTransform":"",' +
-        '"aggregation":{"mode":"tolerance","rule":"median","maxDeviationBps":50,"maxAgeMs":2000,"numeric":{"type":"int256","decimals":8}}}',
-    );
-    expect(keccak_256(utf8(plaintext))).toEqual(deriveSourceId(config));
+    expect(plaintext).toBe(source.canonical);
+    expect(bytesToHex(keccak_256(utf8(plaintext)))).toBe(source.idHex.slice(2));
   });
 
-  it("with secrets, only the placeholder fields differ from the hashed config", () => {
+  it("with secrets, only the placeholder fields differ from the hashed source", () => {
     const { node, secret } = nodeWithKey(0);
-    const config = {
-      url: "https://api/{{secret.path}}",
-      responseParser: "$.price",
-      aggregation,
-    };
-    const plaintext = JSON.parse(decrypt(encryptForNodes(config, { path: "v1" }, [node]), 0, secret));
-    expect(plaintext.url).toBe("https://api/v1");
-    expect(plaintext.aggregation).toEqual(aggregation);
-    expect(Object.keys(plaintext)).toEqual([
-      "url",
-      "method",
-      "headers",
-      "responseParser",
-      "valueTransform",
-      "aggregation",
-    ]);
-  });
-
-  it("rejects an invalid aggregation before encrypting", () => {
-    const { node } = nodeWithKey(0);
-    expect(() =>
-      encryptForNodes(
-        { url: "https://api", responseParser: "$", aggregation: { ...aggregation, mode: "exact" } as never },
-        {},
-        [node],
-      ),
-    ).toThrow(/mode "exact"/);
+    const source = publicSource("https://api/{{secret.path}}", undefined, true);
+    const plaintext = JSON.parse(decrypt(encryptForNodes(source, { path: "v1" }, [node]), 0, secret));
+    const pub = JSON.parse(source.canonical);
+    expect(plaintext.inputs.px.read.url).toBe("https://api/v1");
+    // Everything but that one string is the public source.
+    plaintext.inputs.px.read.url = pub.inputs.px.read.url;
+    expect(plaintext).toEqual(pub);
   });
 });

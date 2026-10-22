@@ -1,18 +1,20 @@
 /**
  * `MolphaGateway` — isomorphic HTTP client with multi-endpoint failover.
  */
-import { assertAggregationQuorum, canonicalizeAggregation } from "../core/aggregation.js";
-import { canonicalizeAPIConfig, deriveSourceId } from "../core/apiconfig.js";
+import {
+  asParsedSource,
+  assertToleranceQuorum,
+  formatValue,
+  verifyPreimage,
+} from "../core/sourcebuild.js";
+import type { ParsedSource } from "../core/source.js";
 import { MOLPHA_PROGRAM_ID } from "../core/constants.js";
 import { DEFAULT_GATEWAY_ENDPOINT } from "../deployment.generated.js";
 import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
-import { formatInt256Decimal } from "../core/int256.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
 import { effectiveSelectionSize } from "../core/selection.js";
 import { ROUND_TICK_MS } from "../core/timestamp.js";
 import type {
-  AggregationConfig,
-  APIConfig,
   Attestation,
   Node,
   NodeKeyVerifier,
@@ -48,14 +50,16 @@ export * from "./x402.js";
 
 export interface RequestSignedDataOptions {
   /**
-   * The API definition to resolve. Its canonical form determines the round's
-   * `sourceId = keccak256(JSON.stringify(canonicalizeAPIConfig(apiConfig)))`, so pass the
-   * same config (including `{{secret.*}}` placeholders) every time.
+   * The source to run: what the nodes read, how the reads become one value, and how that value becomes
+   * the 32 signed bytes. A {@link ParsedSource} (from `defineSource`, `jsonPriceSource` or
+   * `parseSource`), or a source document (JSON text or a plain object) in its full form. The round's
+   * `sourceId` is the keccak256 of its canonical bytes, so pass the same source (including
+   * `{{secret.*}}` placeholders) every time.
    */
-  apiConfig: APIConfig;
+  source: ParsedSource | string | object;
   /**
    * Requested quorum (u8, ≥ the protocol `min_signers`). Median tolerance mode
-   * (`apiConfig.aggregation`) additionally requires `>= 3`; lower values are rejected
+   * (`source.aggregation`) additionally requires `>= 3`; lower values are rejected
    * before any request is made.
    */
   signaturesRequired: number;
@@ -200,10 +204,8 @@ interface GatewaySignedData {
   /** Current gateways nest the signed struct here; the flat fields below are the older shape. */
   attestation?: GatewayAttestation;
   sourceId?: string;
-  /** Echo of the canonical apiConfig hash; equals `sourceId`. */
-  configHash?: string;
-  /** Echo of the request's tolerance policy; present only for tolerance rounds. */
-  aggregation?: unknown;
+  /** The bytes a keccak256 output hashed to the signed value (0x-prefixed hex). */
+  valuePreimage?: string;
   value?: string;
   valuePacked?: string;
   timestamp?: number;
@@ -225,7 +227,8 @@ const ZERO_AUTH_SIG = new Uint8Array(64);
 /** Caller's unix SECONDS: the `authTimestamp` of a RequestAuth, not the round's timestamp. */
 const authTimestampNow = (): number => Math.floor(Date.now() / 1000);
 
-const timerSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const timerSleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Jitter added to the one-tick wait after an HTTP 409, in ms. */
 const CONFLICT_JITTER_MS = 20;
@@ -271,7 +274,10 @@ export function retryDelayMs(
   failures: number,
   random: () => number = Math.random,
 ): number {
-  const backoff = Math.min(BACKOFF_BASE_MS * 2 ** Math.max(failures - 1, 0), BACKOFF_MAX_MS);
+  const backoff = Math.min(
+    BACKOFF_BASE_MS * 2 ** Math.max(failures - 1, 0),
+    BACKOFF_MAX_MS,
+  );
   switch (cause.kind) {
     case "conflict":
       return ROUND_TICK_MS + random() * CONFLICT_JITTER_MS;
@@ -285,10 +291,15 @@ export function retryDelayMs(
 /** The more demanding of two causes, so one endpoint's busy answer is not hidden by another's error. */
 function mergeCause(a: RetryCause, b: RetryCause): RetryCause {
   if (a.kind === "busy" || b.kind === "busy") {
-    const waits = [a, b].flatMap((c) => (c.kind === "busy" && c.retryAfterMs !== undefined ? [c.retryAfterMs] : []));
-    return waits.length ? { kind: "busy", retryAfterMs: Math.max(...waits) } : { kind: "busy" };
+    const waits = [a, b].flatMap((c) =>
+      c.kind === "busy" && c.retryAfterMs !== undefined ? [c.retryAfterMs] : [],
+    );
+    return waits.length
+      ? { kind: "busy", retryAfterMs: Math.max(...waits) }
+      : { kind: "busy" };
   }
-  if (a.kind === "conflict" || b.kind === "conflict") return { kind: "conflict" };
+  if (a.kind === "conflict" || b.kind === "conflict")
+    return { kind: "conflict" };
   return { kind: "error" };
 }
 
@@ -297,7 +308,9 @@ function retryAfterMs(res: Response): number | undefined {
   const raw = res.headers.get("retry-after");
   if (raw === null) return undefined;
   const seconds = Number(raw);
-  return Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 60) * 1000 : undefined;
+  return Number.isFinite(seconds) && seconds >= 0
+    ? Math.min(seconds, 60) * 1000
+    : undefined;
 }
 
 /** Default gateway base URL when `endpoints` is omitted (from the active deployment profile). */
@@ -424,7 +437,11 @@ export class MolphaGateway {
     timeoutMs?: number,
   ): Promise<GatewayInfo> {
     const { url } = normalizeEndpoint(endpoint);
-    const res = await this.fetchWithTimeout(`${url}/v1/info`, { method: "GET" }, timeoutMs);
+    const res = await this.fetchWithTimeout(
+      `${url}/v1/info`,
+      { method: "GET" },
+      timeoutMs,
+    );
     if (!res.ok) {
       throw new GatewayError(`GET /v1/info failed (${res.status})`, res.status);
     }
@@ -459,7 +476,7 @@ export class MolphaGateway {
    * Request a threshold-signed data update from the gateway, with retry +
    * failover. The body is POSTed to each endpoint in order until one `completed`s.
    *
-   * The round's `sourceId` is derived from `apiConfig`. The request carries no round timestamp:
+   * The round's `sourceId` is derived from `source`. The request carries no round timestamp:
    * the gateway stamps the round with its own clock floored to the round tick (`timestamp`, unix
    * milliseconds, a multiple of {@link ROUND_TICK_MS}), and the committee follows from it. The
    * result carries the assigned timestamp and the signers' bitmap; the timestamp is taken as the
@@ -488,9 +505,10 @@ export class MolphaGateway {
    * fund it; without that, such a source throws
    * {@link UpstreamPaymentRequiredError} carrying the gateway's quote.
    */
-  async requestSignedData(opts: RequestSignedDataOptions): Promise<Attestation> {
+  async requestSignedData(
+    opts: RequestSignedDataOptions,
+  ): Promise<Attestation> {
     const {
-      apiConfig,
       signer,
       encrypt,
       sourcePayment,
@@ -498,7 +516,9 @@ export class MolphaGateway {
       maxRetries = DEFAULT_MAX_RETRIES,
       timeoutMs = DEFAULT_ROUND_TIMEOUT_MS,
     } = opts;
-    const signaturesRequired = assertSignaturesRequired(opts.signaturesRequired);
+    const signaturesRequired = assertSignaturesRequired(
+      opts.signaturesRequired,
+    );
 
     const verifyNodeKeys = opts.verifyNodeKeys ?? this.verifyNodeKeys;
     const allowUnverified =
@@ -510,33 +530,41 @@ export class MolphaGateway {
       );
     }
 
-    // Validates `aggregation` (rejects `mode: "exact"`, unsupported rules, bad numbers) as
-    // part of canonicalization; tolerance additionally needs a quorum of at least 3.
-    const requestApiConfig = canonicalizeAPIConfig(apiConfig);
-    assertAggregationQuorum(requestApiConfig.aggregation, signaturesRequired);
-    const sourceIdBytes = deriveSourceId(requestApiConfig);
+    // Validation is part of parsing: an invalid source is refused here, with its path, before any
+    // request. Tolerance additionally needs a quorum of at least 3.
+    const source = asParsedSource(opts.source);
+    assertToleranceQuorum(source, signaturesRequired);
+    const sourceIdBytes = source.id;
     const sourceId = bytesToHex(sourceIdBytes);
 
-    const subscriptionOwner = opts.subscriptionOwner ?? this.defaultSubscriptionOwner;
+    const subscriptionOwner =
+      opts.subscriptionOwner ?? this.defaultSubscriptionOwner;
     if (!subscriptionOwner) {
       throw new Error(
         "subscriptionOwner is required — pass opts.subscriptionOwner or set MolphaGateway defaultSubscriptionOwner (MolphaSDK sets this from wallet.publicKey)",
       );
     }
     const consumerAuthority =
-      opts.consumerAuthority ?? this.defaultConsumerAuthority ?? subscriptionOwner;
+      opts.consumerAuthority ??
+      this.defaultConsumerAuthority ??
+      subscriptionOwner;
     const authSigner = signer ?? this.defaultSigner;
 
     let round = await this.resolveContext(opts.context, encrypt !== undefined);
     let { registryVersion, redundancyBuffer } = round;
     const nodeCountOf = (r: ResolvedRound): number => {
-      if (r.nodeCount !== undefined && r.nodes !== undefined && r.nodes.length !== r.nodeCount) {
+      if (
+        r.nodeCount !== undefined &&
+        r.nodes !== undefined &&
+        r.nodes.length !== r.nodeCount
+      ) {
         throw new Error(
           `Gateway node list has ${r.nodes.length} nodes but registry ${r.registryVersion} has node_count ${r.nodeCount} — refresh the round context`,
         );
       }
       const n = r.nodeCount ?? r.nodes?.length;
-      if (n === undefined) throw new Error("Round context resolved neither nodeCount nor nodes");
+      if (n === undefined)
+        throw new Error("Round context resolved neither nodeCount nor nodes");
       return n;
     };
     let nodeCount = nodeCountOf(round);
@@ -552,12 +580,14 @@ export class MolphaGateway {
       terms = sourcePayment.terms
         ? validateSuppliedTerms(
             sourcePayment.terms,
-            requestApiConfig.url,
+            paidInputUrl(source),
             sourcePayment.assetDomain,
           )
-        : await probeSource(apiConfig, {
+        : await probeSource(source, {
             ...(encrypt ? { secrets: encrypt.secrets } : {}),
-            ...(sourcePayment.assetDomain ? { assetDomain: sourcePayment.assetDomain } : {}),
+            ...(sourcePayment.assetDomain
+              ? { assetDomain: sourcePayment.assetDomain }
+              : {}),
             timeoutMs,
           });
       if (terms) {
@@ -570,10 +600,17 @@ export class MolphaGateway {
     }
 
     let lastError: unknown;
-    let groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
+    let groupSize = effectiveSelectionSize(
+      signaturesRequired,
+      redundancyBuffer,
+      nodeCount,
+    );
     // Every registry node, ascending: the committee is not known until the gateway has stamped
     // the round, so the envelope set cannot be narrowed here.
-    let registryIndexes = Array.from({ length: nodeCount }, (_, index) => index);
+    let registryIndexes = Array.from(
+      { length: nodeCount },
+      (_, index) => index,
+    );
     // What made the last attempt fail decides how long to wait before the next.
     let cause: RetryCause = { kind: "error" };
     // A stale registry version is refreshed at most once per call, and the refreshed attempt is
@@ -592,7 +629,10 @@ export class MolphaGateway {
 
       let encKeyBundle: ReturnType<typeof encryptForNodes> | undefined;
       if (encrypt) {
-        const recipients = selectedNodesForPrivateApiEncryption(round.nodes ?? [], registryIndexes);
+        const recipients = selectedNodesForPrivateApiEncryption(
+          round.nodes ?? [],
+          registryIndexes,
+        );
 
         if (verifyNodeKeys) {
           await verifyNodeKeys({
@@ -603,7 +643,7 @@ export class MolphaGateway {
           });
         }
 
-        encKeyBundle = encryptForNodes(requestApiConfig, encrypt.secrets, recipients);
+        encKeyBundle = encryptForNodes(source, encrypt.secrets, recipients);
       }
 
       // Fresh authorizations per attempt: each carries a unique nonce, which is
@@ -624,7 +664,7 @@ export class MolphaGateway {
         signaturesRequired,
         subscriptionOwner,
         consumerAuthority,
-        apiConfig: requestApiConfig,
+        source: source.doc,
       };
       if (encKeyBundle) baseBody.encKeyBundle = encKeyBundle;
       if (sourcePayments) baseBody.sourcePayments = sourcePayments;
@@ -652,7 +692,11 @@ export class MolphaGateway {
               }),
             );
           }
-          const body = { ...baseBody, authSig: bytesToHex0x(authSig), authTimestamp };
+          const body = {
+            ...baseBody,
+            authSig: bytesToHex0x(authSig),
+            authTimestamp,
+          };
 
           const res = await this.post(
             `${endpoint.url}/v1/round/execute`,
@@ -693,7 +737,7 @@ export class MolphaGateway {
               // Terms we cannot sign are terminal, not transient: surface them
               // with the quote instead of re-probing once per attempt.
               try {
-                terms = await probeSource(apiConfig, {
+                terms = await probeSource(source, {
                   ...(encrypt ? { secrets: encrypt.secrets } : {}),
                   ...(sourcePayment.assetDomain
                     ? { assetDomain: sourcePayment.assetDomain }
@@ -720,7 +764,9 @@ export class MolphaGateway {
             break;
           }
 
-          const errorDetail = !res.ok ? await parseGatewayErrorDetail(res) : undefined;
+          const errorDetail = !res.ok
+            ? await parseGatewayErrorDetail(res)
+            : undefined;
           // The registry rolled since the inputs were read (a cached context, or a roll between
           // the read and the request). Read it afresh and retry once, without spending an attempt.
           if (
@@ -736,31 +782,47 @@ export class MolphaGateway {
           // round quota for the term is spent): none of them improves by trying again.
           if (res.status === 400 || res.status === 401 || res.status === 403) {
             throw new GatewayError(
-              formatGatewayErrorMessage("Gateway rejected request", res.status, errorDetail),
+              formatGatewayErrorMessage(
+                "Gateway rejected request",
+                res.status,
+                errorDetail,
+              ),
               res.status,
             );
           }
           if (res.status === 503 || res.status === 429) {
             lastError = new GatewayError(
               formatGatewayErrorMessage(
-                res.status === 429 ? "Gateway rate limited" : "Gateway unavailable",
+                res.status === 429
+                  ? "Gateway rate limited"
+                  : "Gateway unavailable",
                 res.status,
                 errorDetail,
               ),
               res.status,
             );
             const wait = retryAfterMs(res);
-            cause = mergeCause(cause, wait === undefined ? { kind: "busy" } : { kind: "busy", retryAfterMs: wait });
+            cause = mergeCause(
+              cause,
+              wait === undefined
+                ? { kind: "busy" }
+                : { kind: "busy", retryAfterMs: wait },
+            );
             continue; // a different gateway may already hold the AggSig
           }
           if (!res.ok) {
             lastError = new GatewayError(
-              formatGatewayErrorMessage("Gateway error", res.status, errorDetail),
+              formatGatewayErrorMessage(
+                "Gateway error",
+                res.status,
+                errorDetail,
+              ),
               res.status,
             );
             // This consumer already has a round for the source and quorum in this tick: retry one
             // tick later.
-            if (res.status === 409) cause = mergeCause(cause, { kind: "conflict" });
+            if (res.status === 409)
+              cause = mergeCause(cause, { kind: "conflict" });
             continue;
           }
           const json = (await res.json()) as GatewaySignedDataResponse;
@@ -768,9 +830,7 @@ export class MolphaGateway {
             return toResult(json.data, {
               sourceId,
               signaturesRequired,
-              ...(requestApiConfig.aggregation
-                ? { aggregation: requestApiConfig.aggregation }
-                : {}),
+              source,
             });
           }
           lastError = new Error(`Gateway returned status: ${json.status}`);
@@ -779,7 +839,10 @@ export class MolphaGateway {
           if (err instanceof UpstreamPaymentRequiredError) throw err;
           if (
             err instanceof GatewayError &&
-            (err.status === 400 || err.status === 401 || err.status === 402 || err.status === 403)
+            (err.status === 400 ||
+              err.status === 401 ||
+              err.status === 402 ||
+              err.status === 403)
           ) {
             throw err;
           }
@@ -790,8 +853,15 @@ export class MolphaGateway {
         round = await this.resolveContext(undefined, encrypt !== undefined);
         ({ registryVersion, redundancyBuffer } = round);
         nodeCount = nodeCountOf(round);
-        groupSize = effectiveSelectionSize(signaturesRequired, redundancyBuffer, nodeCount);
-        registryIndexes = Array.from({ length: nodeCount }, (_, index) => index);
+        groupSize = effectiveSelectionSize(
+          signaturesRequired,
+          redundancyBuffer,
+          nodeCount,
+        );
+        registryIndexes = Array.from(
+          { length: nodeCount },
+          (_, index) => index,
+        );
         refreshedOnce = true;
         retryNow = true;
         attempt--; // the refreshed request is the same attempt, with the right inputs
@@ -816,12 +886,15 @@ export class MolphaGateway {
     needNodes: boolean,
   ): Promise<ResolvedRound> {
     const hasRegistry =
-      cached?.registryVersion !== undefined && cached?.redundancyBuffer !== undefined;
+      cached?.registryVersion !== undefined &&
+      cached?.redundancyBuffer !== undefined;
     const registryPromise: Promise<RegistrySelectionConfig> = hasRegistry
       ? Promise.resolve({
           registryVersion: cached.registryVersion!,
           redundancyBuffer: cached.redundancyBuffer!,
-          ...(cached.nodeCount !== undefined ? { nodeCount: cached.nodeCount } : {}),
+          ...(cached.nodeCount !== undefined
+            ? { nodeCount: cached.nodeCount }
+            : {}),
         })
       : this.getRegistrySelectionConfig();
 
@@ -829,7 +902,10 @@ export class MolphaGateway {
       return { ...(await registryPromise), nodes: cached.nodes };
     }
     if (needNodes) {
-      const [registry, nodes] = await Promise.all([registryPromise, this.getNodes()]);
+      const [registry, nodes] = await Promise.all([
+        registryPromise,
+        this.getNodes(),
+      ]);
       return { ...registry, nodes };
     }
     const registry = await registryPromise;
@@ -844,10 +920,12 @@ export class MolphaGateway {
   ): Promise<Uint8Array> {
     let pending = this.gatewayPdas.get(endpoint.url);
     if (!pending) {
-      pending = this.lookupGatewayPda(endpoint, timeoutMs).catch((err: unknown) => {
-        this.gatewayPdas.delete(endpoint.url);
-        throw err;
-      });
+      pending = this.lookupGatewayPda(endpoint, timeoutMs).catch(
+        (err: unknown) => {
+          this.gatewayPdas.delete(endpoint.url);
+          throw err;
+        },
+      );
       this.gatewayPdas.set(endpoint.url, pending);
     }
     return pending;
@@ -871,12 +949,17 @@ export class MolphaGateway {
         if (res.ok) {
           return unwrapEnvelope(await res.json(), path, res.status) as T;
         }
-        lastError = new GatewayError(`GET ${path} failed (${res.status})`, res.status);
+        lastError = new GatewayError(
+          `GET ${path} failed (${res.status})`,
+          res.status,
+        );
       } catch (err) {
         lastError = err;
       }
     }
-    throw lastError instanceof Error ? lastError : new Error(`GET ${path} failed`);
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`GET ${path} failed`);
   }
 
   private async post(
@@ -915,7 +998,9 @@ export class MolphaGateway {
 
 function assertSignaturesRequired(value: number): number {
   if (!Number.isInteger(value) || value < 1 || value > 255) {
-    throw new RangeError(`signaturesRequired must be an integer in 1..255, got ${value}`);
+    throw new RangeError(
+      `signaturesRequired must be an integer in 1..255, got ${value}`,
+    );
   }
   return value;
 }
@@ -923,7 +1008,11 @@ function assertSignaturesRequired(value: number): number {
 /** Unwrap the gateway `{ status, data }` envelope. */
 function unwrapEnvelope(json: unknown, path: string, status?: number): unknown {
   const wrapped = json as Partial<GatewayEnvelope<unknown>> | null;
-  if (wrapped === null || typeof wrapped !== "object" || wrapped.data === undefined) {
+  if (
+    wrapped === null ||
+    typeof wrapped !== "object" ||
+    wrapped.data === undefined
+  ) {
     throw new GatewayError(`GET ${path} returned malformed payload`, status);
   }
   return wrapped.data;
@@ -937,7 +1026,9 @@ function selectedNodesForPrivateApiEncryption(
     throw new Error("Private API encryption requires a gateway node array");
   }
   if (selectedIndexes.length === 0) {
-    throw new Error("Private API encryption requires at least one selected node");
+    throw new Error(
+      "Private API encryption requires at least one selected node",
+    );
   }
 
   const selectedIndexSet = new Set<number>();
@@ -948,7 +1039,9 @@ function selectedNodesForPrivateApiEncryption(
       );
     }
     if (selectedIndexSet.has(index)) {
-      throw new Error(`Private API encryption selected index is duplicated: ${index}`);
+      throw new Error(
+        `Private API encryption selected index is duplicated: ${index}`,
+      );
     }
     selectedIndexSet.add(index);
   }
@@ -957,7 +1050,9 @@ function selectedNodesForPrivateApiEncryption(
   const nodeIndexes = new Set<number>();
   for (const node of nodes) {
     if (!Number.isInteger(node.index) || node.index < 0) {
-      throw new Error(`Gateway node index must be a non-negative integer: ${node.index}`);
+      throw new Error(
+        `Gateway node index must be a non-negative integer: ${node.index}`,
+      );
     }
     if (node.index >= nodes.length) {
       throw new Error(
@@ -976,14 +1071,18 @@ function selectedNodesForPrivateApiEncryption(
   return selectedIndexes.map((index) => {
     const node = selectedByIndex.get(index);
     if (!node) {
-      throw new Error(`Gateway node list is missing selected node index: ${index}`);
+      throw new Error(
+        `Gateway node list is missing selected node index: ${index}`,
+      );
     }
     const signingKey = normalizeSecp256k1PublicKeyHex(
       node.signingKey,
       `Gateway selected node ${index} signingKey`,
     );
     if (selectedSigningKeys.has(signingKey)) {
-      throw new Error(`Gateway returned duplicate selected node signingKey: ${index}`);
+      throw new Error(
+        `Gateway returned duplicate selected node signingKey: ${index}`,
+      );
     }
     selectedSigningKeys.add(signingKey);
     return node;
@@ -999,7 +1098,9 @@ function formatGatewayErrorMessage(
   return `${prefix} (${status}): ${detail}`;
 }
 
-async function parseGatewayErrorDetail(res: Response): Promise<string | undefined> {
+async function parseGatewayErrorDetail(
+  res: Response,
+): Promise<string | undefined> {
   try {
     const text = (await res.text()).trim();
     if (!text) return undefined;
@@ -1008,7 +1109,8 @@ async function parseGatewayErrorDetail(res: Response): Promise<string | undefine
       if (parsed && typeof parsed === "object") {
         const record = parsed as Record<string, unknown>;
         const message = record.error ?? record.message ?? record.detail;
-        if (typeof message === "string" && message.trim()) return message.trim();
+        if (typeof message === "string" && message.trim())
+          return message.trim();
       }
     } catch {
       // fall back to raw body below
@@ -1020,13 +1122,15 @@ async function parseGatewayErrorDetail(res: Response): Promise<string | undefine
 }
 
 function normalizeHex(value: string): string {
-  return (value.startsWith("0x") || value.startsWith("0X") ? value.slice(2) : value).toLowerCase();
+  return (
+    value.startsWith("0x") || value.startsWith("0X") ? value.slice(2) : value
+  ).toLowerCase();
 }
 
 /**
  * Lift a nested `attestation` (current gateways) into the flat field names the rest of this
- * module reads, leaving the older flat body untouched. Top-level `value`, `fresh`,
- * `configHash` and `aggregation` are the same in both shapes.
+ * module reads, leaving the older flat body untouched. Top-level `value`, `fresh` and
+ * `valuePreimage` are the same in both shapes.
  */
 function flattenGatewayData(data: GatewaySignedData): GatewaySignedData {
   const nested = data.attestation;
@@ -1039,13 +1143,19 @@ function flattenGatewayData(data: GatewaySignedData): GatewaySignedData {
     ...(payload?.sourceId !== undefined ? { sourceId: payload.sourceId } : {}),
     ...(payload?.value !== undefined ? { valuePacked: payload.value } : {}),
     ...(timestamp !== undefined ? { timestamp } : {}),
-    ...(payload?.registryVersion !== undefined ? { registryVersion: payload.registryVersion } : {}),
+    ...(payload?.registryVersion !== undefined
+      ? { registryVersion: payload.registryVersion }
+      : {}),
     ...(payload?.signaturesRequired !== undefined
       ? { signaturesRequired: payload.signaturesRequired }
       : {}),
-    ...(signature?.signersBitmap !== undefined ? { signersBitmap: signature.signersBitmap } : {}),
+    ...(signature?.signersBitmap !== undefined
+      ? { signersBitmap: signature.signersBitmap }
+      : {}),
     ...(signature?.signature !== undefined ? { s: signature.signature } : {}),
-    ...(signature?.commitment !== undefined ? { commitmentAddr: signature.commitment } : {}),
+    ...(signature?.commitment !== undefined
+      ? { commitmentAddr: signature.commitment }
+      : {}),
   };
 }
 
@@ -1056,15 +1166,16 @@ function flattenGatewayData(data: GatewaySignedData): GatewaySignedData {
  * rather than filled in locally: the gateway assigns `timestamp` (unix milliseconds), so
  * the caller cannot know it, and the signing set is whoever the nodes signed with.
  *
- * Tolerance mode: `value` is rendered from the signed `payload.value` at the source's
- * `decimals` rather than trusted as sent.
+ * `value` is rendered from the signed `payload.value` by the source's own output (a scaled integer, a
+ * bool, a string32's text or hex), not trusted as sent. A keccak256 output's preimage is checked to
+ * hash to the signed value before it is passed on.
  */
 function toResult(
   raw: GatewaySignedData,
   ctx: {
     sourceId: string;
     signaturesRequired: number;
-    aggregation?: AggregationConfig;
+    source: ParsedSource;
   },
 ): Attestation {
   if (raw.attestation) {
@@ -1074,14 +1185,12 @@ function toResult(
     }
   }
   const data = flattenGatewayData(raw);
-  if (data.sourceId !== undefined && normalizeHex(data.sourceId) !== ctx.sourceId) {
+  if (
+    data.sourceId !== undefined &&
+    normalizeHex(data.sourceId) !== ctx.sourceId
+  ) {
     throw new GatewayError(
       `Gateway response sourceId ${data.sourceId} does not match the requested ${ctx.sourceId}`,
-    );
-  }
-  if (data.configHash !== undefined && normalizeHex(data.configHash) !== ctx.sourceId) {
-    throw new GatewayError(
-      `Gateway response configHash ${data.configHash} does not match the requested sourceId ${ctx.sourceId}`,
     );
   }
   if (
@@ -1091,26 +1200,6 @@ function toResult(
     throw new GatewayError(
       `Gateway response signaturesRequired ${data.signaturesRequired} does not match the requested ${ctx.signaturesRequired}`,
     );
-  }
-  if (data.aggregation !== undefined && data.aggregation !== null) {
-    let echoed: AggregationConfig | undefined;
-    try {
-      echoed = canonicalizeAggregation(data.aggregation as AggregationConfig);
-    } catch (err) {
-      throw new GatewayError(
-        `Gateway response carries an invalid aggregation echo: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    if (!ctx.aggregation) {
-      throw new GatewayError(
-        "Gateway response carries an aggregation, but the request was exact mode (no aggregation)",
-      );
-    }
-    if (JSON.stringify(echoed) !== JSON.stringify(ctx.aggregation)) {
-      throw new GatewayError(
-        `Gateway response aggregation ${JSON.stringify(echoed)} does not match the requested ${JSON.stringify(ctx.aggregation)}`,
-      );
-    }
   }
   const fields = {
     timestamp: data.timestamp,
@@ -1125,15 +1214,27 @@ function toResult(
       throw new GatewayError(`Gateway response is missing ${name}`);
     }
   }
-  let value = data.value ?? "";
-  if (ctx.aggregation) {
-    try {
-      value = formatInt256Decimal(fields.value!, ctx.aggregation.numeric.decimals);
-    } catch (err) {
+  let value: string;
+  try {
+    value = formatValue(fields.value!, ctx.source.output);
+  } catch (err) {
+    throw new GatewayError(
+      `Gateway response value is not a 32-byte word: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  let valuePreimage: string | undefined;
+  if (data.valuePreimage !== undefined && data.valuePreimage !== "") {
+    if (ctx.source.output.type !== "keccak256") {
       throw new GatewayError(
-        `Gateway tolerance response value is not an int256 word: ${err instanceof Error ? err.message : String(err)}`,
+        "Gateway response carries a value preimage, but the source's output is not keccak256",
       );
     }
+    if (!verifyPreimage(fields.value!, data.valuePreimage)) {
+      throw new GatewayError(
+        "Gateway response value preimage does not hash to the signed value",
+      );
+    }
+    valuePreimage = "0x" + data.valuePreimage.replace(/^0x/, "");
   }
   return {
     payload: {
@@ -1150,5 +1251,19 @@ function toResult(
     },
     value,
     fresh: data.fresh ?? true,
+    ...(valuePreimage ? { valuePreimage } : {}),
   };
+}
+
+/** The URL a source payment is about: the URL of the source's only http input. */
+function paidInputUrl(source: ParsedSource): string {
+  const http = source.inputNames
+    .map((n) => (source.doc.inputs as Record<string, any>)[n])
+    .filter((i) => i.kind === "http");
+  if (http.length !== 1) {
+    throw new Error(
+      `A paid source needs exactly one http input (a payment names no host); this one has ${http.length}`,
+    );
+  }
+  return http[0].read.url as string;
 }

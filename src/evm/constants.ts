@@ -11,7 +11,4 @@ export { MOLPHA_VERIFIER_ADDRESS } from "../deployment.generated.js";
 
 /** Supported EVM testnet identifiers (chain selection only). */
 export type MolphaEvmNetwork =
-  | "evm-sepolia"
-  | "arbitrum-sepolia"
-  | "avalanche-fuji"
-  | "bsc-testnet";
+  "evm-sepolia" | "arbitrum-sepolia" | "avalanche-fuji" | "bsc-testnet";

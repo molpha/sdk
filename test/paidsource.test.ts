@@ -1,3 +1,4 @@
+import { jsonPriceSource } from "../src/core/sourcebuild.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { base64ToBytes } from "../src/core/encoding.js";
 import { createEvmSignerFromPrivateKey } from "../src/evm/eip712.js";
@@ -17,7 +18,7 @@ const nodes = [
 /** signaturesRequired 1 + redundancyBuffer 2, capped at 3 nodes → eligible set 3. */
 const registry = async () => ({ registryVersion: 1, redundancyBuffer: 2 });
 
-const apiConfig = { url: SOURCE_URL, responseParser: "$.price" };
+const source = jsonPriceSource({ url: SOURCE_URL, path: "$.price", decimals: 0 });
 const evmSigner = () => createEvmSignerFromPrivateKey("0x" + "01".repeat(32));
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -107,7 +108,7 @@ function upstreamQuote(eligibleSetSize: number, error?: string): Response {
   );
 }
 
-const completed = () => jsonResponse(signedResponseBody({ value: "100" }));
+const completed = () => jsonResponse(signedResponseBody({ value: "100", valuePacked: "00".repeat(31) + "64" }));
 
 /** Routes the SDK's three destinations: the source, /v1/nodes, and the round. */
 function mockFetch(handlers: {
@@ -133,7 +134,7 @@ function mockFetch(handlers: {
 
 const request = (extra: Record<string, unknown> = {}) => ({
   signaturesRequired: 1,
-  apiConfig,
+  source,
   subscriptionOwner: SUBSCRIPTION_OWNER,
   maxRetries: 3,
   ...extra,

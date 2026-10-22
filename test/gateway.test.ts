@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { getAddressDecoder } from "@solana/kit";
-import { deriveSourceIdString } from "../src/core/apiconfig.js";
+import { defineSource, jsonPriceSource } from "../src/core/sourcebuild.js";
+import * as sx from "../src/core/sourcebuild.js";
 import { MOLPHA_PROGRAM_ID } from "../src/core/constants.js";
 import { bytesToHex, hexToBytes } from "../src/core/encoding.js";
 import { hashRequestAuth } from "../src/gateway/auth.js";
@@ -23,12 +24,10 @@ const nodes = [
   { index: 1, peerId: "b", address: "n1", signingKey: "03".padEnd(66, "0") },
   { index: 2, peerId: "c", address: "n2", signingKey: "02".padEnd(66, "1") },
 ];
-const apiConfig = { url: "http://api", responseParser: "$.price" };
-const SOURCE_ID = deriveSourceIdString(apiConfig);
-const privateApiConfig = {
-  url: "http://api/{{secret.token}}",
-  responseParser: "$.price",
-};
+// decimals 0, so a packed word renders as the plain integer these tests use.
+const source = jsonPriceSource({ url: "http://api", path: "$.price", decimals: 0 });
+const SOURCE_ID = source.idHex.slice(2);
+const privateSource = jsonPriceSource({ url: "http://api/{{secret.token}}", path: "$.price", decimals: 0 });
 const privateApiEncrypt = { secrets: { token: "secret-token" } };
 const encryptedNodes = [0, 1, 2].map((index) => ({
   index,
@@ -69,11 +68,19 @@ function mockFetch(routes: MockRoutes) {
   });
 }
 
-const completed = (extra: SignedResponseFields = {}) => jsonResponse(signedResponseBody(extra));
+// The SDK renders `value` from the signed word, not from the gateway's display string, so a test that
+// names a plain integer `value` gets the matching word (these tests' sources have 0 decimals).
+const completed = (extra: SignedResponseFields = {}) => {
+  const packed =
+    extra.valuePacked === undefined && extra.value !== undefined && /^[0-9]+$/.test(extra.value)
+      ? { valuePacked: BigInt(extra.value).toString(16).padStart(64, "0") }
+      : {};
+  return jsonResponse(signedResponseBody({ ...extra, ...packed }));
+};
 
 const baseRequest = {
   signaturesRequired: 1,
-  apiConfig,
+  source,
   subscriptionOwner: SUBSCRIPTION_OWNER,
 };
 
@@ -143,7 +150,6 @@ describe("MolphaGateway.requestSignedData failover", () => {
             },
             value: "100",
             fresh: true,
-            configHash: SOURCE_ID,
           },
         }),
     }) as unknown as typeof fetch;
@@ -187,7 +193,7 @@ describe("MolphaGateway.requestSignedData failover", () => {
     await expect(gw.requestSignedData({ ...baseRequest, maxRetries: 1 })).rejects.toThrow(/sourceId/);
   });
 
-  it("derives sourceId from apiConfig and posts it (no feedId)", async () => {
+  it("derives sourceId from the source and posts both (no feedId)", async () => {
     let postedBody: Record<string, unknown> | undefined;
     globalThis.fetch = mockFetch({
       execute: (_url, body) => {
@@ -200,20 +206,14 @@ describe("MolphaGateway.requestSignedData failover", () => {
     await gw.requestSignedData(baseRequest);
     expect(postedBody?.sourceId).toBe(SOURCE_ID);
     expect(postedBody).not.toHaveProperty("feedId");
-    expect(postedBody?.apiConfig).toEqual({
-      url: "http://api",
-      method: "GET",
-      headers: {},
-      responseParser: "$.price",
-      valueTransform: "",
-    });
+    expect(postedBody?.source).toEqual(JSON.parse(source.canonical));
     expect(postedBody?.authSig).toBe("0x" + "00".repeat(64)); // no signer → dev zero sig
   });
 
   it("throws when subscriptionOwner is missing", async () => {
     const gw = new MolphaGateway("http://gw1", registry);
     await expect(
-      gw.requestSignedData({ signaturesRequired: 1, apiConfig }),
+      gw.requestSignedData({ signaturesRequired: 1, source }),
     ).rejects.toThrow("subscriptionOwner is required");
   });
 
@@ -289,7 +289,7 @@ describe("MolphaGateway request auth", () => {
       defaultSigner,
       SUBSCRIPTION_OWNER,
     );
-    await gw.requestSignedData({ signaturesRequired: 1, apiConfig });
+    await gw.requestSignedData({ signaturesRequired: 1, source });
 
     expect(defaultSigner).toHaveBeenCalledTimes(1);
     expect(postedBody?.authSig).toBe("0x" + "ab".repeat(64));
@@ -322,7 +322,7 @@ describe("MolphaGateway request auth", () => {
       signer,
       SUBSCRIPTION_OWNER,
     );
-    await gw.requestSignedData({ signaturesRequired: 1, apiConfig });
+    await gw.requestSignedData({ signaturesRequired: 1, source });
 
     expect(postedBody).toHaveProperty("authSig");
     expect(postedBody).toHaveProperty("authTimestamp");
@@ -356,7 +356,7 @@ describe("MolphaGateway request auth", () => {
         SUBSCRIPTION_OWNER,
       );
       // Only Date is faked: the wait after a 409 is one real tick (about 100 ms).
-      await gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 2 });
+      await gw.requestSignedData({ signaturesRequired: 1, source, maxRetries: 2 });
 
       expect(bodies).toHaveLength(2);
       // Seconds, not milliseconds: floor(ms / 1000).
@@ -389,7 +389,7 @@ describe("MolphaGateway request auth", () => {
       defaultSigner,
       SUBSCRIPTION_OWNER,
     );
-    await gw.requestSignedData({ signaturesRequired: 1, apiConfig, signer: overrideSigner });
+    await gw.requestSignedData({ signaturesRequired: 1, source, signer: overrideSigner });
 
     expect(defaultSigner).not.toHaveBeenCalled();
     expect(overrideSigner).toHaveBeenCalledTimes(1);
@@ -414,8 +414,8 @@ describe("MolphaGateway request auth", () => {
     }) as unknown as typeof fetch;
 
     const gw = new MolphaGateway("http://gw1", registry, signer, SUBSCRIPTION_OWNER);
-    await gw.requestSignedData({ signaturesRequired: 2, apiConfig });
-    await gw.requestSignedData({ signaturesRequired: 2, apiConfig });
+    await gw.requestSignedData({ signaturesRequired: 2, source });
+    await gw.requestSignedData({ signaturesRequired: 2, source });
 
     expect(info).toHaveBeenCalledTimes(1);
     expect(bodies).toHaveLength(2);
@@ -445,7 +445,7 @@ describe("MolphaGateway request auth", () => {
       signer,
       SUBSCRIPTION_OWNER,
     );
-    const result = await gw.requestSignedData({ signaturesRequired: 1, apiConfig });
+    const result = await gw.requestSignedData({ signaturesRequired: 1, source });
     expect(result.value).toBe("7");
 
     const body1 = bodies.get("http://gw1")!;
@@ -471,7 +471,7 @@ describe("MolphaGateway request auth", () => {
 
     const gw = new MolphaGateway("http://gw1", registry, signer, SUBSCRIPTION_OWNER);
     await expect(
-      gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 1 }),
+      gw.requestSignedData({ signaturesRequired: 1, source, maxRetries: 1 }),
     ).rejects.toThrow(/settles against program/);
     expect(execute).not.toHaveBeenCalled();
   });
@@ -491,7 +491,7 @@ describe("MolphaGateway request auth", () => {
     }) as unknown as typeof fetch;
 
     const gw = new MolphaGateway(["http://gw1", "http://gw2"], registry, signer, SUBSCRIPTION_OWNER);
-    const result = await gw.requestSignedData({ signaturesRequired: 1, apiConfig });
+    const result = await gw.requestSignedData({ signaturesRequired: 1, source });
     expect(result.value).toBe("9");
     expect(await expectedAuthSig(publicKey, postedBody!, GATEWAY_AUTHORITY_2)).toBe(true);
   });
@@ -507,7 +507,7 @@ describe("MolphaGateway request auth", () => {
       signer,
       SUBSCRIPTION_OWNER,
     );
-    await expect(gw.requestSignedData({ signaturesRequired: 1, apiConfig })).rejects.toMatchObject({
+    await expect(gw.requestSignedData({ signaturesRequired: 1, source })).rejects.toMatchObject({
       status: 401,
     });
     expect(execute).toHaveBeenCalledTimes(1);
@@ -537,7 +537,7 @@ describe("MolphaGateway round timestamp", () => {
 
     const result = await new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER).requestSignedData({
       signaturesRequired: 1,
-      apiConfig,
+      source,
     });
     expect(result.payload.timestamp).toBe(1_750_000_123_000);
     expect(result.signature.signersBitmap).toBe("00".repeat(31) + "05");
@@ -550,7 +550,7 @@ describe("MolphaGateway round timestamp", () => {
       globalThis.fetch = mockFetch({ execute: () => completed({ timestamp }) }) as unknown as typeof fetch;
       const result = await new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER).requestSignedData({
         signaturesRequired: 1,
-        apiConfig,
+        source,
         maxRetries: 1,
       });
       expect(result.payload.timestamp).toBe(timestamp);
@@ -565,7 +565,7 @@ describe("MolphaGateway round timestamp", () => {
       await expect(
         new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER).requestSignedData({
           signaturesRequired: 1,
-          apiConfig,
+          source,
           maxRetries: 1,
         }),
       ).rejects.toThrow(new RegExp(`missing ${missing}`));
@@ -586,8 +586,8 @@ describe("MolphaGateway round timestamp", () => {
       defaultSubscriptionOwner: SUBSCRIPTION_OWNER,
       sleep: async (ms) => void delays.push(ms),
     });
-    const result = await gw.requestSignedData({ signaturesRequired: 1, apiConfig, maxRetries: 3 });
-    expect(result.value).toBe("1");
+    const result = await gw.requestSignedData({ signaturesRequired: 1, source, maxRetries: 3 });
+    expect(result.value).toBe("0");
     expect(bodies).toHaveLength(2);
     // One wait of a tick, and the retry names no round: the gateway stamps it afresh.
     expect(delays).toHaveLength(1);
@@ -653,7 +653,7 @@ describe("MolphaGateway node count", () => {
     });
     await gw.requestSignedData({
       signaturesRequired: 3,
-      apiConfig: privateApiConfig,
+      source: privateSource,
       encrypt: privateApiEncrypt,
       context: { registryVersion: 1, redundancyBuffer: 5, nodeCount: 3, nodes: encryptedNodes },
     });
@@ -785,7 +785,7 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     });
     await gw.requestSignedData({
       signaturesRequired: 1,
-      apiConfig: privateApiConfig,
+      source: privateSource,
       encrypt: privateApiEncrypt,
       // A buffer of 0 would select a single node; the committee is unknown at encryption time, so
       // the envelope set cannot depend on it.
@@ -805,7 +805,7 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     await expect(
       gw.requestSignedData({
         signaturesRequired: 1,
-        apiConfig: privateApiConfig,
+        source: privateSource,
         encrypt: privateApiEncrypt,
       }),
     ).rejects.toThrow(/requires authenticated node keys/);
@@ -828,7 +828,7 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     });
     await gw.requestSignedData({
       signaturesRequired: 1,
-      apiConfig: privateApiConfig,
+      source: privateSource,
       encrypt: privateApiEncrypt,
       context: { registryVersion: 1, redundancyBuffer: 2, nodes: [encryptedNodes[0]!] },
     });
@@ -854,19 +854,19 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     });
     await gw.requestSignedData({
       signaturesRequired: 3,
-      apiConfig: privateApiConfig,
+      source: privateSource,
       encrypt: privateApiEncrypt,
       context: { registryVersion: 1, redundancyBuffer: 2, nodes: encryptedNodes },
     });
 
     expect(verifyNodeKeys).toHaveBeenCalledTimes(1);
     expect(verifyNodeKeys.mock.calls[0]?.[0]).toMatchObject({
-      sourceId: deriveSourceIdString(privateApiConfig),
+      sourceId: privateSource.idHex.slice(2),
       registryVersion: 1,
       nodeIndexes: [0, 1, 2],
       nodes: encryptedNodes,
     });
-    expect(postedBody?.sourceId).toBe(deriveSourceIdString(privateApiConfig));
+    expect(postedBody?.sourceId).toBe(privateSource.idHex.slice(2));
     expect(postedBody?.encKeyBundle).toMatchObject({
       envelopes: expect.objectContaining({
         "0": expect.any(String),
@@ -890,7 +890,7 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     await expect(
       gw.requestSignedData({
         signaturesRequired: 1,
-        apiConfig: privateApiConfig,
+        source: privateSource,
         encrypt: privateApiEncrypt,
         context: { registryVersion: 1, redundancyBuffer: 2, nodes: [encryptedNodes[0]!] },
       }),
@@ -910,7 +910,7 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     await expect(
       gw.requestSignedData({
         signaturesRequired: 2,
-        apiConfig: privateApiConfig,
+        source: privateSource,
         encrypt: privateApiEncrypt,
         context: { registryVersion: 1, redundancyBuffer: 2, nodes: duplicateNodes },
       }),
@@ -933,7 +933,7 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     await expect(
       gw.requestSignedData({
         signaturesRequired: 2,
-        apiConfig: privateApiConfig,
+        source: privateSource,
         encrypt: privateApiEncrypt,
         context: { registryVersion: 1, redundancyBuffer: 2, nodes: duplicateKeyNodes },
       }),
@@ -953,7 +953,7 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
     await expect(
       gw.requestSignedData({
         signaturesRequired: 1,
-        apiConfig: privateApiConfig,
+        source: privateSource,
         encrypt: privateApiEncrypt,
         context: { registryVersion: 1, redundancyBuffer: 2, nodes: invalidNodes },
       }),
@@ -963,22 +963,16 @@ describe("MolphaGateway.requestSignedData cached context (short flow)", () => {
 });
 
 describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
-  const aggregation = {
-    mode: "tolerance" as const,
-    rule: "median" as const,
-    maxDeviationBps: 50,
-    maxAgeMs: 2000,
-    numeric: { type: "int256" as const, decimals: 8 },
-  };
-  const toleranceConfig = { ...apiConfig, aggregation };
-  const TOLERANCE_SOURCE_ID = deriveSourceIdString(toleranceConfig);
+  const toleranceSource = jsonPriceSource({
+    url: "http://api", path: "$.price", decimals: 8, tolerance: { maxDeviationBps: 50, maxAgeMs: 2000 },
+  });
+  const TOLERANCE_SOURCE_ID = toleranceSource.idHex.slice(2);
   // 42150.12345678 at 8 decimals, as a signed int256 word.
   const PACKED = "00".repeat(26) + "03d56250474e";
 
   const toleranceResponse = (extra: SignedResponseFields = {}) =>
     completed({
       sourceId: TOLERANCE_SOURCE_ID,
-      configHash: TOLERANCE_SOURCE_ID,
       value: "stale-display-value",
       valuePacked: PACKED,
       signersBitmap: "00".repeat(31) + "0e",
@@ -1008,21 +1002,19 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
             },
             value: "stale-display-value",
             fresh: true,
-            configHash: TOLERANCE_SOURCE_ID,
-            aggregation,
           },
         }),
     }) as unknown as typeof fetch;
 
     const gw = new MolphaGateway("http://gw1", registry);
-    const result = await gw.requestSignedData({ ...baseRequest, signaturesRequired: 3, apiConfig: toleranceConfig });
+    const result = await gw.requestSignedData({ ...baseRequest, signaturesRequired: 3, source: toleranceSource });
 
     expect(result.value).toBe("42150.12345678");
     expect(result.payload.value).toBe(PACKED);
     expect(result.signature.signersBitmap).toBe("00".repeat(31) + "0e");
   });
 
-  it("derives the sourceId from the aggregation and forwards it in the canonical apiConfig", async () => {
+  it("derives the sourceId from the whole source and forwards the canonical document", async () => {
     let postedBody: Record<string, unknown> | undefined;
     globalThis.fetch = mockFetch({
       execute: (_url, body) => {
@@ -1032,32 +1024,27 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
     }) as unknown as typeof fetch;
 
     const gw = new MolphaGateway("http://gw1", registry);
+    // The same source written in the short form, with shuffled keys and JS numbers.
     const result = await gw.requestSignedData({
       ...baseRequest,
       signaturesRequired: 3,
-      apiConfig: {
-        ...apiConfig,
-        // Deliberately shuffled input: the wire form must still be canonical.
-        aggregation: {
-          numeric: { decimals: 8, type: "int256" },
-          maxAgeMs: 2000,
-          maxDeviationBps: 50,
-          rule: "median",
-          mode: "tolerance",
-        } as typeof aggregation,
-      },
+      source: defineSource({
+        aggregation: { maxAgeMs: 2000, maxDeviationBps: 50 },
+        output: { decimals: 8, type: "int256" },
+        transform: sx.rescale(sx.ref("px.value"), { scale: 8 }),
+        inputs: { px: sx.httpInput({ url: "http://api", decode: sx.jsonDecode({ value: "$.price" }) }) },
+      }),
     });
 
     expect(TOLERANCE_SOURCE_ID).not.toBe(SOURCE_ID);
     expect(postedBody?.sourceId).toBe(TOLERANCE_SOURCE_ID);
-    expect(JSON.stringify(postedBody?.apiConfig)).toBe(
-      '{"url":"http://api","method":"GET","headers":{},"responseParser":"$.price","valueTransform":"",' +
-        '"aggregation":{"mode":"tolerance","rule":"median","maxDeviationBps":50,"maxAgeMs":2000,"numeric":{"type":"int256","decimals":8}}}',
-    );
+    expect((postedBody?.source as Record<string, unknown>).aggregation).toEqual({
+      maxAgeMs: "2000", maxDeviationBps: "50", mode: "tolerance", rule: "median",
+    });
     expect(result.payload.sourceId).toBe(TOLERANCE_SOURCE_ID);
   });
 
-  it("omits aggregation from the wire body for exact mode", async () => {
+  it("sends a null aggregation for exact mode", async () => {
     let postedBody: Record<string, unknown> | undefined;
     globalThis.fetch = mockFetch({
       execute: (_url, body) => {
@@ -1066,7 +1053,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
       },
     }) as unknown as typeof fetch;
     await new MolphaGateway("http://gw1", registry).requestSignedData(baseRequest);
-    expect(postedBody?.apiConfig).not.toHaveProperty("aggregation");
+    expect((postedBody?.source as Record<string, unknown>).aggregation).toBeNull();
   });
 
   it("rejects signaturesRequired < 3 client-side, before any request", async () => {
@@ -1075,30 +1062,23 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
     const gw = new MolphaGateway("http://gw1", registry);
     for (const signaturesRequired of [1, 2]) {
       await expect(
-        gw.requestSignedData({ ...baseRequest, signaturesRequired, apiConfig: toleranceConfig }),
+        gw.requestSignedData({ ...baseRequest, signaturesRequired, source: toleranceSource }),
       ).rejects.toThrow(/tolerance aggregation requires signaturesRequired >= 3/);
     }
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects mode "exact" and unsupported rules before any request', async () => {
+  it("rejects an invalid source, naming the path, before any request", async () => {
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
     const gw = new MolphaGateway("http://gw1", registry);
+    const doc = JSON.parse(toleranceSource.canonical);
     await expect(
-      gw.requestSignedData({
-        ...baseRequest,
-        signaturesRequired: 3,
-        apiConfig: { ...apiConfig, aggregation: { ...aggregation, mode: "exact" } as never },
-      }),
-    ).rejects.toThrow(/mode "exact" is not accepted/);
+      gw.requestSignedData({ ...baseRequest, signaturesRequired: 3, source: { ...doc, aggregation: { ...doc.aggregation, rule: "mean" } } }),
+    ).rejects.toThrow(/aggregation\.rule/);
     await expect(
-      gw.requestSignedData({
-        ...baseRequest,
-        signaturesRequired: 3,
-        apiConfig: { ...apiConfig, aggregation: { ...aggregation, rule: "mean" } as never },
-      }),
-    ).rejects.toThrow(/unsupported aggregation.rule/);
+      gw.requestSignedData({ ...baseRequest, signaturesRequired: 3, source: { url: "http://api", responseParser: "$.price" } }),
+    ).rejects.toThrow(/source: /);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -1107,7 +1087,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
     const result = await new MolphaGateway("http://gw1", registry).requestSignedData({
       ...baseRequest,
       signaturesRequired: 3,
-      apiConfig: toleranceConfig,
+      source: toleranceSource,
     });
     expect(result.value).toBe("42150.12345678");
     expect(result.payload.value).toBe(PACKED);
@@ -1122,7 +1102,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
     const result = await new MolphaGateway("http://gw1", registry).requestSignedData({
       ...baseRequest,
       signaturesRequired: 3,
-      apiConfig: toleranceConfig,
+      source: toleranceSource,
     });
     expect(result.value).toBe("-0.000001");
   });
@@ -1137,7 +1117,7 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
         new MolphaGateway("http://gw1", registry).requestSignedData({
           ...baseRequest,
           signaturesRequired: 3,
-          apiConfig: toleranceConfig,
+          source: toleranceSource,
           maxRetries: 1,
         }),
       ).rejects.toThrow(new RegExp(`missing ${labels[missing]}`));
@@ -1146,59 +1126,19 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
 
   it("rejects a gateway that derived a different identity (e.g. dropped aggregation)", async () => {
     globalThis.fetch = mockFetch({
-      execute: () => toleranceResponse({ sourceId: SOURCE_ID, configHash: SOURCE_ID }),
+      execute: () => toleranceResponse({ sourceId: SOURCE_ID }),
     }) as unknown as typeof fetch;
     await expect(
       new MolphaGateway("http://gw1", registry).requestSignedData({
         ...baseRequest,
         signaturesRequired: 3,
-        apiConfig: toleranceConfig,
+        source: toleranceSource,
         maxRetries: 1,
       }),
     ).rejects.toThrow(/does not match the requested/);
-
-    globalThis.fetch = mockFetch({
-      execute: () => toleranceResponse({ configHash: SOURCE_ID }),
-    }) as unknown as typeof fetch;
-    await expect(
-      new MolphaGateway("http://gw1", registry).requestSignedData({
-        ...baseRequest,
-        signaturesRequired: 3,
-        apiConfig: toleranceConfig,
-        maxRetries: 1,
-      }),
-    ).rejects.toThrow(/configHash .* does not match/);
   });
 
-  it("checks the gateway's aggregation echo against the request", async () => {
-    const request = () =>
-      new MolphaGateway("http://gw1", registry).requestSignedData({
-        ...baseRequest,
-        signaturesRequired: 3,
-        apiConfig: toleranceConfig,
-        maxRetries: 1,
-      });
-
-    globalThis.fetch = mockFetch({
-      execute: () => toleranceResponse({ aggregation }),
-    }) as unknown as typeof fetch;
-    await expect(request()).resolves.toMatchObject({ value: "42150.12345678" });
-
-    globalThis.fetch = mockFetch({
-      execute: () => toleranceResponse({ aggregation: { ...aggregation, maxDeviationBps: 51 } }),
-    }) as unknown as typeof fetch;
-    await expect(request()).rejects.toThrow(/aggregation .* does not match the requested/);
-
-    // An exact request must not come back as a tolerance round.
-    globalThis.fetch = mockFetch({
-      execute: () => completed({ aggregation }),
-    }) as unknown as typeof fetch;
-    await expect(
-      new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, maxRetries: 1 }),
-    ).rejects.toThrow(/request was exact mode/);
-  });
-
-  it("encrypts the tolerance config and the plaintext hashes to the sourceId", async () => {
+  it("encrypts the tolerance source and the public form hashes to the sourceId", async () => {
     let postedBody: Record<string, unknown> | undefined;
     globalThis.fetch = mockFetch({
       execute: (_url, body) => {
@@ -1206,7 +1146,6 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
         return toleranceResponse();
       },
     }) as unknown as typeof fetch;
-    const config = toleranceConfig;
     const gw = new MolphaGateway("http://gw1", registry, undefined, {
       allowUnverifiedNodeKeysForPrivateApi: true,
       defaultSubscriptionOwner: SUBSCRIPTION_OWNER,
@@ -1214,14 +1153,59 @@ describe("MolphaGateway.requestSignedData tolerance (median) mode", () => {
     await expect(
       gw.requestSignedData({
         signaturesRequired: 3,
-        apiConfig: config,
+        source: toleranceSource,
         encrypt: { secrets: {} },
         context: { registryVersion: 1, redundancyBuffer: 2, nodes: encryptedNodes },
         maxRetries: 1,
       }),
     ).resolves.toMatchObject({ payload: { sourceId: TOLERANCE_SOURCE_ID } });
-    expect(postedBody?.sourceId).toBe(deriveSourceIdString(config));
-    expect((postedBody?.apiConfig as Record<string, unknown>).aggregation).toEqual(aggregation);
+    expect(postedBody?.sourceId).toBe(TOLERANCE_SOURCE_ID);
+    expect((postedBody?.source as Record<string, unknown>).aggregation).toEqual({
+      maxAgeMs: "2000", maxDeviationBps: "50", mode: "tolerance", rule: "median",
+    });
     expect(postedBody?.encKeyBundle).toBeDefined();
+  });
+});
+
+describe("MolphaGateway.requestSignedData keccak256 output", () => {
+  const keccakSource = defineSource({
+    inputs: { r: sx.httpInput({ url: "http://api", decode: sx.textDecode({ sig: "sig=([0-9a-f]+)" }) }) },
+    transform: sx.hexBytes(sx.concat(sx.strLit("0x"), sx.ref("r.sig"))),
+    output: { type: "keccak256" },
+  });
+  const KECCAK_ID = keccakSource.idHex.slice(2);
+  // keccak256(0x616263)
+  const HASH = "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45";
+
+  const response = (preimage: string) =>
+    jsonResponse({
+      status: "completed",
+      data: {
+        ...(signedResponseBody({ sourceId: KECCAK_ID, valuePacked: HASH, signaturesRequired: 1 }).data as object),
+        valuePreimage: preimage,
+      },
+    });
+
+  it("returns the preimage next to the attestation once it hashes to the signed value", async () => {
+    globalThis.fetch = mockFetch({ execute: () => response("0x616263") }) as unknown as typeof fetch;
+    const result = await new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, source: keccakSource, maxRetries: 1 });
+    expect(result.valuePreimage).toBe("0x616263");
+    expect(result.value).toBe("0x" + HASH);
+  });
+
+  it("refuses a preimage that does not hash to the signed value", async () => {
+    globalThis.fetch = mockFetch({ execute: () => response("0x616264") }) as unknown as typeof fetch;
+    await expect(
+      new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, source: keccakSource, maxRetries: 1 }),
+    ).rejects.toThrow(/preimage does not hash/);
+  });
+
+  it("refuses a preimage for a source whose output is not keccak256", async () => {
+    globalThis.fetch = mockFetch({
+      execute: () => jsonResponse({ status: "completed", data: { ...(signedResponseBody({ sourceId: SOURCE_ID, signaturesRequired: 1 }).data as object), valuePreimage: "0x61" } }),
+    }) as unknown as typeof fetch;
+    await expect(
+      new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, maxRetries: 1 }),
+    ).rejects.toThrow(/output is not keccak256/);
   });
 });

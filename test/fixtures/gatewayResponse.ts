@@ -1,6 +1,6 @@
 /**
  * A `completed` gateway execute response (`AttestationResponse`: `{ status, data: { attestation:
- * { payload, signature }, value, fresh, configHash?, aggregation? } }`) built from flat field names.
+ * { payload, signature }, value, fresh, valuePreimage? } }`) built from flat field names.
  * A key set to `undefined` is omitted, so a test can drop one field from an otherwise valid body.
  */
 export interface SignedResponseFields {
@@ -19,8 +19,7 @@ export interface SignedResponseFields {
   /** `attestation.signature.commitment`. */
   commitmentAddr?: string;
   fresh?: boolean;
-  configHash?: string;
-  aggregation?: unknown;
+  valuePreimage?: string;
 }
 
 const defined = (record: Record<string, unknown>): Record<string, unknown> =>
@@ -57,8 +56,7 @@ export function signedResponseBody(flat: SignedResponseFields = {}): Record<stri
       },
       value: f.value,
       fresh: f.fresh,
-      configHash: f.configHash,
-      aggregation: f.aggregation,
+      valuePreimage: f.valuePreimage,
     }),
   };
 }

@@ -9,7 +9,11 @@
  */
 import { bigIntFromBytesBe, toFixedBytes } from "../core/encoding.js";
 import type { Attestation } from "../core/types.js";
-import { VERIFY_CODES, verifyCodeName, type VerifyCodeName } from "../core/verifyCodes.js";
+import {
+  VERIFY_CODES,
+  verifyCodeName,
+  type VerifyCodeName,
+} from "../core/verifyCodes.js";
 
 /**
  * Starknet calldata shape for `AttestationPayload`.
@@ -86,7 +90,9 @@ const U256_MAX = (1n << 256n) - 1n;
 const ADDRESS_MAX = (1n << 160n) - 1n;
 
 function strip0x(value: string): string {
-  return value.startsWith("0x") || value.startsWith("0X") ? value.slice(2) : value;
+  return value.startsWith("0x") || value.startsWith("0X")
+    ? value.slice(2)
+    : value;
 }
 
 function stripOuterQuotes(value: string): string {
@@ -100,7 +106,11 @@ function stripOuterQuotes(value: string): string {
   return trimmed;
 }
 
-function toStrictHex(value: string, bytes: number, label: string): `0x${string}` {
+function toStrictHex(
+  value: string,
+  bytes: number,
+  label: string,
+): `0x${string}` {
   const clean = strip0x(stripOuterQuotes(value)).toLowerCase();
   if (clean.length !== bytes * 2) {
     throw new RangeError(
@@ -123,14 +133,18 @@ function fixedHexToBigInt(value: string, bytes: number, label: string): bigint {
  */
 function assertUint(value: number, max: bigint, label: string): number {
   if (!Number.isSafeInteger(value) || value < 0 || BigInt(value) > max) {
-    throw new RangeError(`${label}: expected an integer in 0..${max}, got ${value}`);
+    throw new RangeError(
+      `${label}: expected an integer in 0..${max}, got ${value}`,
+    );
   }
   return value;
 }
 
 function assertBigUint(value: bigint, max: bigint, label: string): bigint {
   if (value < 0n || value > max) {
-    throw new RangeError(`${label}: expected an integer in 0..${max}, got ${value}`);
+    throw new RangeError(
+      `${label}: expected an integer in 0..${max}, got ${value}`,
+    );
   }
   return value;
 }
@@ -140,7 +154,10 @@ function toFelt(value: bigint | number): `0x${string}` {
 }
 
 /** Cairo `u256` serializes as two felts, low limb first. */
-function u256Felts(value: bigint, label: string): [`0x${string}`, `0x${string}`] {
+function u256Felts(
+  value: bigint,
+  label: string,
+): [`0x${string}`, `0x${string}`] {
   assertBigUint(value, U256_MAX, label);
   return [toFelt(value & U128_MASK), toFelt(value >> 128n)];
 }
@@ -149,7 +166,8 @@ function feltToBigInt(value: StarknetFeltLike, label: string): bigint {
   if (typeof value === "boolean") return value ? 1n : 0n;
   if (typeof value === "bigint") return value;
   if (typeof value === "number") {
-    if (!Number.isSafeInteger(value)) throw new RangeError(`${label}: not an integer: ${value}`);
+    if (!Number.isSafeInteger(value))
+      throw new RangeError(`${label}: not an integer: ${value}`);
     return BigInt(value);
   }
   const text = value.trim();
@@ -184,8 +202,16 @@ export function buildStarknetVerifierArgs(
   const payload: StarknetAttestationPayload = {
     value: fixedHexToBigInt(signed.value, 32, "payload.value"),
     source_id: fixedHexToBigInt(signed.sourceId, 32, "sourceId"),
-    registry_version: assertUint(signed.registryVersion, U32_MAX, "registryVersion"),
-    signatures_required: assertUint(signed.signaturesRequired, U8_MAX, "signaturesRequired"),
+    registry_version: assertUint(
+      signed.registryVersion,
+      U32_MAX,
+      "registryVersion",
+    ),
+    signatures_required: assertUint(
+      signed.signaturesRequired,
+      U8_MAX,
+      "signaturesRequired",
+    ),
     timestamp: assertUint(signed.timestamp, U64_MAX, "timestamp"),
   };
 
@@ -210,13 +236,17 @@ export function buildStarknetVerifierArgs(
  *
  * For a raw `starknet_call` with `entry_point_selector = selector("verify")`.
  */
-export function encodeStarknetVerifyCalldata(args: StarknetVerifierArgs): `0x${string}`[] {
+export function encodeStarknetVerifyCalldata(
+  args: StarknetVerifierArgs,
+): `0x${string}`[] {
   const { payload, signature } = args.attestation;
   return [
     ...u256Felts(payload.value, "value"),
     ...u256Felts(payload.source_id, "source_id"),
     toFelt(assertUint(payload.registry_version, U32_MAX, "registry_version")),
-    toFelt(assertUint(payload.signatures_required, U8_MAX, "signatures_required")),
+    toFelt(
+      assertUint(payload.signatures_required, U8_MAX, "signatures_required"),
+    ),
     toFelt(assertUint(payload.timestamp, U64_MAX, "timestamp")),
     ...u256Felts(signature.signature, "signature"),
     // An Ethereum-style address, so it must fit 160 bits (the verifier reports a wider one
@@ -241,13 +271,20 @@ export function parseStarknetVerifyResult(
     | { readonly 0: StarknetFeltLike; readonly 1: StarknetFeltLike },
 ): StarknetVerifyResult {
   if (Array.isArray(result) && result.length !== 2) {
-    throw new RangeError(`verify result: expected 2 felts, got ${result.length}`);
+    throw new RangeError(
+      `verify result: expected 2 felts, got ${result.length}`,
+    );
   }
-  const tuple = result as { readonly 0: StarknetFeltLike; readonly 1: StarknetFeltLike };
+  const tuple = result as {
+    readonly 0: StarknetFeltLike;
+    readonly 1: StarknetFeltLike;
+  };
 
   const successFelt = feltToBigInt(tuple[0], "verify result success");
   if (successFelt !== 0n && successFelt !== 1n) {
-    throw new RangeError(`verify result: success must be 0 or 1, got ${successFelt}`);
+    throw new RangeError(
+      `verify result: success must be 0 or 1, got ${successFelt}`,
+    );
   }
   const codeFelt = feltToBigInt(tuple[1], "verify result code");
   if (codeFelt < 0n || codeFelt > U8_MAX) {

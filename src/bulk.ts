@@ -17,14 +17,19 @@
  * registry refreshed once; see {@link retryDelayMs}).
  */
 import type { Address } from "@solana/kit";
-import type { APIConfig, Attestation } from "./core/types.js";
-import { deriveSourceIdString } from "./core/apiconfig.js";
-import { GatewayError, type RequestSignedDataOptions } from "./gateway/index.js";
+import type { Attestation } from "./core/types.js";
+import { asParsedSource } from "./core/sourcebuild.js";
+import type { ParsedSource } from "./core/source.js";
+import {
+  GatewayError,
+  type RequestSignedDataOptions,
+} from "./gateway/index.js";
 import type { MolphaSDK } from "./index.js";
 
 /** One feed to update. */
 export interface BulkFeed {
-  apiConfig: APIConfig;
+  /** The source to update; parse it once (`defineSource`, `parseSource`) when updating many feeds. */
+  source: ParsedSource | string | object;
   signaturesRequired: number;
   /** Echoed in the result; for the caller's own bookkeeping. */
   label?: string;
@@ -47,9 +52,12 @@ export interface BulkOptions {
   submitConcurrency?: number;
   /**
    * Options applied to every request (subscription owner, signer, `maxRetries`, `timeoutMs`, ...).
-   * `apiConfig`, `signaturesRequired` and `context` are set per feed.
+   * `source`, `signaturesRequired` and `context` are set per feed.
    */
-  request?: Omit<RequestSignedDataOptions, "apiConfig" | "signaturesRequired" | "context">;
+  request?: Omit<
+    RequestSignedDataOptions,
+    "source" | "signaturesRequired" | "context"
+  >;
   /** Called as each feed finishes, in completion order. */
   onResult?: (result: BulkResult) => void;
   /** Stops starting new feeds; those already started finish. */
@@ -162,7 +170,10 @@ export async function requestMany(
   const ceiling =
     opts.concurrency ??
     (advertised?.maxInflightRounds
-      ? Math.min(Math.max(1, Math.floor(advertised.maxInflightRounds / 2)), MAX_DEFAULT_CONCURRENCY)
+      ? Math.min(
+          Math.max(1, Math.floor(advertised.maxInflightRounds / 2)),
+          MAX_DEFAULT_CONCURRENCY,
+        )
       : DEFAULT_CONCURRENCY);
   const requests = new AdaptiveLimiter(ceiling, ceiling);
   const submits = new AdaptiveLimiter(
@@ -176,10 +187,19 @@ export async function requestMany(
 
   const one = async (index: number): Promise<void> => {
     const feed = feeds[index]!;
-    const result: BulkResult = { index, ok: false, ...(feed.label !== undefined ? { label: feed.label } : {}) };
+    const result: BulkResult = {
+      index,
+      ok: false,
+      ...(feed.label !== undefined ? { label: feed.label } : {}),
+    };
     results[index] = result;
     try {
-      const wait = spreadOffsetMs(deriveSourceIdString(feed.apiConfig), opts.spreadMs ?? 0) - (Date.now() - started);
+      const wait =
+        spreadOffsetMs(
+          asParsedSource(feed.source).idHex.slice(2),
+          opts.spreadMs ?? 0,
+        ) -
+        (Date.now() - started);
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
       if (opts.signal?.aborted) {
         result.error = new Error("aborted before the feed was started");
@@ -191,7 +211,7 @@ export async function requestMany(
       try {
         result.attestation = await sdk.gateway.requestSignedData({
           ...opts.request,
-          apiConfig: feed.apiConfig,
+          source: feed.source,
           signaturesRequired: feed.signaturesRequired,
           context,
         });

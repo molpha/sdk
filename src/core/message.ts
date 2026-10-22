@@ -11,7 +11,14 @@
  * Widths follow the Rust, Solidity, Solana, and node encoders.
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { concatBytes, toFixedBytes, u8, u32be, u64be, utf8 } from "./encoding.js";
+import {
+  concatBytes,
+  toFixedBytes,
+  u8,
+  u32be,
+  u64be,
+  utf8,
+} from "./encoding.js";
 import type { Attestation } from "./types.js";
 
 /** `keccak256("MOLPHA_MESSAGE_V1")` domain separator. */
@@ -32,9 +39,17 @@ export interface AttestationMessageFields {
 }
 
 /** Compute the attestation message hash (32 bytes). */
-export function attestationMessageHash(fields: AttestationMessageFields): Uint8Array {
-  if (!Number.isInteger(fields.signaturesRequired) || fields.signaturesRequired < 0 || fields.signaturesRequired > 255) {
-    throw new RangeError(`signaturesRequired out of u8 range: ${fields.signaturesRequired}`);
+export function attestationMessageHash(
+  fields: AttestationMessageFields,
+): Uint8Array {
+  if (
+    !Number.isInteger(fields.signaturesRequired) ||
+    fields.signaturesRequired < 0 ||
+    fields.signaturesRequired > 255
+  ) {
+    throw new RangeError(
+      `signaturesRequired out of u8 range: ${fields.signaturesRequired}`,
+    );
   }
   return keccak_256(
     concatBytes(
@@ -50,7 +65,9 @@ export function attestationMessageHash(fields: AttestationMessageFields): Uint8A
 }
 
 /** Message hash of a completed gateway attestation (`payload.value` is the signed word). */
-export function attestationMessageHashFromAttestation(attestation: Attestation): Uint8Array {
+export function attestationMessageHashFromAttestation(
+  attestation: Attestation,
+): Uint8Array {
   const { payload, signature } = attestation;
   return attestationMessageHash({
     sourceId: payload.sourceId,

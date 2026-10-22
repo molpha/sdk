@@ -39,8 +39,11 @@ export interface GatewayInfo {
   maxInflightRounds?: number;
 }
 
-export function normalizeEndpoint(input: GatewayEndpointInput): GatewayEndpoint {
-  const endpoint: GatewayEndpoint = typeof input === "string" ? { url: input } : { ...input };
+export function normalizeEndpoint(
+  input: GatewayEndpointInput,
+): GatewayEndpoint {
+  const endpoint: GatewayEndpoint =
+    typeof input === "string" ? { url: input } : { ...input };
   endpoint.url = endpoint.url.replace(/\/$/, "");
   if (!endpoint.url) throw new Error("Gateway endpoint url must not be empty");
   return endpoint;
@@ -68,7 +71,9 @@ export async function deriveGatewayPda(
   gatewayAuthority: string,
   programId: string,
 ): Promise<Uint8Array> {
-  return addressToBytes(await deriveGatewayPdaAddress(gatewayAuthority, programId));
+  return addressToBytes(
+    await deriveGatewayPdaAddress(gatewayAuthority, programId),
+  );
 }
 
 /** Validate an unwrapped `/v1/info` payload. */
@@ -91,8 +96,10 @@ export function parseGatewayInfo(data: unknown): GatewayInfo {
   const positive = (v: unknown): number | undefined =>
     typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
   const roundTimeoutSeconds = positive(record.roundTimeoutSeconds);
-  if (roundTimeoutSeconds !== undefined) info.roundTimeoutSeconds = roundTimeoutSeconds;
+  if (roundTimeoutSeconds !== undefined)
+    info.roundTimeoutSeconds = roundTimeoutSeconds;
   const maxInflightRounds = positive(record.maxInflightRounds);
-  if (maxInflightRounds !== undefined) info.maxInflightRounds = maxInflightRounds;
+  if (maxInflightRounds !== undefined)
+    info.maxInflightRounds = maxInflightRounds;
   return info;
 }

@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { deriveSourceIdString } from "../src/core/apiconfig.js";
-import type { APIConfig, Attestation } from "../src/core/types.js";
+import { jsonPriceSource } from "../src/core/sourcebuild.js";
+import type { ParsedSource } from "../src/core/source.js";
+import type { Attestation } from "../src/core/types.js";
 import { GatewayError } from "../src/gateway/index.js";
 import { AdaptiveLimiter, requestMany, spreadOffsetMs, type BulkFeed } from "../src/bulk.js";
 import type { MolphaSDK } from "../src/index.js";
 
 const feedsOf = (n: number): BulkFeed[] =>
   Array.from({ length: n }, (_, i) => ({
-    apiConfig: { url: `http://api/feed/${i}`, responseParser: "$.price" } as APIConfig,
+    source: jsonPriceSource({ url: `http://api/feed/${i}`, path: "$.price", decimals: 0 }),
     signaturesRequired: 3,
     label: `f${i}`,
   }));
@@ -16,7 +17,7 @@ const att = (i: number) => ({ value: String(i), payload: { sourceId: `src${i}` }
 
 interface FakeOptions {
   info?: { maxInflightRounds?: number } | Error;
-  request?: (apiConfig: APIConfig, call: number) => Promise<Attestation>;
+  request?: (source: ParsedSource, call: number) => Promise<Attestation>;
   submit?: (a: Attestation) => Promise<{ signature: string; feed: string }>;
 }
 
@@ -33,14 +34,14 @@ function fakeSdk(o: FakeOptions = {}) {
         calls.prepare++;
         return { registryVersion: 7, redundancyBuffer: 1, nodeCount: 4, nodes: [] };
       }),
-      requestSignedData: vi.fn(async (req: { apiConfig: APIConfig; context: unknown }) => {
+      requestSignedData: vi.fn(async (req: { source: ParsedSource; context: unknown }) => {
         const call = ++calls.request;
         calls.contexts.push(req.context);
         calls.inFlight++;
         calls.peak = Math.max(calls.peak, calls.inFlight);
         try {
           await new Promise((r) => setTimeout(r, 5));
-          return o.request ? await o.request(req.apiConfig, call) : att(call);
+          return o.request ? await o.request(req.source, call) : att(call);
         } finally {
           calls.inFlight--;
         }
@@ -99,7 +100,7 @@ describe("requestMany", () => {
   it("a failed feed does not stop the others", async () => {
     const { sdk } = fakeSdk({
       request: async (cfg, call) => {
-        if (cfg.url.endsWith("/3")) throw new GatewayError("rejected (400)", 400);
+        if (cfg.canonical.includes("/feed/3\"")) throw new GatewayError("rejected (400)", 400);
         return att(call);
       },
     });
@@ -168,10 +169,10 @@ describe("requestMany", () => {
 
 describe("spreading", () => {
   it("places a feed at the same offset every time, within the window", () => {
-    const id = deriveSourceIdString({ url: "http://api/x", responseParser: "$.p" });
+    const id = jsonPriceSource({ url: "http://api/x", path: "$.p", decimals: 0 }).idHex.slice(2);
     expect(spreadOffsetMs(id, 1000)).toBe(spreadOffsetMs(id, 1000));
     for (const f of feedsOf(200)) {
-      const o = spreadOffsetMs(deriveSourceIdString(f.apiConfig), 1000);
+      const o = spreadOffsetMs((f.source as ParsedSource).idHex.slice(2), 1000);
       expect(o).toBeGreaterThanOrEqual(0);
       expect(o).toBeLessThan(1000);
     }
@@ -180,7 +181,7 @@ describe("spreading", () => {
 
   it("spreads many feeds across the window instead of stacking them", () => {
     const buckets = new Array(10).fill(0);
-    for (const f of feedsOf(1000)) buckets[Math.floor(spreadOffsetMs(deriveSourceIdString(f.apiConfig), 1000) / 100)]++;
+    for (const f of feedsOf(1000)) buckets[Math.floor(spreadOffsetMs((f.source as ParsedSource).idHex.slice(2), 1000) / 100)]++;
     // 1,000 feeds over 10 buckets of 100 ms: no bucket holds a burst.
     expect(Math.max(...buckets)).toBeLessThan(160);
     expect(Math.min(...buckets)).toBeGreaterThan(50);

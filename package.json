@@ -1,6 +1,6 @@
 {
   "name": "@molpha/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Molpha Consumer SDK — subscribe, request signed data from the gateway, submit attestations and read on-chain feeds.",
   "license": "MIT",
   "repository": {
@@ -49,6 +49,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf dist",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
     "changeset": "changeset",
     "changeset:add-empty": "changeset add --empty",
     "version-packages": "changeset version",
@@ -57,14 +60,14 @@
     "release:dev": "changeset version --snapshot dev && pnpm build && npm publish --tag dev"
   },
   "dependencies": {
-    "@noble/ciphers": "^2.2.0",
-    "@noble/curves": "^2.2.0",
-    "@noble/hashes": "^2.2.0",
-    "@solana/kit": "^7.0.0",
-    "canonicalize": "^3.0.0"
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@solana/kit": "^8.5.0",
+    "canonicalize": "^5.1.0"
   },
   "peerDependencies": {
-    "@anchor-lang/core": "^1.1.2",
+    "@anchor-lang/core": "^1.2.1",
     "bn.js": "^5.1.2"
   },
   "peerDependenciesMeta": {
@@ -76,15 +79,21 @@
     }
   },
   "devDependencies": {
-    "@anchor-lang/core": "^1.1.2",
-    "@changesets/cli": "^2.31.0",
+    "@anchor-lang/core": "^1.2.1",
+    "@changesets/cli": "^3.0.3",
+    "@eslint/js": "^10.0.1",
     "@types/bn.js": "^5.2.0",
     "bn.js": "^5.2.3",
-    "tsup": "^8.5.1",
+    "eslint": "^10.0.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "tsup": "^9.0.0",
     "tsx": "^4.22.4",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.72.0",
     "viem": "^2.52.2",
-    "vitest": "^3.0.5"
+    "vitest": "^5.0.5"
   },
   "pnpm": {
     "overrides": {

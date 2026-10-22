@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deriveSourceIdString } from "../src/core/apiconfig.js";
+import { jsonPriceSource } from "../src/core/sourcebuild.js";
 import {
   DEFAULT_MAX_RETRIES,
   DEFAULT_ROUND_TIMEOUT_MS,
@@ -12,12 +12,12 @@ import { ROUND_TICK_MS } from "../src/core/timestamp.js";
 import { signedResponseBody } from "./fixtures/gatewayResponse.js";
 
 const OWNER = "9K9FknHzW7j8a88yKTrzxKfDrxnV2QLqSR58ETAVdc8P";
-const apiConfig = { url: "http://api", responseParser: "$.price" };
+const source = jsonPriceSource({ url: "http://api", path: "$.price", decimals: 0 });
 const registry = async () => ({ registryVersion: 1, redundancyBuffer: 2, nodeCount: 3 });
 const completed = () => new Response(JSON.stringify(signedResponseBody({})), { status: 200, headers: { "content-type": "application/json" } });
 const json = (body: unknown, status: number, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
-const request = { signaturesRequired: 1, apiConfig, subscriptionOwner: OWNER };
+const request = { signaturesRequired: 1, source, subscriptionOwner: OWNER };
 /** A `sleep` that returns at once and records what it was asked to wait. */
 const recordingSleep = () => {
   const delays: number[] = [];
@@ -182,7 +182,7 @@ describe("requestSignedData failure handling", () => {
   });
 
   it("other 400s are never treated as a stale version", async () => {
-    const execute = vi.fn(async () => json({ error: "apiConfig.url must use an http or https scheme" }, 400));
+    const execute = vi.fn(async () => json({ error: "source.inputs.px.read.url: url scheme must be http or https" }, 400));
     globalThis.fetch = execute as unknown as typeof fetch;
     const getRegistry = vi.fn(registry);
     const gw = new MolphaGateway("http://gw", getRegistry, undefined, OWNER);
@@ -242,6 +242,6 @@ describe("requestSignedData failure handling", () => {
   });
 
   it("derives the source id as before", () => {
-    expect(deriveSourceIdString(apiConfig)).toMatch(/^[0-9a-f]{64}$/);
+    expect(source.idHex).toMatch(/^0x[0-9a-f]{64}$/);
   });
 });

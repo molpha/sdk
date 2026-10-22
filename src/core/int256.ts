@@ -19,7 +19,9 @@ const MAX_DECIMAL_DIGITS = 10_000;
 
 function assertDecimals(decimals: number): void {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
-    throw new RangeError(`decimals must be an integer in 0..255, got ${decimals}`);
+    throw new RangeError(
+      `decimals must be an integer in 0..255, got ${decimals}`,
+    );
   }
 }
 
@@ -52,9 +54,16 @@ export function decodeInt256(value: Uint8Array | string): bigint {
  *
  * @throws {Error} `invalid decimal`, `decimal too long`, or `int256 overflow`.
  */
-export function encodeInt256Decimal(decimal: string, decimals: number): Uint8Array {
+export function encodeInt256Decimal(
+  decimal: string,
+  decimals: number,
+): Uint8Array {
   assertDecimals(decimals);
-  if (typeof decimal !== "string" || decimal === "" || decimal.trim() !== decimal) {
+  if (
+    typeof decimal !== "string" ||
+    decimal === "" ||
+    decimal.trim() !== decimal
+  ) {
     throw new Error("invalid decimal");
   }
   let s = decimal;
@@ -62,7 +71,11 @@ export function encodeInt256Decimal(decimal: string, decimals: number): Uint8Arr
   if (negative || s.startsWith("+")) s = s.slice(1);
 
   const parts = s.split(".");
-  if (parts.length > 2 || parts[0] === "" || (parts.length === 2 && parts[1] === "")) {
+  if (
+    parts.length > 2 ||
+    parts[0] === "" ||
+    (parts.length === 2 && parts[1] === "")
+  ) {
     throw new Error("invalid decimal");
   }
   for (const part of parts) {
@@ -95,7 +108,10 @@ export function encodeInt256Decimal(decimal: string, decimals: number): Uint8Arr
  * trimmed (`-1.2`, `42`, `0.00000005`). Inverse of {@link encodeInt256Decimal} up to
  * rounding.
  */
-export function formatInt256Decimal(value: Uint8Array | string | bigint, decimals: number): string {
+export function formatInt256Decimal(
+  value: Uint8Array | string | bigint,
+  decimals: number,
+): string {
   assertDecimals(decimals);
   const n = typeof value === "bigint" ? value : decodeInt256(value);
   if (n > INT256_MAX || n < INT256_MIN) throw new RangeError("int256 overflow");
@@ -107,6 +123,9 @@ export function formatInt256Decimal(value: Uint8Array | string | bigint, decimal
   let fracEnd = digits.length;
   while (fracEnd > point && digits[fracEnd - 1] === "0") fracEnd--;
   const fraction = digits.slice(point, fracEnd);
-  const text = fraction === "" ? digits.slice(0, point) : `${digits.slice(0, point)}.${fraction}`;
+  const text =
+    fraction === ""
+      ? digits.slice(0, point)
+      : `${digits.slice(0, point)}.${fraction}`;
   return negative ? `-${text}` : text;
 }
