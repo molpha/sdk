@@ -103,6 +103,11 @@ describe("builders", () => {
     const abc = "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45";
     expect(verifyPreimage(abc, "616263")).toBe(true);
     expect(verifyPreimage(abc, "616264")).toBe(false);
+    expect(verifyPreimage(abc, "616263f")).toBe(false);
+    expect(verifyPreimage(abc, "61zz63")).toBe(false);
+    expect(() =>
+      formatValue("f".repeat(63), { type: "int256", decimals: 0 }),
+    ).toThrow(/unpadded hex|hex string expected/);
   });
 
   it("checks chain bounds against the published list", () => {

@@ -10,6 +10,7 @@
  * This file is kept byte-identical in `@molpha/gateway-sdk` and `@molpha/sdk`.
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
+import { hexToBytes } from "./encoding.js";
 import {
   parseSource,
   type Expr,
@@ -506,10 +507,6 @@ export function asParsedSource(
 // Values
 // ---------------------------------------------------------------------------------------------
 
-const fromHex = (h: string): Uint8Array =>
-  Uint8Array.from(h.replace(/^0x/, "").match(/../g) ?? [], (b) =>
-    parseInt(b, 16),
-  );
 const toHexStr = (b: Uint8Array): string =>
   Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 
@@ -521,7 +518,7 @@ export function formatValue(
   valuePacked: string,
   output: { type: OutputType; decimals: number },
 ): string {
-  const bytes = fromHex(valuePacked);
+  const bytes = hexToBytes(valuePacked);
   if (bytes.length !== 32)
     throw new Error(`value must be 32 bytes, got ${bytes.length}`);
   if (output.type === "int256" || output.type === "uint256") {
@@ -558,8 +555,14 @@ export function verifyPreimage(
   valuePacked: string,
   preimageHex: string,
 ): boolean {
+  let preimage: Uint8Array;
+  try {
+    preimage = hexToBytes(preimageHex);
+  } catch {
+    return false;
+  }
   return (
-    toHexStr(keccak_256(fromHex(preimageHex))) ===
+    toHexStr(keccak_256(preimage)) ===
     valuePacked.replace(/^0x/, "").toLowerCase()
   );
 }

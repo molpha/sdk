@@ -9,7 +9,7 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { describe, expect, it } from "vitest";
 import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 import { MOLPHA_PROGRAM_ID, MOLPHA_SDK_PROFILE } from "../src/core/constants.js";
-import { hexToBytes, utf8 } from "../src/core/encoding.js";
+import { bytesToHex, hexToBytes, utf8 } from "../src/core/encoding.js";
 import type { Attestation } from "../src/core/types.js";
 import { buildSubmitAttestationArgs } from "../src/solana/client.js";
 import { SYSTEM_PROGRAM_ADDRESS } from "../src/solana/kit.js";
@@ -176,6 +176,30 @@ describeParityIdl("vendored IDL (parity / epoch-settlement)", () => {
     expect(() => buildSubmitAttestationArgs(result, COALITION_KEY, rawValue)).toThrow(/digest does not match/);
     expect(() => buildSubmitAttestationArgs(hashedResult, COALITION_KEY, new Uint8Array(257))).toThrow(/256/);
   });
+
+  it("uses an empty keccak256 preimage from valuePreimage 0x", () => {
+    const emptyHash = Buffer.from(keccak_256(new Uint8Array(0))).toString("hex");
+    const hashedResult: Attestation = {
+      ...result,
+      payload: { ...result.payload, value: emptyHash },
+      valuePreimage: "0x",
+    };
+    const args = buildSubmitAttestationArgs(hashedResult, COALITION_KEY);
+    expect(args.rawValue).not.toBeNull();
+    expect(args.rawValue).toHaveLength(0);
+    expect(
+      bytesToHex(keccak_256(args.rawValue!)),
+    ).toBe(bytesToHex(hexToBytes(emptyHash)));
+
+    const { program } = offlineProgram();
+    const encoded = program.coder.instruction.encode("submitAttestation", {
+      args,
+    });
+    expect(encoded[8 + 161]).toBe(1); // Option::Some for zero-length raw_value
+    expect(encoded.readUInt32LE(8 + 162)).toBe(0);
+    expect(encoded.length).toBe(8 + 161 + 1 + 4 + 0 + 64);
+  });
+
 
   it("decodes the zero-copy Registry snapshot", () => {
     const { program } = offlineProgram();

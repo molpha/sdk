@@ -1038,12 +1038,15 @@ export function buildSubmitAttestationArgs(
   // A keccak256 output's preimage rides along with the attestation; the program stores it as the raw
   // value when it fits (at most 256 bytes), and the feed then records that its value is a hash.
   rawValue ??= attestationPreimage(attestation);
-  if (rawValue && rawValue.length > 256) {
+  if (rawValue != null && rawValue.length > 256) {
     throw new RangeError(
       `rawValue must be at most 256 bytes, got ${rawValue.length}`,
     );
   }
-  if (rawValue && bytesToHex(keccak_256(rawValue)) !== bytesToHex(value)) {
+  if (
+    rawValue != null &&
+    bytesToHex(keccak_256(rawValue)) !== bytesToHex(value)
+  ) {
     throw new Error(
       "rawValue keccak256 digest does not match attestation.payload.value",
     );
@@ -1071,7 +1074,7 @@ export function buildSubmitAttestationArgs(
         ),
       },
     },
-    rawValue: rawValue ? toAnchorBytes(rawValue) : null,
+    rawValue: rawValue != null ? toAnchorBytes(rawValue) : null,
     coalitionKey: {
       x: Array.from(toFixedBytes(coalitionKey.x, 32, "coalitionKey.x")),
       y: Array.from(toFixedBytes(coalitionKey.y, 32, "coalitionKey.y")),
@@ -1081,8 +1084,10 @@ export function buildSubmitAttestationArgs(
 
 /** The attestation's keccak256 preimage if it has one the program can take (at most 256 bytes). */
 function attestationPreimage(attestation: Attestation): Uint8Array | undefined {
-  const hex = attestation.valuePreimage?.replace(/^0x/, "");
-  if (!hex || hex.length > 512) return undefined;
+  const preimage = attestation.valuePreimage;
+  if (preimage === undefined) return undefined;
+  const hex = preimage.replace(/^0x/, "");
+  if (hex.length > 512) return undefined;
   return hexToBytes(hex);
 }
 
