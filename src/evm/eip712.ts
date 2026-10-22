@@ -8,7 +8,13 @@
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { bytesToHex, bytesToHex0x, concatBytes, hexToBytes, utf8 } from "../core/encoding.js";
+import {
+  bytesToHex,
+  bytesToHex0x,
+  concatBytes,
+  hexToBytes,
+  utf8,
+} from "../core/encoding.js";
 import type { EvmSigner } from "../core/types.js";
 
 /** EIP-712 domain of the token contract that will settle the authorization. */
@@ -51,7 +57,8 @@ function word(bytes: Uint8Array): Uint8Array {
 
 function addressWord(address: string): Uint8Array {
   const bytes = hexToBytes(address);
-  if (bytes.length !== 20) throw new RangeError(`Not a 20-byte address: ${address}`);
+  if (bytes.length !== 20)
+    throw new RangeError(`Not a 20-byte address: ${address}`);
   return word(bytes);
 }
 
@@ -64,7 +71,8 @@ function uintWord(value: string | bigint): Uint8Array {
 
 function bytes32Word(value: string): Uint8Array {
   const bytes = hexToBytes(value);
-  if (bytes.length !== 32) throw new RangeError(`Not a 32-byte value: ${value}`);
+  if (bytes.length !== 32)
+    throw new RangeError(`Not a 32-byte value: ${value}`);
   return bytes;
 }
 
@@ -80,7 +88,9 @@ export function domainSeparator(domain: Eip712Domain): Uint8Array {
   );
 }
 
-export function transferWithAuthorizationHash(auth: TransferAuthorization): Uint8Array {
+export function transferWithAuthorizationHash(
+  auth: TransferAuthorization,
+): Uint8Array {
   return keccak_256(
     concatBytes(
       TRANSFER_WITH_AUTHORIZATION_TYPEHASH,
@@ -111,7 +121,8 @@ export function transferWithAuthorizationDigest(
 /** EIP-55 checksum form. Some facilitators reject non-checksummed addresses. */
 export function toChecksumAddress(address: string): string {
   const lower = bytesToHex(hexToBytes(address));
-  if (lower.length !== 40) throw new RangeError(`Not a 20-byte address: ${address}`);
+  if (lower.length !== 40)
+    throw new RangeError(`Not a 20-byte address: ${address}`);
   const digest = bytesToHex(keccak_256(utf8(lower)));
   let out = "0x";
   for (let i = 0; i < lower.length; i++) {
@@ -121,20 +132,29 @@ export function toChecksumAddress(address: string): string {
 }
 
 /** The EIP-55 address of a raw secp256k1 private key. */
-export function evmAddressFromPrivateKey(privateKey: string | Uint8Array): string {
-  const key = typeof privateKey === "string" ? hexToBytes(privateKey) : privateKey;
-  if (key.length !== 32) throw new RangeError("EVM private key must be 32 bytes");
+export function evmAddressFromPrivateKey(
+  privateKey: string | Uint8Array,
+): string {
+  const key =
+    typeof privateKey === "string" ? hexToBytes(privateKey) : privateKey;
+  if (key.length !== 32)
+    throw new RangeError("EVM private key must be 32 bytes");
   const uncompressed = secp256k1.getPublicKey(key, false);
   // Drop the 0x04 tag, keccak the 64-byte point, keep the low 20 bytes.
-  return toChecksumAddress(bytesToHex0x(keccak_256(uncompressed.subarray(1)).subarray(12)));
+  return toChecksumAddress(
+    bytesToHex0x(keccak_256(uncompressed.subarray(1)).subarray(12)),
+  );
 }
 
 /**
  * Build an {@link EvmSigner} from a raw secp256k1 private key. The key stays in
  * the caller's process: neither Molpha nor the gateway ever sees one.
  */
-export function createEvmSignerFromPrivateKey(privateKey: string | Uint8Array): EvmSigner {
-  const key = typeof privateKey === "string" ? hexToBytes(privateKey) : privateKey;
+export function createEvmSignerFromPrivateKey(
+  privateKey: string | Uint8Array,
+): EvmSigner {
+  const key =
+    typeof privateKey === "string" ? hexToBytes(privateKey) : privateKey;
   const address = evmAddressFromPrivateKey(key);
 
   return {
@@ -142,7 +162,10 @@ export function createEvmSignerFromPrivateKey(privateKey: string | Uint8Array): 
     async signDigest(digest: Uint8Array): Promise<Uint8Array> {
       if (digest.length !== 32) throw new RangeError("Digest must be 32 bytes");
       // Noble returns [recovery || r || s]; Ethereum wants r || s || v.
-      const signed = secp256k1.sign(digest, key, { prehash: false, format: "recovered" });
+      const signed = secp256k1.sign(digest, key, {
+        prehash: false,
+        format: "recovered",
+      });
       const out = new Uint8Array(65);
       out.set(signed.subarray(1), 0);
       out[64] = 27 + signed[0]!;

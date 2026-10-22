@@ -24,13 +24,15 @@ const isKeypair = (value: unknown): value is SolanaKeypair =>
 /** ed25519 gateway signer from a Solana keypair's 32-byte seed. */
 export function signerFromKeypair(keypair: SolanaKeypair): Signer {
   const seed = keypair.secretKey.slice(0, 32);
-  return async (message: Uint8Array): Promise<Uint8Array> => ed25519.sign(message, seed);
+  return async (message: Uint8Array): Promise<Uint8Array> =>
+    ed25519.sign(message, seed);
 }
 
 /** Resolve the gateway auth signer for a Molpha wallet, if available. */
 export function gatewaySignerFromWallet(wallet: Wallet): Signer | undefined {
   const molpha = wallet as MolphaWallet;
   if (molpha.signAuthMessage) return molpha.signAuthMessage;
-  if ("payer" in wallet && isKeypair(wallet.payer)) return signerFromKeypair(wallet.payer);
+  if ("payer" in wallet && isKeypair(wallet.payer))
+    return signerFromKeypair(wallet.payer);
   return undefined;
 }

@@ -34,10 +34,9 @@ export type VerifyCodeName = keyof typeof VERIFY_CODES;
 export type VerifyCode = (typeof VERIFY_CODES)[VerifyCodeName];
 
 const NAMES_BY_CODE: ReadonlyMap<number, VerifyCodeName> = new Map(
-  (Object.entries(VERIFY_CODES) as [VerifyCodeName, VerifyCode][]).map(([name, code]) => [
-    code,
-    name,
-  ]),
+  (Object.entries(VERIFY_CODES) as [VerifyCodeName, VerifyCode][]).map(
+    ([name, code]) => [code, name],
+  ),
 );
 
 /**

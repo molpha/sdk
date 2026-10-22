@@ -1,5 +1,10 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { bytesToHex, concatBytes, ensureLength, hexToBytes } from "./encoding.js";
+import {
+  bytesToHex,
+  concatBytes,
+  ensureLength,
+  hexToBytes,
+} from "./encoding.js";
 
 const SECP256K1_COMPRESSED_PUBLIC_KEY_BYTES = 33;
 const SECP256K1_UNCOMPRESSED_PUBLIC_KEY_BYTES = 65;

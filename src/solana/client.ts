@@ -15,7 +15,7 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import BN from "bn.js";
 import type { Address } from "@solana/kit";
 import { type CoalitionKey, computeCoalitionKey } from "../core/coalition.js";
-import { bytesToHex, toFixedBytes } from "../core/encoding.js";
+import { bytesToHex, hexToBytes, toFixedBytes } from "../core/encoding.js";
 import {
   normalizeSecp256k1PublicKeyHex,
   secp256k1PublicKeyFromCoordinates,
@@ -52,7 +52,12 @@ import {
   subscriptionPda,
 } from "./pdas.js";
 import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../../idl/index.js";
-import { PlanType, planIdFromVariant, planVariant, type PlanId } from "./plans.js";
+import {
+  PlanType,
+  planIdFromVariant,
+  planVariant,
+  type PlanId,
+} from "./plans.js";
 
 export { PlanType, type PlanId } from "./plans.js";
 
@@ -70,7 +75,8 @@ const MAX_COMPUTE_UNIT_LIMIT = 1_400_000;
  * benchmark's, and a limit that is hit fails the transaction for good.
  */
 export function estimateSubmitComputeUnits(signerCount: number): number {
-  if (!Number.isInteger(signerCount) || signerCount < 1) return MAX_COMPUTE_UNIT_LIMIT;
+  if (!Number.isInteger(signerCount) || signerCount < 1)
+    return MAX_COMPUTE_UNIT_LIMIT;
   const measured = 43_000 + 9_200 * signerCount;
   return Math.min(Math.round(measured * 1.15) + 10_000, MAX_COMPUTE_UNIT_LIMIT);
 }
@@ -80,8 +86,13 @@ export function estimateSubmitComputeUnits(signerCount: number): number {
  * `signerCounts`: the same margin as {@link estimateSubmitComputeUnits} on the sum, with the fixed
  * 10k once for the transaction.
  */
-export function estimateSubmitBatchComputeUnits(signerCounts: number[]): number {
-  if (signerCounts.length === 0 || signerCounts.some((n) => !Number.isInteger(n) || n < 1)) {
+export function estimateSubmitBatchComputeUnits(
+  signerCounts: number[],
+): number {
+  if (
+    signerCounts.length === 0 ||
+    signerCounts.some((n) => !Number.isInteger(n) || n < 1)
+  ) {
     return MAX_COMPUTE_UNIT_LIMIT;
   }
   const measured = signerCounts.reduce((sum, n) => sum + 43_000 + 9_200 * n, 0);
@@ -98,14 +109,18 @@ export const SUBMIT_INSTRUCTION_DATA_BYTES = 234;
 const PLACEHOLDER_BLOCKHASH = "11111111111111111111111111111111";
 
 /** Bytes of a compact-u16 length prefix. */
-const shortVecBytes = (n: number): number => (n < 0x80 ? 1 : n < 0x4000 ? 2 : 3);
+const shortVecBytes = (n: number): number =>
+  n < 0x80 ? 1 : n < 0x4000 ? 2 : 3;
 
 /**
  * Serialized size of a legacy transaction with one signature (the fee payer's). It is computed from
  * the compiled message, not by serializing it: web3.js serializes into a fixed 1232 byte buffer and
  * throws for exactly the transactions this has to measure.
  */
-function transactionSize(payer: web3.PublicKey, instructions: web3.TransactionInstruction[]): number {
+function transactionSize(
+  payer: web3.PublicKey,
+  instructions: web3.TransactionInstruction[],
+): number {
   const tx = new web3.Transaction();
   tx.feePayer = payer;
   tx.recentBlockhash = PLACEHOLDER_BLOCKHASH;
@@ -113,11 +128,22 @@ function transactionSize(payer: web3.PublicKey, instructions: web3.TransactionIn
   const message = tx.compileMessage();
   const keys = message.accountKeys.length;
   // signatures (count + one), header, account keys, recent blockhash, instruction count
-  let size = 1 + 64 + 3 + shortVecBytes(keys) + 32 * keys + 32 + shortVecBytes(message.instructions.length);
+  let size =
+    1 +
+    64 +
+    3 +
+    shortVecBytes(keys) +
+    32 * keys +
+    32 +
+    shortVecBytes(message.instructions.length);
   message.instructions.forEach((compiled, i) => {
     const dataBytes = instructions[i]!.data.length;
     size +=
-      1 + shortVecBytes(compiled.accounts.length) + compiled.accounts.length + shortVecBytes(dataBytes) + dataBytes;
+      1 +
+      shortVecBytes(compiled.accounts.length) +
+      compiled.accounts.length +
+      shortVecBytes(dataBytes) +
+      dataBytes;
   });
   return size;
 }
@@ -134,7 +160,13 @@ export function estimateSubmitTransactionSize(
   opts: { distinctSigners?: number; priorityFee?: boolean } = {},
 ): number {
   const key = () => web3.Keypair.generate().publicKey;
-  const [payer, registry, feed, protocolConfig, program] = [key(), key(), key(), key(), key()];
+  const [payer, registry, feed, protocolConfig, program] = [
+    key(),
+    key(),
+    key(),
+    key(),
+    key(),
+  ];
   const distinct = Math.max(signerCount, opts.distinctSigners ?? signerCount);
   const nodes = Array.from({ length: distinct }, key);
   const instructions: web3.TransactionInstruction[] = [setComputeUnitLimit(1)];
@@ -148,7 +180,11 @@ export function estimateSubmitTransactionSize(
           { pubkey: registry, isSigner: false, isWritable: false },
           { pubkey: feed, isSigner: false, isWritable: true },
           { pubkey: protocolConfig, isSigner: false, isWritable: false },
-          { pubkey: new web3.PublicKey(SYSTEM_PROGRAM_ADDRESS), isSigner: false, isWritable: false },
+          {
+            pubkey: new web3.PublicKey(SYSTEM_PROGRAM_ADDRESS),
+            isSigner: false,
+            isWritable: false,
+          },
           ...Array.from({ length: signerCount }, (_, j) => ({
             pubkey: nodes[(i * signerCount + j) % distinct]!,
             isSigner: false,
@@ -168,7 +204,11 @@ export function maxAttestationsPerTransaction(
   opts: { distinctSigners?: number; priorityFee?: boolean } = {},
 ): number {
   let count = 0;
-  while (estimateSubmitTransactionSize(count + 1, signerCount, opts) <= web3.PACKET_DATA_SIZE) count++;
+  while (
+    estimateSubmitTransactionSize(count + 1, signerCount, opts) <=
+    web3.PACKET_DATA_SIZE
+  )
+    count++;
   return count;
 }
 
@@ -181,7 +221,9 @@ const PRIORITY_FEE_CACHE_MS = 5_000;
 /** Percentile of recent fees for `priorityFeeMicroLamports: "auto"`, and the most it will pay. */
 const AUTO_FEE_PERCENTILE = 0.75;
 const AUTO_FEE_CAP_MICRO_LAMPORTS = 1_000_000;
-type Commitment = NonNullable<ConstructorParameters<typeof AnchorProvider>[2]>["commitment"];
+type Commitment = NonNullable<
+  ConstructorParameters<typeof AnchorProvider>[2]
+>["commitment"];
 
 export interface SubscribeResult {
   signature: string;
@@ -270,7 +312,7 @@ export interface FeedAccount {
   bump: number;
 }
 
-  /** Anchor-encoded `SubmitAttestationArgs` (camelCase field names). */
+/** Anchor-encoded `SubmitAttestationArgs` (camelCase field names). */
 export interface SubmitAttestationArgs {
   attestation: {
     payload: {
@@ -341,8 +383,14 @@ export class MolphaSolanaClient {
   // Registry reads and signer keys are shared by every submit that names the same registry
   // version, so a fleet of feeds reads them once. Promises are cached, so concurrent submits
   // coalesce; a failed read is dropped and retried by the next call.
-  private readonly registryCache = new Map<number, { at: number; value: Promise<RegistryView> }>();
-  private readonly nodeKeyCache = new Map<string, { x: Uint8Array; y: Uint8Array }>();
+  private readonly registryCache = new Map<
+    number,
+    { at: number; value: Promise<RegistryView> }
+  >();
+  private readonly nodeKeyCache = new Map<
+    string,
+    { x: Uint8Array; y: Uint8Array }
+  >();
   private readonly coalitionCache = new Map<string, Promise<CoalitionKey>>();
   private priorityFeeCache?: { at: number; value: Promise<number> };
 
@@ -382,7 +430,9 @@ export class MolphaSolanaClient {
    * version-addressed `Registry`. Prefer this over {@link getRegistryVersion} when
    * deriving gateway selection bitmaps.
    */
-  async getRegistrySelectionConfig(): Promise<Required<RegistrySelectionConfig>> {
+  async getRegistrySelectionConfig(): Promise<
+    Required<RegistrySelectionConfig>
+  > {
     const state = await this.fetchRegistryState();
     const registry = await this.fetchRegistry(state.currentVersion);
     return {
@@ -413,12 +463,16 @@ export class MolphaSolanaClient {
 
   /** Read a plan account, or `null` if it has not been initialized. */
   async readPlan(plan: PlanType): Promise<PlanInfo | null> {
-    const account = await this.accounts.plan.fetchNullable(planPda(plan as PlanId, this.programId));
+    const account = await this.accounts.plan.fetchNullable(
+      planPda(plan as PlanId, this.programId),
+    );
     return account ? this.decodePlan(account) : null;
   }
 
   /** Read an owner's subscription, or `null` if they have not subscribed. */
-  async readSubscription(owner: SolanaAddress = this.wallet): Promise<SubscriptionInfo | null> {
+  async readSubscription(
+    owner: SolanaAddress = this.wallet,
+  ): Promise<SubscriptionInfo | null> {
     const account = await this.accounts.subscription.fetchNullable(
       subscriptionPda(owner, this.programId),
     );
@@ -453,8 +507,13 @@ export class MolphaSolanaClient {
     const planId = plan as PlanId;
     const owner = this.wallet;
     const { usdcMint, treasury } = await this.fetchProtocolTokens();
-    const price = await this.confirmPlanPrice(planId, opts.maxPriceUsdc, "subscribe");
-    const ownerUsdc = opts.ownerUsdc ?? getAssociatedTokenAddressSync(usdcMint, owner);
+    const price = await this.confirmPlanPrice(
+      planId,
+      opts.maxPriceUsdc,
+      "subscribe",
+    );
+    const ownerUsdc =
+      opts.ownerUsdc ?? getAssociatedTokenAddressSync(usdcMint, owner);
 
     const signature = await this.methods
       .subscribe(planVariant(planId))
@@ -477,16 +536,22 @@ export class MolphaSolanaClient {
    * this **debits USDC** (the plan's `subscriptionPrice`) and requires explicit
    * payment confirmation via `maxPriceUsdc`.
    */
-  async extendSubscription(
-    opts: { maxPriceUsdc: bigint | number | BN; ownerUsdc?: SolanaAddress },
-  ): Promise<SubscribeResult> {
+  async extendSubscription(opts: {
+    maxPriceUsdc: bigint | number | BN;
+    ownerUsdc?: SolanaAddress;
+  }): Promise<SubscribeResult> {
     const owner = this.wallet;
     const subscription = subscriptionPda(owner, this.programId);
     const sub = await this.accounts.subscription.fetch(subscription);
     const planId = planIdFromVariant(sub.planType);
     const { usdcMint, treasury } = await this.fetchProtocolTokens();
-    const price = await this.confirmPlanPrice(planId, opts.maxPriceUsdc, "extendSubscription");
-    const ownerUsdc = opts.ownerUsdc ?? getAssociatedTokenAddressSync(usdcMint, owner);
+    const price = await this.confirmPlanPrice(
+      planId,
+      opts.maxPriceUsdc,
+      "extendSubscription",
+    );
+    const ownerUsdc =
+      opts.ownerUsdc ?? getAssociatedTokenAddressSync(usdcMint, owner);
 
     const signature = await this.methods
       .extendSubscription()
@@ -513,7 +578,9 @@ export class MolphaSolanaClient {
     method: string,
   ): Promise<bigint> {
     const max = toUsdcBaseUnits(maxPriceUsdc, "maxPriceUsdc");
-    const plan = await this.accounts.plan.fetch(planPda(planId, this.programId));
+    const plan = await this.accounts.plan.fetch(
+      planPda(planId, this.programId),
+    );
     const price = BigInt(plan.subscriptionPrice.toString());
     if (price > max) {
       throw new Error(
@@ -542,11 +609,19 @@ export class MolphaSolanaClient {
     attestation: Attestation,
     opts?: SubmitAttestationOptions,
   ): Promise<SubmitResult> {
-    const { args, accounts, remaining, feed } = await this.prepareSubmit(attestation, opts);
+    const { args, accounts, remaining, feed } = await this.prepareSubmit(
+      attestation,
+      opts,
+    );
     const preInstructions = [
-      setComputeUnitLimit(opts?.computeUnitLimit ?? estimateSubmitComputeUnits(remaining.length)),
+      setComputeUnitLimit(
+        opts?.computeUnitLimit ?? estimateSubmitComputeUnits(remaining.length),
+      ),
     ];
-    const price = await this.resolvePriorityFee(opts?.priorityFeeMicroLamports, feed);
+    const price = await this.resolvePriorityFee(
+      opts?.priorityFeeMicroLamports,
+      feed,
+    );
     if (price > 0) preInstructions.push(setComputeUnitPrice(price));
 
     const signature = await this.methods
@@ -586,7 +661,9 @@ export class MolphaSolanaClient {
     if (attestations.length === 0) {
       throw new RangeError("submitAttestations needs at least one attestation");
     }
-    const sorted = [...attestations].sort((a, b) => a.payload.timestamp - b.payload.timestamp);
+    const sorted = [...attestations].sort(
+      (a, b) => a.payload.timestamp - b.payload.timestamp,
+    );
     const feedKey = (a: Attestation) =>
       `${bytesToHex(toFixedBytes(a.payload.sourceId, 32, "sourceId"))}:${a.payload.signaturesRequired}`;
     const first = feedKey(sorted[0]!);
@@ -602,9 +679,12 @@ export class MolphaSolanaClient {
         );
       }
     });
-    if (sorted.length === 1) return { ...(await this.submitAttestation(sorted[0]!, opts)), count: 1 };
+    if (sorted.length === 1)
+      return { ...(await this.submitAttestation(sorted[0]!, opts)), count: 1 };
 
-    const prepared = await Promise.all(sorted.map((a) => this.prepareSubmit(a)));
+    const prepared = await Promise.all(
+      sorted.map((a) => this.prepareSubmit(a)),
+    );
     const instructions: web3.TransactionInstruction[] = await Promise.all(
       prepared.map((p) =>
         this.methods
@@ -617,10 +697,16 @@ export class MolphaSolanaClient {
     const feed = prepared[0]!.feed;
     const budget = [
       setComputeUnitLimit(
-        opts?.computeUnitLimit ?? estimateSubmitBatchComputeUnits(prepared.map((p) => p.remaining.length)),
+        opts?.computeUnitLimit ??
+          estimateSubmitBatchComputeUnits(
+            prepared.map((p) => p.remaining.length),
+          ),
       ),
     ];
-    const price = await this.resolvePriorityFee(opts?.priorityFeeMicroLamports, feed);
+    const price = await this.resolvePriorityFee(
+      opts?.priorityFeeMicroLamports,
+      feed,
+    );
     if (price > 0) budget.push(setComputeUnitPrice(price));
 
     const payer = this.provider.wallet.publicKey;
@@ -629,13 +715,23 @@ export class MolphaSolanaClient {
       let fits = 0;
       while (
         fits < instructions.length &&
-        transactionSize(payer, [...budget, ...instructions.slice(0, fits + 1)]) <= web3.PACKET_DATA_SIZE
+        transactionSize(payer, [
+          ...budget,
+          ...instructions.slice(0, fits + 1),
+        ]) <= web3.PACKET_DATA_SIZE
       ) {
         fits++;
       }
-      throw new BatchTooLargeError(fits, size, web3.PACKET_DATA_SIZE, instructions.length);
+      throw new BatchTooLargeError(
+        fits,
+        size,
+        web3.PACKET_DATA_SIZE,
+        instructions.length,
+      );
     }
-    const signature = await this.provider.sendAndConfirm(new web3.Transaction().add(...budget, ...instructions));
+    const signature = await this.provider.sendAndConfirm(
+      new web3.Transaction().add(...budget, ...instructions),
+    );
     return { signature, feed, count: instructions.length };
   }
 
@@ -655,10 +751,23 @@ export class MolphaSolanaClient {
     assertSignerCount(remaining.length, payload.signaturesRequired, registry);
     const coalitionKey =
       opts?.coalitionKey ??
-      (await this.computeSignerCoalitionKey(remaining, registry, schnorr.signersBitmap));
-    const feed = feedPda(sourceId, payload.signaturesRequired, submitter, this.programId);
+      (await this.computeSignerCoalitionKey(
+        remaining,
+        registry,
+        schnorr.signersBitmap,
+      ));
+    const feed = feedPda(
+      sourceId,
+      payload.signaturesRequired,
+      submitter,
+      this.programId,
+    );
     return {
-      args: buildSubmitAttestationArgs(attestation, coalitionKey, opts?.rawValue),
+      args: buildSubmitAttestationArgs(
+        attestation,
+        coalitionKey,
+        opts?.rawValue,
+      ),
       accounts: {
         submitter,
         registry: registryPda(payload.registryVersion, this.programId),
@@ -679,7 +788,8 @@ export class MolphaSolanaClient {
     const value = this.fetchRegistry(version);
     this.registryCache.set(version, { at: now, value });
     value.catch(() => {
-      if (this.registryCache.get(version)?.value === value) this.registryCache.delete(version);
+      if (this.registryCache.get(version)?.value === value)
+        this.registryCache.delete(version);
     });
     return value;
   }
@@ -691,20 +801,34 @@ export class MolphaSolanaClient {
     if (option === undefined) return 0;
     if (option !== "auto") {
       if (!Number.isFinite(option) || option < 0) {
-        throw new Error("priorityFeeMicroLamports must be a non-negative number or \"auto\"");
+        throw new Error(
+          'priorityFeeMicroLamports must be a non-negative number or "auto"',
+        );
       }
       return Math.floor(option);
     }
     const now = Date.now();
-    if (!this.priorityFeeCache || now - this.priorityFeeCache.at >= PRIORITY_FEE_CACHE_MS) {
+    if (
+      !this.priorityFeeCache ||
+      now - this.priorityFeeCache.at >= PRIORITY_FEE_CACHE_MS
+    ) {
       const value = (async () => {
         try {
-          const recent = await this.provider.connection.getRecentPrioritizationFees({
-            lockedWritableAccounts: [new web3.PublicKey(feed)],
-          });
-          const fees = recent.map((r) => r.prioritizationFee).sort((a, b) => a - b);
+          const recent =
+            await this.provider.connection.getRecentPrioritizationFees({
+              lockedWritableAccounts: [new web3.PublicKey(feed)],
+            });
+          const fees = recent
+            .map((r) => r.prioritizationFee)
+            .sort((a, b) => a - b);
           if (fees.length === 0) return 0;
-          const fee = fees[Math.min(fees.length - 1, Math.floor(fees.length * AUTO_FEE_PERCENTILE))]!;
+          const fee =
+            fees[
+              Math.min(
+                fees.length - 1,
+                Math.floor(fees.length * AUTO_FEE_PERCENTILE),
+              )
+            ]!;
           return Math.min(fee, AUTO_FEE_CAP_MICRO_LAMPORTS);
         } catch {
           return 0; // an unreadable fee market must not stop a submit
@@ -727,11 +851,13 @@ export class MolphaSolanaClient {
     const setKey = `${registry.version}:${signersBitmap}`;
     const known = this.coalitionCache.get(setKey);
     if (known) return known;
-    if (this.coalitionCache.size >= KEY_CACHE_LIMIT) this.coalitionCache.clear();
+    if (this.coalitionCache.size >= KEY_CACHE_LIMIT)
+      this.coalitionCache.clear();
     const pending = this.sumSignerKeys(remaining, registry);
     this.coalitionCache.set(setKey, pending);
     pending.catch(() => {
-      if (this.coalitionCache.get(setKey) === pending) this.coalitionCache.delete(setKey);
+      if (this.coalitionCache.get(setKey) === pending)
+        this.coalitionCache.delete(setKey);
     });
     return pending;
   }
@@ -741,10 +867,14 @@ export class MolphaSolanaClient {
     registry: RegistryView,
   ): Promise<CoalitionKey> {
     const addresses = remaining.map((meta) => meta.pubkey);
-    const missing = addresses.filter((a) => !this.nodeKeyCache.has(a.toBase58()));
+    const missing = addresses.filter(
+      (a) => !this.nodeKeyCache.has(a.toBase58()),
+    );
     if (missing.length > 0) {
-      const accounts: Array<NodeAccount | null> = await this.accounts.node.fetchMultiple(missing);
-      if (this.nodeKeyCache.size + missing.length > KEY_CACHE_LIMIT) this.nodeKeyCache.clear();
+      const accounts: Array<NodeAccount | null> =
+        await this.accounts.node.fetchMultiple(missing);
+      if (this.nodeKeyCache.size + missing.length > KEY_CACHE_LIMIT)
+        this.nodeKeyCache.clear();
       accounts.forEach((account, i) => {
         if (!account) {
           throw new Error(
@@ -757,7 +887,9 @@ export class MolphaSolanaClient {
         });
       });
     }
-    return computeCoalitionKey(addresses.map((a) => this.nodeKeyCache.get(a.toBase58())!));
+    return computeCoalitionKey(
+      addresses.map((a) => this.nodeKeyCache.get(a.toBase58())!),
+    );
   }
 
   /**
@@ -834,7 +966,9 @@ export class MolphaSolanaClient {
   }
 
   private async fetchRegistryState(): Promise<RegistryStateView> {
-    const state = await this.accounts.registryState.fetch(registryStatePda(this.programId));
+    const state = await this.accounts.registryState.fetch(
+      registryStatePda(this.programId),
+    );
     return {
       currentVersion: state.currentVersion,
       nextVersion: state.nextVersion,
@@ -842,7 +976,9 @@ export class MolphaSolanaClient {
   }
 
   private async fetchRegistry(version: number): Promise<RegistryView> {
-    const registry = await this.accounts.registry.fetch(registryPda(version, this.programId));
+    const registry = await this.accounts.registry.fetch(
+      registryPda(version, this.programId),
+    );
     const nodeCount: number = registry.nodeCount;
     const nodes = (registry.nodes as Array<Uint8Array | number[]>)
       .slice(0, nodeCount)
@@ -867,12 +1003,16 @@ export class MolphaSolanaClient {
       const detail = err instanceof Error ? err.message : String(err);
       throw new Error(
         `Failed to fetch on-chain Node(${nodeAddress}) for selected node ${selectedNodeIndex}: ${detail}`,
+        { cause: err },
       );
     }
   }
 
   /** `usdc_mint` from `ProtocolConfig`; the treasury is its ATA owned by the config PDA. */
-  private async fetchProtocolTokens(): Promise<{ usdcMint: Address; treasury: Address }> {
+  private async fetchProtocolTokens(): Promise<{
+    usdcMint: Address;
+    treasury: Address;
+  }> {
     const protocolConfig = protocolConfigPda(this.programId);
     const config = await this.accounts.protocolConfig.fetch(protocolConfig);
     const usdcMint = toSolanaAddress(config.usdcMint);
@@ -895,11 +1035,18 @@ export function buildSubmitAttestationArgs(
 ): SubmitAttestationArgs {
   const { payload, signature } = attestation;
   const value = toFixedBytes(payload.value, 32, "payload.value");
+  // A keccak256 output's preimage rides along with the attestation; the program stores it as the raw
+  // value when it fits (at most 256 bytes), and the feed then records that its value is a hash.
+  rawValue ??= attestationPreimage(attestation);
   if (rawValue && rawValue.length > 256) {
-    throw new RangeError(`rawValue must be at most 256 bytes, got ${rawValue.length}`);
+    throw new RangeError(
+      `rawValue must be at most 256 bytes, got ${rawValue.length}`,
+    );
   }
   if (rawValue && bytesToHex(keccak_256(rawValue)) !== bytesToHex(value)) {
-    throw new Error("rawValue keccak256 digest does not match attestation.payload.value");
+    throw new Error(
+      "rawValue keccak256 digest does not match attestation.payload.value",
+    );
   }
   return {
     attestation: {
@@ -912,8 +1059,16 @@ export function buildSubmitAttestationArgs(
       },
       signature: {
         aggSigS: Array.from(toFixedBytes(signature.s, 32, "signature.s")),
-        commitment: Array.from(toFixedBytes(signature.commitmentAddr, 20, "signature.commitmentAddr")),
-        signersBitmap: Array.from(toFixedBytes(signature.signersBitmap, 32, "signature.signersBitmap")),
+        commitment: Array.from(
+          toFixedBytes(
+            signature.commitmentAddr,
+            20,
+            "signature.commitmentAddr",
+          ),
+        ),
+        signersBitmap: Array.from(
+          toFixedBytes(signature.signersBitmap, 32, "signature.signersBitmap"),
+        ),
       },
     },
     rawValue: rawValue ? toAnchorBytes(rawValue) : null,
@@ -922,6 +1077,13 @@ export function buildSubmitAttestationArgs(
       y: Array.from(toFixedBytes(coalitionKey.y, 32, "coalitionKey.y")),
     },
   };
+}
+
+/** The attestation's keccak256 preimage if it has one the program can take (at most 256 bytes). */
+function attestationPreimage(attestation: Attestation): Uint8Array | undefined {
+  const hex = attestation.valuePreimage?.replace(/^0x/, "");
+  if (!hex || hex.length > 512) return undefined;
+  return hexToBytes(hex);
 }
 
 /**
@@ -960,12 +1122,15 @@ function toAnchorBytes(bytes: Uint8Array): Uint8Array {
 /** Normalize a confirmed USDC amount (base units) to `bigint`, rejecting non-integers. */
 function toUsdcBaseUnits(amount: bigint | number | BN, label: string): bigint {
   if (typeof amount === "bigint") {
-    if (amount < 0n) throw new Error(`${label} must be non-negative, got ${amount}`);
+    if (amount < 0n)
+      throw new Error(`${label} must be non-negative, got ${amount}`);
     return amount;
   }
   if (typeof amount === "number") {
     if (!Number.isInteger(amount) || amount < 0) {
-      throw new Error(`${label} must be a non-negative integer of USDC base units, got ${amount}`);
+      throw new Error(
+        `${label} must be a non-negative integer of USDC base units, got ${amount}`,
+      );
     }
     return BigInt(amount);
   }
@@ -986,7 +1151,9 @@ function nodeCoordinate(
 
 function selectedNodesForVerifier(args: NodeKeyVerifierArgs): Node[] {
   if (args.nodeIndexes.length === 0) {
-    throw new Error("Private API node-key verification requires at least one selected index");
+    throw new Error(
+      "Private API node-key verification requires at least one selected index",
+    );
   }
   if (args.nodes.length !== args.nodeIndexes.length) {
     throw new Error(
@@ -997,7 +1164,9 @@ function selectedNodesForVerifier(args: NodeKeyVerifierArgs): Node[] {
   const expected = new Set<number>();
   for (const index of args.nodeIndexes) {
     if (!Number.isInteger(index) || index < 0) {
-      throw new Error(`Private API selected index must be a non-negative integer: ${index}`);
+      throw new Error(
+        `Private API selected index must be a non-negative integer: ${index}`,
+      );
     }
     if (expected.has(index)) {
       throw new Error(`Private API selected index is duplicated: ${index}`);
@@ -1013,10 +1182,14 @@ function selectedNodesForVerifier(args: NodeKeyVerifierArgs): Node[] {
       );
     }
     if (!expected.has(node.index)) {
-      throw new Error(`Private API selected node ${node.index} was not requested`);
+      throw new Error(
+        `Private API selected node ${node.index} was not requested`,
+      );
     }
     if (byIndex.has(node.index)) {
-      throw new Error(`Private API selected node index is duplicated: ${node.index}`);
+      throw new Error(
+        `Private API selected node index is duplicated: ${node.index}`,
+      );
     }
     byIndex.set(node.index, node);
   }
@@ -1024,7 +1197,9 @@ function selectedNodesForVerifier(args: NodeKeyVerifierArgs): Node[] {
   return args.nodeIndexes.map((index) => {
     const node = byIndex.get(index);
     if (!node) {
-      throw new Error(`Private API selected node is missing for index: ${index}`);
+      throw new Error(
+        `Private API selected node is missing for index: ${index}`,
+      );
     }
     return node;
   });

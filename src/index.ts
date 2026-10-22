@@ -17,7 +17,9 @@ import type { Attestation } from "./core/types.js";
 import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 import { gatewaySignerFromWallet, type MolphaWallet } from "./wallet.js";
 import type { SolanaConnection } from "./solana/kit.js";
-type Commitment = NonNullable<ConstructorParameters<typeof AnchorProvider>[2]>["commitment"];
+type Commitment = NonNullable<
+  ConstructorParameters<typeof AnchorProvider>[2]
+>["commitment"];
 
 // Public re-exports.
 export * from "./core/index.js";
@@ -27,7 +29,11 @@ export * from "./starknet/index.js";
 export * from "./solana/index.js";
 export * from "./bulk.js";
 export { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
-export { gatewaySignerFromWallet, signerFromKeypair, type MolphaWallet } from "./wallet.js";
+export {
+  gatewaySignerFromWallet,
+  signerFromKeypair,
+  type MolphaWallet,
+} from "./wallet.js";
 
 export interface MolphaSDKOptions {
   /**

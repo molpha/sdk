@@ -22,7 +22,10 @@ export function planVariant(planId: PlanId): (typeof PLAN_VARIANTS)[number] {
 
 export function planIdFromVariant(variant: Record<string, unknown>): PlanId {
   const key = Object.keys(variant)[0]?.toLowerCase();
-  const idx = ["basic", "standard", "professional", "enterprise"].indexOf(key ?? "");
-  if (idx < 0) throw new Error(`Unknown plan variant: ${JSON.stringify(variant)}`);
+  const idx = ["basic", "standard", "professional", "enterprise"].indexOf(
+    key ?? "",
+  );
+  if (idx < 0)
+    throw new Error(`Unknown plan variant: ${JSON.stringify(variant)}`);
   return idx as PlanId;
 }

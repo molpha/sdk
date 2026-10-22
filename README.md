@@ -13,7 +13,7 @@ Links: [molpha.io](https://molpha.io) · [GitHub](https://github.com/Molpha/sdk)
 Use it to:
 
 - subscribe to a Molpha plan on Solana;
-- derive a source id from an API config;
+- derive a source id from a source definition;
 - request a threshold-signed attestation from the gateway;
 - submit the signed result on-chain (`submit_attestation`);
 - verify/read the latest feed value;
@@ -30,7 +30,7 @@ At a high level:
 ```text
 Consumer
   └─ subscribes (USDC) on Solana
-  └─ derives sourceId = keccak256(canonical apiConfig)
+  └─ derives sourceId = keccak256(canonical source)
   └─ signs a RequestAuth bound to (programId, gateway, sourceId, signaturesRequired, authTimestamp)
 
 Gateway
@@ -100,7 +100,7 @@ The package is ESM with `"sideEffects": false`, so gateway-only or read-only app
 
 ```ts
 import { web3 } from "@anchor-lang/core";
-import { MolphaSDK, PlanType, deriveSourceIdString } from "@molpha/sdk";
+import { MolphaSDK, PlanType, jsonPriceSource } from "@molpha/sdk";
 import { walletFromKeypairFile } from "@molpha/sdk/utils";
 
 const wallet = walletFromKeypairFile("~/.config/solana/id.json");
@@ -116,19 +116,17 @@ await sdk.solana.subscribe(PlanType.Basic, {
   maxPriceUsdc: plan.subscriptionPrice,
 });
 
-const apiConfig = {
-  url: "https://api.example.com/price",
-  responseParser: "$.price",
-};
+// GET the URL, read the JSON number at $.price, sign it as an int256 with 6 decimals.
+const source = jsonPriceSource({ url: "https://api.example.com/price", path: "$.price", decimals: 6 });
 const signaturesRequired = 3;
 
 const { result, signature, feed } = await sdk.requestAndSubmit({
-  apiConfig,
+  source,
   signaturesRequired,
 });
 
 // The round's identity, for reads and cross-chain verification.
-const sourceId = deriveSourceIdString(apiConfig); // === result.payload.sourceId
+const sourceId = source.idHex; // === "0x" + result.payload.sourceId
 ```
 
 `requestAndSubmit` requests a threshold-signed attestation from the gateway (against the current on-chain registry version) and submits it to Solana via `submit_attestation` in one call. The first successful submit creates the feed account for `(sourceId, signaturesRequired, submitter)` if it does not already exist.
@@ -251,7 +249,7 @@ Gateway auth is resolved automatically when you use `MolphaSDK`:
 3. Else omit auth and use an all-zero `authSig`.
 
 `MolphaSDK` passes the resolved signer to `sdk.gateway` as its default, so
-`sdk.gateway.requestSignedData({ apiConfig, signaturesRequired })` authenticates without an
+`sdk.gateway.requestSignedData({ source, signaturesRequired })` authenticates without an
 explicit `signer`. Standalone `new MolphaGateway(...)` omits auth unless you pass
 a `defaultSigner` (third constructor arg) or per-call `signer`.
 
@@ -290,7 +288,8 @@ import { web3 } from "@anchor-lang/core";
 import {
   MolphaSDK,
   PlanType,
-  deriveSourceIdString,
+  jsonPriceSource,
+  defineSource,
 } from "@molpha/sdk";
 import { walletFromKeypairFile } from "@molpha/sdk/utils";
 
@@ -317,40 +316,55 @@ const { pricePaid } = await sdk.solana.subscribe(PlanType.Basic, {
 
 `maxPriceUsdc` is a safety bound. The transaction aborts if the live plan price is higher than the amount the user approved.
 
-### 2. Source id
+### 2. Source
 
-There is no create-feed instruction. A data source is identified by its canonical API config:
+There is no create-feed instruction. A data source is one JSON document, identified by its canonical bytes:
 
 ```text
-sourceId = keccak256(JSON.stringify(canonicalizeAPIConfig(apiConfig)))
+sourceId = keccak256(canonical source bytes)
 ```
 
 ```ts
-const apiConfig = {
-  url: "https://api.example.com/price",
-  responseParser: "$.price",
-};
-
-const sourceId = deriveSourceIdString(apiConfig); // 64 hex chars, no 0x
+// The common case: one JSON number from one URL.
+const source = jsonPriceSource({ url: "https://api.example.com/price", path: "$.price", decimals: 6 });
+source.idHex; // "0x" + 64 hex chars
 ```
 
-The canonical JSON has the fixed key order `url`, `method`, `headers` (sorted by UTF-16 code units, `{}` if empty), `responseParser`, `valueTransform` and, for [tolerance mode](#median-tolerance-mode), a trailing `aggregation`. The key is omitted for exact mode, so existing five-field configs keep their `sourceId`.
+`defineSource` builds anything else. A source has up to four typed **inputs** (an HTTP request, an EVM or Starknet call, storage slot or balance read at a pinned block, or a Solana account), a **transform** (a JSON expression over exact decimals), **assertions** that must hold before anyone signs, an **output** type that fixes how the result becomes the signed 32 bytes (`int256`, `uint256`, `bool`, `bytes32`, `string32`, `keccak256`), and an optional [tolerance policy](#median-tolerance-mode):
 
-The gateway, the Solana program and the EVM/Starknet verifiers all recompute `sourceId` from the same canonical config, so pass the same `apiConfig` (including `{{secret.*}}` placeholders) every time. `signaturesRequired` is **not** part of `sourceId`: on Solana a feed account is keyed by `(sourceId, signaturesRequired, submitter)`, so the same source can be tracked at different quorums.
+```ts
+import { defineSource, sx } from "@molpha/sdk";
+
+const source = defineSource({
+  inputs: {
+    rate: sx.evmCall({
+      chain: "eip155:1", to: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", sig: "stEthPerToken()",
+      finality: { mode: "finalized", lagMs: 900_000 },   // read a finalized block 15 minutes behind the round
+      decode: sx.abiDecode(["uint256"], { rate: "0" }),
+    }),
+  },
+  transform: sx.ref("rate.rate"),
+  output: { type: "uint256", decimals: 18 },
+});
+```
+
+On the wire a source has every key present and every number a string; `defineSource` and the builders (`sx.*`) fill the defaults and convert JS numbers, and a document that breaks a rule throws a `SourceError` naming the path before any request is made. The schema, the operators and the limits are in the node client's `docs/source-format.md`.
+
+The canonical form is UTF-8 JSON with sorted keys, no whitespace, and numbers as strings (a strict subset of RFC 8785). The gateway, the nodes and this SDK all recompute `sourceId` from the same document, so pass the same `source` (including `{{secret.*}}` placeholders) every time; the Solana program and the EVM/Starknet verifiers treat it as an opaque `bytes32`. `signaturesRequired` is **not** part of `sourceId`: on Solana a feed account is keyed by `(sourceId, signaturesRequired, submitter)`, so the same source can be tracked at different quorums.
 
 ### 3. Request signed data from the gateway
 
 ```ts
 const signaturesRequired = 3;
 const result = await sdk.gateway.requestSignedData({
-  apiConfig,
+  source,
   signaturesRequired,
 });
 ```
 
 The gateway round uses the current on-chain registry version. Selected verifier nodes independently fetch/recompute the result and sign only if the observed value matches the canonical result.
 
-The returned `Attestation` matches the cross-VM struct (`payload` + `signature`), plus gateway-only `value` (human-readable) and `fresh`. `payload` carries `sourceId`, the signed 32-byte `value`, `timestamp`, `registryVersion`, and `signaturesRequired`; `signature` carries the aggregate Schnorr material and `signersBitmap`. `signaturesRequired` must be at least the protocol's `min_signers` (currently 3) or the chain rejects the submit.
+The returned `Attestation` matches the cross-VM struct (`payload` + `signature`), plus gateway-only `value` (the signed word rendered by the source's output type), `fresh` and, for a `keccak256` output, `valuePreimage`. `payload` carries `sourceId`, the signed 32-byte `value`, `timestamp`, `registryVersion`, and `signaturesRequired`; `signature` carries the aggregate Schnorr material and `signersBitmap`. `signaturesRequired` must be at least the protocol's `min_signers` (currently 3) or the chain rejects the submit.
 
 A gateway response is a coordination result, not proof of settlement or of on-chain verification. Consumers still decide freshness, source, quorum and replay policy.
 
@@ -362,7 +376,7 @@ const { signature, feed } = await sdk.solana.submitAttestation(result);
 
 `submit_attestation` takes `{ attestation: { payload, signature }, rawValue, coalitionKey }` plus one read-only `Node` account per signer (ascending signer-bit order, resolved from the registry snapshot the round was signed against). The SDK builds all of it: it fetches the signer `Node` accounts in one batched read, sums their secp256k1 keys into the affine **coalition key** (`computeCoalitionKey`), and checks the program's signer-count bounds before sending. The coalition key is unsigned instruction data that the program checks projectively against its own sum, so a wrong key only fails the transaction. Pass `{ coalitionKey }` to skip the `Node` fetch when you already hold it.
 
-If the signed 32-byte value is the keccak digest of a longer preimage, pass `{ rawValue }` (up to 256 bytes). The SDK verifies the digest before sending:
+A source with a `keccak256` output signs the digest of a longer byte string. The gateway returns those bytes as `result.valuePreimage`, and `submitAttestation` passes them as `rawValue` when they are at most 256 bytes, verifying the digest before sending (the program then stores the preimage's hash and marks the feed `Hash`). To pass a preimage yourself:
 
 ```ts
 const { signature, feed } = await sdk.solana.submitAttestation(result, { rawValue });
@@ -386,7 +400,7 @@ The subscription read does not expose usage: the program stores no `used_rounds`
 
 ```ts
 const { result, signature, feed } = await sdk.requestAndSubmit({
-  apiConfig,
+  source,
   signaturesRequired,
 });
 ```
@@ -394,7 +408,7 @@ const { result, signature, feed } = await sdk.requestAndSubmit({
 This is equivalent to:
 
 ```ts
-const result = await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired });
+const result = await sdk.gateway.requestSignedData({ source, signaturesRequired });
 const { signature, feed } = await sdk.solana.submitAttestation(result);
 ```
 
@@ -460,7 +474,7 @@ round is a single gateway POST.
 const context = await sdk.gateway.prepareContext();
 
 // Reuse it across rounds — no prelude fetches.
-const result = await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired, context });
+const result = await sdk.gateway.requestSignedData({ source, signaturesRequired, context });
 ```
 
 `context` is a `Partial<RoundContext>`, so you can cache only what you have
@@ -468,7 +482,7 @@ and let `requestSignedData` fetch the rest:
 
 ```ts
 const result = await sdk.gateway.requestSignedData({
-  apiConfig,
+  source,
   signaturesRequired,
   context: { nodes }, // registryVersion + redundancyBuffer + nodeCount still fetched fresh
 });
@@ -482,37 +496,34 @@ disagrees with it. The same `context` field is accepted by `requestAndSubmit`.
 
 ## Median tolerance mode
 
-By default every signing node must observe the identical value. For noisy numeric sources
-(prices), add an `aggregation` object and the selected nodes instead exchange signed
+By default every signing node must produce the identical 32 bytes. For noisy numeric sources
+(prices), add a tolerance policy and the selected nodes instead exchange signed
 observations, drop stale ones and outliers, and sign the **lower median** of
 `signaturesRequired` surviving observations:
 
 ```ts
-const apiConfig = {
+const source = jsonPriceSource({
   url: "https://api.example.com/price",
-  responseParser: "$.price",
-  aggregation: {
-    mode: "tolerance",
-    rule: "median",
-    maxDeviationBps: 50, // u32: allowed distance from the lower median, in bps
-    maxAgeMs: 2000, // > 0: max observation age in milliseconds
-    numeric: { type: "int256", decimals: 8 }, // value = round-half-even(price * 10^8)
+  path: "$.price",
+  decimals: 8, // value = round-half-even(price * 10^8)
+  tolerance: {
+    maxDeviationBps: 50, // allowed distance from the lower median, in bps
+    maxAgeMs: 2000,      // > 0: max observation age in milliseconds
   },
-};
+});
 
-const { result } = await sdk.requestAndSubmit({ apiConfig, signaturesRequired: 5 });
+const { result } = await sdk.requestAndSubmit({ source, signaturesRequired: 5 });
 ```
 
-Rules (the node is the reference; the SDK rejects violations before any request is made, with `AggregationConfigError`):
+With `defineSource` the policy is the `aggregation` field (`{ maxDeviationBps, maxAgeMs }`). Rules (the node is the reference; the SDK rejects violations before any request is made, with `SourceError`):
 
-- `aggregation` is part of the `sourceId` and is **omitted** for exact mode. `mode: "exact"` is rejected because it would change the identity.
-- Only `rule: "median"` and `numeric.type: "int256"` are supported. `decimals` is `0..255`, `maxDeviationBps` a u32, `maxAgeMs` a positive integer.
-- Tolerance needs `signaturesRequired >= 3`.
-- The nested object is rebuilt in canonical order (`mode`, `rule`, `maxDeviationBps`, `maxAgeMs`, `numeric{type, decimals}`); extra or reordered keys on your input never reach the hash. For the config above, `sourceId` hashes exactly `{"url":...,"method":"GET","headers":{},"responseParser":"$.price","valueTransform":"","aggregation":{"mode":"tolerance","rule":"median","maxDeviationBps":50,"maxAgeMs":2000,"numeric":{"type":"int256","decimals":8}}}` (pinned against the node's Go test `TestAggregationSourceIdentity`).
-- The signed value is a signed `int256` (two's-complement `bytes32`). For tolerance results `Attestation.value` is rendered from the signed `payload.value` at the source's `decimals`, and `signature.signersBitmap` / signature fields must come from the response, since the nodes choose the final signing set after the observation exchange.
-- The gateway must forward `aggregation` to the nodes. If it derives a different identity, the response's `sourceId` / `configHash` will not match and the SDK throws; a gateway that echoes `aggregation` in its response must echo the requested policy.
+- `aggregation` is part of the `sourceId`; `null` (or omitted) is exact mode.
+- Only `rule: "median"` is supported, `maxAgeMs` must be positive, and the source's `output` must be `int256`: its `decimals` is the scale of the signed value, so there is no separate numeric block.
+- Tolerance needs `signaturesRequired >= 3` (`assertToleranceQuorum`).
+- The signed value is a signed `int256` (two's-complement `bytes32`). For tolerance results `Attestation.value` is rendered from the signed `payload.value` at the output's `decimals`, and `signature.signersBitmap` / signature fields must come from the response, since the nodes choose the final signing set after the observation exchange.
+- Each node's observation is the final result of its transform, so the median is taken after any arithmetic, and a false assertion drops that node's observation.
 
-Helpers for the signed value (mirror the node's `new/tolerance` package):
+Helpers for the signed value (mirror the node's `eval` package):
 
 ```ts
 import {
@@ -530,14 +541,15 @@ const price = formatInt256Decimal(Uint8Array.from(feedState!.value), 8);
 
 ## Private APIs and encrypted secrets
 
-Sources can use private APIs without sending plaintext secrets to the gateway.
+Sources can use private APIs without sending plaintext secrets to the gateway. A `{{secret.NAME}}` placeholder may stand in an `http` input's URL (after the host and port, which stay literal), a header value or a request body text; anywhere else it is rejected.
 
 ```ts
 const result = await sdk.gateway.requestSignedData({
-  apiConfig: {
+  source: jsonPriceSource({
     url: "https://api.example.com/private-price?key={{secret.apiKey}}",
-    responseParser: "$.price",
-  },
+    path: "$.price",
+    decimals: 6,
+  }),
   signaturesRequired,
   encrypt: {
     secrets: {
@@ -549,7 +561,7 @@ const result = await sdk.gateway.requestSignedData({
 
 `MolphaSDK` wires `verifyNodeKeys` to `solana.verifyNodeKeysForPrivateApi`, which authenticates gateway node encryption keys against the on-chain `Node` accounts of the round's registry snapshot (`registry.nodes[index]`) before secrets are encrypted.
 
-Secrets are encrypted into per-node envelopes. The gateway coordinates the round but should not receive plaintext API credentials. Secrets are encrypted for every node of the registry (the committee is unknown until the gateway stamps the round), and the gateway forwards only the selected nodes' envelopes. `verifyNodeKeys` therefore authenticates all of them. The encrypted plaintext is the canonical config (including `aggregation`) with secrets substituted.
+Secrets are encrypted into per-node envelopes. The gateway coordinates the round but should not receive plaintext API credentials. Secrets are encrypted for every node of the registry (the committee is unknown until the gateway stamps the round), and the gateway forwards only the selected nodes' envelopes. `verifyNodeKeys` therefore authenticates all of them. The encrypted plaintext is the canonical source with secrets substituted; a node accepts it only if it equals the public source everywhere except at the placeholders, so a secret can authenticate a read but cannot change what is read.
 
 Private API access is still an active security-sensitive surface. Do not treat encrypted secret delivery as production-ready until gateway/node-side test vectors and validation are complete.
 
@@ -564,7 +576,7 @@ source still costs exactly one round of subscription quota.
 import { createEvmSignerFromPrivateKey } from "@molpha/sdk";
 
 const result = await sdk.gateway.requestSignedData({
-  apiConfig,
+  source,
   signaturesRequired,
   sourcePayment: {
     signer: createEvmSignerFromPrivateKey(process.env.EVM_PRIVATE_KEY!),
@@ -591,8 +603,9 @@ settled stay spent if the round then fails; unsettled ones expire worthless. The
 refund path and none is needed.
 
 Source payment is per-round access material, like a credential. It never enters
-`sourceId`, so a paid and an unpaid fetch of the same API config share one source
-identity.
+`sourceId`, so a paid and an unpaid fetch of the same source share one source
+identity. A paid source has exactly one `http` input: the authorization names no host, so the
+nodes attach it to that input.
 
 ### Without a source wallet
 
@@ -604,7 +617,7 @@ detail. This is terminal — the round is never retried blindly.
 import { UpstreamPaymentRequiredError } from "@molpha/sdk";
 
 try {
-  await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired });
+  await sdk.gateway.requestSignedData({ source, signaturesRequired });
 } catch (err) {
   if (err instanceof UpstreamPaymentRequiredError) {
     console.log(`${err.quote.resource} needs ${err.quote.eligibleSetSize} paid fetches`);
@@ -644,7 +657,7 @@ The verifier's entrypoint is
 ```ts
 import { buildEvmVerifierArgs } from "@molpha/sdk";
 
-const result = await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired });
+const result = await sdk.gateway.requestSignedData({ source, signaturesRequired });
 
 const { attestation, maxAge } = buildEvmVerifierArgs(result, { maxAge: 300 });
 ```
@@ -797,7 +810,7 @@ The verifier's entrypoint is `verify(attestation: Attestation, max_age: u64) -> 
 ```ts
 import { buildStarknetVerifierArgs } from "@molpha/sdk";
 
-const result = await sdk.gateway.requestSignedData({ apiConfig, signaturesRequired });
+const result = await sdk.gateway.requestSignedData({ source, signaturesRequired });
 
 const { attestation, maxAge } = buildStarknetVerifierArgs(result, { maxAge: 300 });
 ```

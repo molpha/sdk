@@ -7,17 +7,26 @@
  * round of subscription quota, and source payment never enters `sourceId`.
  */
 import { randomBytes } from "@noble/hashes/utils.js";
-import { base64ToBytes, bytesToBase64, bytesToHex0x, utf8 } from "../core/encoding.js";
+import {
+  base64ToBytes,
+  bytesToBase64,
+  bytesToHex0x,
+  utf8,
+} from "../core/encoding.js";
 import { effectiveSelectionSize } from "../core/selection.js";
 import type {
-  APIConfig,
   AssetDomain,
   EvmSigner,
   UpstreamQuote,
   UpstreamTerms,
 } from "../core/types.js";
-import { transferWithAuthorizationDigest, toChecksumAddress } from "../evm/eip712.js";
-import { resolveAPIConfig } from "./encryption.js";
+import {
+  transferWithAuthorizationDigest,
+  toChecksumAddress,
+} from "../evm/eip712.js";
+import { asParsedSource } from "../core/sourcebuild.js";
+import type { ParsedSource } from "../core/source.js";
+import { resolveSource } from "./encryption.js";
 
 /**
  * Payment networks whose authorizations this SDK can sign. Beta is Base USDC;
@@ -25,11 +34,20 @@ import { resolveAPIConfig } from "./encryption.js";
  * and the token contract is the EIP-712 verifying contract.
  */
 const NETWORKS: Record<string, { chainId: number; usdc: string }> = {
-  "eip155:8453": { chainId: 8453, usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
-  "eip155:84532": { chainId: 84532, usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
+  "eip155:8453": {
+    chainId: 8453,
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  },
+  "eip155:84532": {
+    chainId: 84532,
+    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  },
   // x402 v1 network names.
   base: { chainId: 8453, usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
-  "base-sepolia": { chainId: 84532, usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
+  "base-sepolia": {
+    chainId: 84532,
+    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  },
 };
 
 /** An x402 payment identifier: 16-128 of [A-Za-z0-9_-]; the recommended `pay_` plus 32 hex digits. */
@@ -98,7 +116,9 @@ function selectTerms(
   assetDomain?: AssetDomain,
 ): UpstreamTerms {
   const version = envelope.x402Version === 1 ? 1 : 2;
-  const offers: Offer[] = Array.isArray(envelope.accepts) ? envelope.accepts : [];
+  const offers: Offer[] = Array.isArray(envelope.accepts)
+    ? envelope.accepts
+    : [];
   if (offers.length === 0) {
     throw new Error(`Source 402 for ${resource} advertised no payment terms`);
   }
@@ -124,7 +144,10 @@ function selectTerms(
   const domain =
     assetDomain ??
     (supported.extra?.name && supported.extra?.version
-      ? { name: String(supported.extra.name), version: String(supported.extra.version) }
+      ? {
+          name: String(supported.extra.name),
+          version: String(supported.extra.version),
+        }
       : undefined);
   if (!domain) {
     throw new Error(
@@ -140,12 +163,18 @@ function selectTerms(
   if (!payTo) throw new Error(`Source ${resource} omitted payTo`);
 
   // A source that declares payment-identifier may require it (TickerLayer does: without one a payment is a 400).
-  const declared = (envelope as { extensions?: Record<string, unknown> }).extensions?.["payment-identifier"] as
-    | { info?: unknown; schema?: unknown }
-    | undefined;
+  const declared = (envelope as { extensions?: Record<string, unknown> })
+    .extensions?.["payment-identifier"] as
+    { info?: unknown; schema?: unknown } | undefined;
   const paymentIdentifier =
-    declared && typeof declared === "object" && declared.info && typeof declared.info === "object"
-      ? { info: declared.info as Record<string, unknown>, schema: declared.schema }
+    declared &&
+    typeof declared === "object" &&
+    declared.info &&
+    typeof declared.info === "object"
+      ? {
+          info: declared.info as Record<string, unknown>,
+          schema: declared.schema,
+        }
       : undefined;
 
   return {
@@ -165,7 +194,10 @@ function selectTerms(
 }
 
 /** Decodes an x402 envelope from the `PAYMENT-REQUIRED` header, or the body. */
-function decodeEnvelope(headerValue: string | null, body: string): Record<string, unknown> {
+function decodeEnvelope(
+  headerValue: string | null,
+  body: string,
+): Record<string, unknown> {
   if (headerValue) {
     try {
       return JSON.parse(
@@ -199,7 +231,9 @@ export function validateSuppliedTerms(
             extensions: {
               "payment-identifier": {
                 info: terms.paymentIdentifier.info,
-                ...(terms.paymentIdentifier.schema !== undefined ? { schema: terms.paymentIdentifier.schema } : {}),
+                ...(terms.paymentIdentifier.schema !== undefined
+                  ? { schema: terms.paymentIdentifier.schema }
+                  : {}),
               },
             },
           }
@@ -216,23 +250,45 @@ export function validateSuppliedTerms(
  * Returns `null` when the source is not paywalled.
  */
 export async function probeSource(
-  apiConfig: APIConfig,
-  options: { secrets?: Record<string, string>; assetDomain?: AssetDomain; timeoutMs?: number } = {},
+  source: ParsedSource | string | object,
+  options: {
+    secrets?: Record<string, string>;
+    assetDomain?: AssetDomain;
+    timeoutMs?: number;
+  } = {},
 ): Promise<UpstreamTerms | null> {
-  const resolved = options.secrets ? resolveAPIConfig(apiConfig, options.secrets) : apiConfig;
+  const parsed = asParsedSource(source);
+  const httpNames = parsed.inputNames.filter(
+    (n) => (parsed.doc.inputs as Record<string, any>)[n].kind === "http",
+  );
+  if (httpNames.length !== 1) {
+    throw new Error(
+      `A paid source needs exactly one http input (a payment names no host); this one has ${httpNames.length}`,
+    );
+  }
+  const name = httpNames[0]!;
+  const declared = (parsed.doc.inputs as Record<string, any>)[name].read;
+  const resolved = options.secrets
+    ? resolveSource(parsed, options.secrets)
+    : parsed;
+  const read = (resolved.doc.inputs as Record<string, any>)[name].read;
 
   const init: RequestInit = {
-    method: resolved.method ?? "GET",
-    headers: resolved.headers ?? {},
+    method: read.method,
+    headers: {
+      ...read.headers,
+      ...(read.body ? { "content-type": read.body.contentType } : {}),
+    },
+    ...(read.body ? { body: read.body.text } : {}),
   };
   let res: Response;
   if (options.timeoutMs === undefined) {
-    res = await fetch(resolved.url, init);
+    res = await fetch(read.url, init);
   } else {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), options.timeoutMs);
     try {
-      res = await fetch(resolved.url, { ...init, signal: controller.signal });
+      res = await fetch(read.url, { ...init, signal: controller.signal });
     } finally {
       clearTimeout(timer);
     }
@@ -242,7 +298,7 @@ export async function probeSource(
   // Probe against the placeholder URL so the terms describe the declared source.
   return selectTerms(
     decodeEnvelope(res.headers.get("PAYMENT-REQUIRED"), await res.text()),
-    apiConfig.url,
+    declared.url,
     options.assetDomain,
   );
 }

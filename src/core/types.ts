@@ -36,53 +36,11 @@ export interface NodeKeyVerifierArgs {
  * Authenticates gateway-provided node encryption keys. Throwing fails the
  * private API request before secrets are encrypted or posted.
  */
-export type NodeKeyVerifier = (args: NodeKeyVerifierArgs) => void | Promise<void>;
+export type NodeKeyVerifier = (
+  args: NodeKeyVerifierArgs,
+) => void | Promise<void>;
 
-/** The off-chain API definition a source resolves. */
-export interface APIConfig {
-  url: string;
-  method?: "GET" | "POST" | "PUT";
-  headers?: Record<string, string>;
-  /** Expression that extracts the value from the HTTP response. */
-  responseParser: string;
-  /** Optional expression applied to the parsed value before packing. */
-  valueTransform?: string;
-  /**
-   * Median tolerance mode. Part of the `sourceId`; OMIT it for exact mode. See
-   * {@link AggregationConfig}.
-   */
-  aggregation?: AggregationConfig;
-}
-
-/** Numeric encoding of a tolerance-mode value: a signed `int256` scaled by `10^decimals`. */
-export interface NumericConfig {
-  type: "int256";
-  /** Fractional digits, `0..255` (u8). The parsed decimal is scaled by `10^decimals`, rounded half to even. */
-  decimals: number;
-}
-
-/**
- * Median tolerance aggregation. Instead of requiring every signer to fetch the identical
- * value, the selected nodes exchange signed observations, drop stale ones (`maxAgeMs`) and
- * those further than `maxDeviationBps` from the lower median, and sign the lower median of
- * `signaturesRequired` surviving observations. The signed value is a signed `int256`
- * (`encodeInt256Decimal`, `decodeInt256`, `formatInt256Decimal`).
- *
- * The whole object is hashed into the `sourceId` in exactly this key order. Requires
- * `signaturesRequired >= 3`. `mode: "exact"` is rejected: exact mode is expressed by
- * omitting `aggregation`.
- */
-export interface AggregationConfig {
-  mode: "tolerance";
-  rule: "median";
-  /** u32. Allowed deviation from the lower median, in basis points. */
-  maxDeviationBps: number;
-  /** Positive integer (u64 on the node, ≤ 2^53-1 here). Max observation age, in milliseconds. */
-  maxAgeMs: number;
-  numeric: NumericConfig;
-}
-
-/** ECDH-wrapped API config payload sent to selected nodes. */
+/** ECDH-wrapped private source sent to selected nodes. */
 export interface EncKeyBundle {
   ephemeralPub: string;
   nonceSym: string;
@@ -127,7 +85,7 @@ export interface SchnorrSignature {
 export interface AttestationPayload {
   /** 32-byte packed value, hex — the bytes covered by the signature. */
   value: string;
-  /** 32-byte source id, hex (`deriveSourceId(apiConfig)`). */
+  /** 32-byte source id, hex (`deriveSourceId(source)`): the keccak256 of the source's canonical bytes. */
   sourceId: string;
   registryVersion: number;
   signaturesRequired: number;
@@ -143,10 +101,16 @@ export interface AttestationPayload {
 export interface Attestation {
   payload: AttestationPayload;
   signature: SchnorrSignature;
-  /** Human-readable value (not signed). */
+  /** Human-readable value, rendered from the signed value by the source's output (not signed). */
   value: string;
   /** Whether the value was freshly fetched this round. */
   fresh: boolean;
+  /**
+   * For a source with a `keccak256` output: the bytes that were hashed to `payload.value`, hex. The
+   * gateway does not store it, so this is its only copy; submitting the attestation to Solana passes
+   * it as the raw value (at most 256 bytes) so the feed stores the preimage's hash with its kind.
+   */
+  valuePreimage?: string;
 }
 
 /**

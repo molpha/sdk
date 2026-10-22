@@ -1,21 +1,33 @@
 import { web3 } from "@anchor-lang/core";
-import { address, getAddressDecoder, getAddressEncoder, type Address } from "@solana/kit";
+import {
+  address,
+  getAddressDecoder,
+  getAddressEncoder,
+  type Address,
+} from "@solana/kit";
 
-export type SolanaAddress = Address | string | InstanceType<typeof web3.PublicKey>;
+export type SolanaAddress =
+  Address | string | InstanceType<typeof web3.PublicKey>;
 export type SolanaConnection = InstanceType<typeof web3.Connection>;
 export type SolanaKeypair = InstanceType<typeof web3.Keypair>;
-export type SolanaInstruction = InstanceType<typeof web3.TransactionInstruction>;
+export type SolanaInstruction = InstanceType<
+  typeof web3.TransactionInstruction
+>;
 export type SolanaAccountMeta = {
   pubkey: InstanceType<typeof web3.PublicKey>;
   isSigner: boolean;
   isWritable: boolean;
 };
 
-export const TOKEN_PROGRAM_ADDRESS = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+export const TOKEN_PROGRAM_ADDRESS = address(
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+);
 export const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = address(
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
 );
-export const SYSTEM_PROGRAM_ADDRESS = address("11111111111111111111111111111111");
+export const SYSTEM_PROGRAM_ADDRESS = address(
+  "11111111111111111111111111111111",
+);
 
 const addressEncoder = getAddressEncoder();
 const addressDecoder = getAddressDecoder();
@@ -24,7 +36,9 @@ export function toSolanaAddress(value: SolanaAddress): Address {
   return address(typeof value === "string" ? value : value.toBase58());
 }
 
-export function toPublicKey(value: SolanaAddress): InstanceType<typeof web3.PublicKey> {
+export function toPublicKey(
+  value: SolanaAddress,
+): InstanceType<typeof web3.PublicKey> {
   return value instanceof web3.PublicKey ? value : new web3.PublicKey(value);
 }
 
@@ -41,7 +55,10 @@ export function findProgramAddressSync(
   seeds: Uint8Array[],
   programAddress: SolanaAddress,
 ): Address {
-  const [pda] = web3.PublicKey.findProgramAddressSync(seeds, toPublicKey(programAddress));
+  const [pda] = web3.PublicKey.findProgramAddressSync(
+    seeds,
+    toPublicKey(programAddress),
+  );
   return toSolanaAddress(pda);
 }
 
@@ -49,7 +66,10 @@ export function findProgramPublicKeySync(
   seeds: Uint8Array[],
   programAddress: SolanaAddress,
 ): InstanceType<typeof web3.PublicKey> {
-  const [pda] = web3.PublicKey.findProgramAddressSync(seeds, toPublicKey(programAddress));
+  const [pda] = web3.PublicKey.findProgramAddressSync(
+    seeds,
+    toPublicKey(programAddress),
+  );
   return pda;
 }
 

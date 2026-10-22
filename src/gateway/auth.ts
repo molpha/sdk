@@ -14,7 +14,13 @@
  * message or the x402 memo.
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { concatBytes, ensureLength, toFixedBytes, utf8, u64le } from "../core/encoding.js";
+import {
+  concatBytes,
+  ensureLength,
+  toFixedBytes,
+  utf8,
+  u64le,
+} from "../core/encoding.js";
 
 export type { Signer } from "../core/types.js";
 
@@ -40,7 +46,9 @@ export function encodeRequestAuth(fields: RequestAuthFields): Uint8Array {
     fields.signaturesRequired < 1 ||
     fields.signaturesRequired > 255
   ) {
-    throw new RangeError(`signaturesRequired out of u8 range: ${fields.signaturesRequired}`);
+    throw new RangeError(
+      `signaturesRequired out of u8 range: ${fields.signaturesRequired}`,
+    );
   }
   return concatBytes(
     ensureLength(fields.programId, 32, "programId"),
@@ -53,5 +61,7 @@ export function encodeRequestAuth(fields: RequestAuthFields): Uint8Array {
 
 /** `keccak256(REQUEST_AUTH_DOMAIN || encodeRequestAuth(fields))` — the message the consumer signs. */
 export function hashRequestAuth(fields: RequestAuthFields): Uint8Array {
-  return keccak_256(concatBytes(REQUEST_AUTH_DOMAIN, encodeRequestAuth(fields)));
+  return keccak_256(
+    concatBytes(REQUEST_AUTH_DOMAIN, encodeRequestAuth(fields)),
+  );
 }

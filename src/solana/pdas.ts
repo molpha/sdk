@@ -29,27 +29,35 @@ export const registryStatePda = (programId: SolanaAddress): Address =>
   pda([SEED_REGISTRY], programId);
 
 /** Immutable, version-addressed registry snapshot: `["molpha_registry", version u32 LE]`. */
-export const registryPda = (version: number, programId: SolanaAddress): Address =>
-  pda([SEED_REGISTRY, u32le(version)], programId);
+export const registryPda = (
+  version: number,
+  programId: SolanaAddress,
+): Address => pda([SEED_REGISTRY, u32le(version)], programId);
 
 /**
  * Authority-keyed `Node` account: `["molpha_node", authority]` (`Node.authority`). Registry
  * snapshots store these addresses directly in `nodes[i]`, so consumers rarely need to
  * derive them.
  */
-export const nodePda = (authority: SolanaAddress, programId: SolanaAddress): Address =>
-  pda([SEED_NODE, addressBytes(authority)], programId);
+export const nodePda = (
+  authority: SolanaAddress,
+  programId: SolanaAddress,
+): Address => pda([SEED_NODE, addressBytes(authority)], programId);
 
 /** Bonded gateway account: `["molpha_gateway", gatewayAuthority]` — the `gateway` bound into `RequestAuth`. */
-export const gatewayPda = (authority: SolanaAddress, programId: SolanaAddress): Address =>
-  pda([SEED_GATEWAY, addressBytes(authority)], programId);
+export const gatewayPda = (
+  authority: SolanaAddress,
+  programId: SolanaAddress,
+): Address => pda([SEED_GATEWAY, addressBytes(authority)], programId);
 
 /** Plan PDA is `[b"molpha_plan", [planType as u8]]`. */
 export const planPda = (planId: number, programId: SolanaAddress): Address =>
   pda([SEED_PLAN, Uint8Array.of(planId)], programId);
 
-export const subscriptionPda = (owner: SolanaAddress, programId: SolanaAddress): Address =>
-  pda([SEED_SUBSCRIPTION, addressBytes(owner)], programId);
+export const subscriptionPda = (
+  owner: SolanaAddress,
+  programId: SolanaAddress,
+): Address => pda([SEED_SUBSCRIPTION, addressBytes(owner)], programId);
 
 /**
  * Feed state, keyed per `(sourceId, signaturesRequired, submitter)`:
@@ -63,11 +71,22 @@ export function feedPda(
   programId: SolanaAddress,
 ): Address {
   ensureLength(sourceId, 32, "sourceId");
-  if (!Number.isInteger(signaturesRequired) || signaturesRequired < 0 || signaturesRequired > 255) {
-    throw new RangeError(`signaturesRequired out of u8 range: ${signaturesRequired}`);
+  if (
+    !Number.isInteger(signaturesRequired) ||
+    signaturesRequired < 0 ||
+    signaturesRequired > 255
+  ) {
+    throw new RangeError(
+      `signaturesRequired out of u8 range: ${signaturesRequired}`,
+    );
   }
   return pda(
-    [SEED_FEED, sourceId, Uint8Array.of(signaturesRequired), addressBytes(submitter)],
+    [
+      SEED_FEED,
+      sourceId,
+      Uint8Array.of(signaturesRequired),
+      addressBytes(submitter),
+    ],
     programId,
   );
 }

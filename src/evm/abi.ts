@@ -24,8 +24,16 @@ export const MOLPHA_VERIFIER_ABI = [
             components: [
               { name: "value", type: "bytes32", internalType: "bytes32" },
               { name: "sourceId", type: "bytes32", internalType: "bytes32" },
-              { name: "registryVersion", type: "uint32", internalType: "uint32" },
-              { name: "signaturesRequired", type: "uint8", internalType: "uint8" },
+              {
+                name: "registryVersion",
+                type: "uint32",
+                internalType: "uint32",
+              },
+              {
+                name: "signaturesRequired",
+                type: "uint8",
+                internalType: "uint8",
+              },
               { name: "timestamp", type: "uint64", internalType: "uint64" },
             ],
           },
@@ -36,7 +44,11 @@ export const MOLPHA_VERIFIER_ABI = [
             components: [
               { name: "signature", type: "bytes32", internalType: "bytes32" },
               { name: "commitment", type: "address", internalType: "address" },
-              { name: "signersBitmap", type: "uint256", internalType: "uint256" },
+              {
+                name: "signersBitmap",
+                type: "uint256",
+                internalType: "uint256",
+              },
             ],
           },
         ],
@@ -53,7 +65,9 @@ export const MOLPHA_VERIFIER_ABI = [
     name: "getRegistryVersion",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ name: "registryVersion", type: "uint256", internalType: "uint256" }],
+    outputs: [
+      { name: "registryVersion", type: "uint256", internalType: "uint256" },
+    ],
   },
   {
     type: "function",
@@ -80,7 +94,9 @@ export const MOLPHA_VERIFIER_ABI = [
     type: "function",
     name: "getRegistryRoot",
     stateMutability: "view",
-    inputs: [{ name: "registryVersion", type: "uint256", internalType: "uint256" }],
+    inputs: [
+      { name: "registryVersion", type: "uint256", internalType: "uint256" },
+    ],
     outputs: [{ name: "root", type: "bytes32", internalType: "bytes32" }],
   },
   {
@@ -88,34 +104,46 @@ export const MOLPHA_VERIFIER_ABI = [
     name: "getRegistryPointer",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ name: "registryPointer", type: "address", internalType: "address" }],
+    outputs: [
+      { name: "registryPointer", type: "address", internalType: "address" },
+    ],
   },
   {
     type: "function",
     name: "getRegistryPointer",
     stateMutability: "view",
-    inputs: [{ name: "registryVersion", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "registryPointer", type: "address", internalType: "address" }],
+    inputs: [
+      { name: "registryVersion", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [
+      { name: "registryPointer", type: "address", internalType: "address" },
+    ],
   },
   {
     type: "function",
     name: "activatesAt",
     stateMutability: "view",
-    inputs: [{ name: "registryVersion", type: "uint256", internalType: "uint256" }],
+    inputs: [
+      { name: "registryVersion", type: "uint256", internalType: "uint256" },
+    ],
     outputs: [{ name: "ts", type: "uint256", internalType: "uint256" }],
   },
   {
     type: "function",
     name: "retiredAt",
     stateMutability: "view",
-    inputs: [{ name: "registryVersion", type: "uint256", internalType: "uint256" }],
+    inputs: [
+      { name: "registryVersion", type: "uint256", internalType: "uint256" },
+    ],
     outputs: [{ name: "ts", type: "uint256", internalType: "uint256" }],
   },
   {
     type: "function",
     name: "isLatestVersion",
     stateMutability: "view",
-    inputs: [{ name: "registryVersion", type: "uint256", internalType: "uint256" }],
+    inputs: [
+      { name: "registryVersion", type: "uint256", internalType: "uint256" },
+    ],
     outputs: [{ name: "latest", type: "bool", internalType: "bool" }],
   },
   {

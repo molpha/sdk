@@ -3,8 +3,6 @@
  * truth for signature-critical bytes; must stay byte-identical with the Solana
  * program and EVM verifier.
  */
-export * from "./aggregation.js";
-export * from "./apiconfig.js";
 export * from "./coalition.js";
 export * from "./constants.js";
 export * from "./encoding.js";
@@ -12,6 +10,28 @@ export * from "./int256.js";
 export * from "./message.js";
 export * from "./nodeKeys.js";
 export * from "./selection.js";
+export * from "./source.js";
+export {
+  defineSource,
+  jsonPriceSource,
+  sourceDocFor,
+  asParsedSource,
+  formatValue,
+  verifyPreimage,
+  lintSource,
+  assertToleranceQuorum,
+  MIN_TOLERANCE_SIGNATURES,
+  PER_SLOT_WRITE_PROGRAMS,
+} from "./sourcebuild.js";
+export type {
+  SourceInput,
+  LintFinding,
+  Round,
+  Decode,
+  Finality,
+} from "./sourcebuild.js";
+/** Builders for the pieces of a source: expressions (`sx.rescale`, `sx.num`, ...), inputs and decoders. */
+export * as sx from "./sourcebuild.js";
 export * from "./timestamp.js";
 export * from "./types.js";
 export * from "./verifyCodes.js";

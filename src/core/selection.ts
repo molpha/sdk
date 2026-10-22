@@ -67,7 +67,10 @@ function setBit(bitmap: Uint8Array, bit: number): void {
 }
 
 /** Indices of set bits in `[0, nodeCount)`, ascending. */
-export function selectedIndices(bitmap: Uint8Array, nodeCount: number): number[] {
+export function selectedIndices(
+  bitmap: Uint8Array,
+  nodeCount: number,
+): number[] {
   const out: number[] = [];
   for (let i = 0; i < nodeCount; i++) {
     if (bitmapBitSet(bitmap, i)) out.push(i);
@@ -86,10 +89,14 @@ export function deriveGroupBitmap(
   groupSize: number,
 ): Uint8Array {
   if (!Number.isInteger(nodeCount) || nodeCount <= 0 || nodeCount > MAX_NODES) {
-    throw new RangeError(`GroupBitmapDerivationFailed: invalid nodeCount ${nodeCount}`);
+    throw new RangeError(
+      `GroupBitmapDerivationFailed: invalid nodeCount ${nodeCount}`,
+    );
   }
   if (!Number.isInteger(groupSize) || groupSize < 0 || groupSize > nodeCount) {
-    throw new RangeError(`GroupBitmapDerivationFailed: invalid groupSize ${groupSize}`);
+    throw new RangeError(
+      `GroupBitmapDerivationFailed: invalid groupSize ${groupSize}`,
+    );
   }
   const bitmap = new Uint8Array(BITMAP_BYTES);
   if (groupSize === 0) return bitmap;
@@ -108,8 +115,14 @@ export function deriveGroupBitmap(
   while (chosen.size < sampleCount && round < MAX_ROUNDS) {
     const counterWord = new Uint8Array(32);
     counterWord.set(u64be(round), 24);
-    const block = keccak_256(concatBytes(seed, SELECTION_DERIVE_DOMAIN, counterWord));
-    for (let off = 0; off + 4 <= block.length && chosen.size < sampleCount; off += 4) {
+    const block = keccak_256(
+      concatBytes(seed, SELECTION_DERIVE_DOMAIN, counterWord),
+    );
+    for (
+      let off = 0;
+      off + 4 <= block.length && chosen.size < sampleCount;
+      off += 4
+    ) {
       const limb =
         ((block[off]! << 24) |
           (block[off + 1]! << 16) |
@@ -151,6 +164,10 @@ export function deriveSelectionBitmap(
   ts: number | bigint = Date.now(),
 ): Uint8Array {
   const seed = deriveSelectionSeed(sourceId, registryVersion, ts);
-  const size = effectiveSelectionSize(signaturesRequired, redundancy, nodeCount);
+  const size = effectiveSelectionSize(
+    signaturesRequired,
+    redundancy,
+    nodeCount,
+  );
   return deriveGroupBitmap(seed, nodeCount, size);
 }

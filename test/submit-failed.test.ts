@@ -1,3 +1,4 @@
+import { jsonPriceSource } from "../src/core/sourcebuild.js";
 import { describe, expect, it, vi } from "vitest";
 import { MolphaSDK, SubmitFailedError } from "../src/index.js";
 import type { Attestation } from "../src/core/types.js";
@@ -16,7 +17,7 @@ function sdkWith(gatewayResult: Attestation | Error, submit: () => Promise<unkno
 }
 
 const attestation = { value: "42", payload: { sourceId: "ab".repeat(32) } } as unknown as Attestation;
-const opts = { signaturesRequired: 1, apiConfig: { url: "http://api", responseParser: "$.price" } };
+const opts = { signaturesRequired: 1, source: jsonPriceSource({ url: "http://api", path: "$.price", decimals: 0 }) };
 
 describe("requestAndSubmit", () => {
   it("returns the result, signature and feed on success", async () => {

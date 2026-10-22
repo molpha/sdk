@@ -17,7 +17,11 @@ import {
   u256beFromBigInt,
 } from "../core/encoding.js";
 import type { Attestation } from "../core/types.js";
-import { VERIFY_CODES, verifyCodeName, type VerifyCodeName } from "../core/verifyCodes.js";
+import {
+  VERIFY_CODES,
+  verifyCodeName,
+  type VerifyCodeName,
+} from "../core/verifyCodes.js";
 
 /**
  * `IVerifier.AttestationPayload` — the signed half of an attestation.
@@ -94,7 +98,9 @@ const U64_MAX = 0xffff_ffff_ffff_ffffn;
 const U256_MAX = (1n << 256n) - 1n;
 
 function strip0x(value: string): string {
-  return value.startsWith("0x") || value.startsWith("0X") ? value.slice(2) : value;
+  return value.startsWith("0x") || value.startsWith("0X")
+    ? value.slice(2)
+    : value;
 }
 
 function stripOuterQuotes(value: string): string {
@@ -112,7 +118,11 @@ function stripOuterQuotes(value: string): string {
  * Normalize hex to a fixed-size `0x`-prefixed value.
  * Accepts optional `0x` prefix and surrounding quotes.
  */
-export function toFixedHex(value: string, bytes: number, label: string): `0x${string}` {
+export function toFixedHex(
+  value: string,
+  bytes: number,
+  label: string,
+): `0x${string}` {
   const clean = strip0x(stripOuterQuotes(value)).toLowerCase();
   if (clean.length !== bytes * 2) {
     throw new RangeError(
@@ -124,7 +134,11 @@ export function toFixedHex(value: string, bytes: number, label: string): `0x${st
 
 /** Convert a 32-byte hex bitmap to a `uint256` bigint (big-endian). */
 export function signersBitmapToUint256(value: string): bigint {
-  const bytes = toFixedBytes(toFixedHex(value, 32, "signersBitmap"), 32, "signersBitmap");
+  const bytes = toFixedBytes(
+    toFixedHex(value, 32, "signersBitmap"),
+    32,
+    "signersBitmap",
+  );
   return bigIntFromBytesBe(bytes);
 }
 
@@ -140,18 +154,28 @@ export function signersBitmapToDecimal(value: string): string {
  */
 function assertUint(value: number, max: bigint, label: string): number {
   if (!Number.isSafeInteger(value) || value < 0 || BigInt(value) > max) {
-    throw new RangeError(`${label}: expected an integer in 0..${max}, got ${value}`);
+    throw new RangeError(
+      `${label}: expected an integer in 0..${max}, got ${value}`,
+    );
   }
   return value;
 }
 
-function assertBigUint(value: number | bigint, max: bigint, label: string): bigint {
+function assertBigUint(
+  value: number | bigint,
+  max: bigint,
+  label: string,
+): bigint {
   if (typeof value === "number" && !Number.isSafeInteger(value)) {
-    throw new RangeError(`${label}: expected an integer in 0..${max}, got ${value}`);
+    throw new RangeError(
+      `${label}: expected an integer in 0..${max}, got ${value}`,
+    );
   }
   const n = BigInt(value);
   if (n < 0n || n > max) {
-    throw new RangeError(`${label}: expected an integer in 0..${max}, got ${value}`);
+    throw new RangeError(
+      `${label}: expected an integer in 0..${max}, got ${value}`,
+    );
   }
   return n;
 }
@@ -159,7 +183,10 @@ function assertBigUint(value: number | bigint, max: bigint, label: string): bigi
 /** Left-pad a fixed-width value into one 32-byte ABI word. */
 function word(value: string, bytes: number, label: string): Uint8Array {
   const out = new Uint8Array(32);
-  out.set(toFixedBytes(toFixedHex(value, bytes, label), bytes, label), 32 - bytes);
+  out.set(
+    toFixedBytes(toFixedHex(value, bytes, label), bytes, label),
+    32 - bytes,
+  );
   return out;
 }
 
@@ -179,8 +206,16 @@ export function buildEvmVerifierArgs(
   const payload: EvmAttestationPayload = {
     value: toFixedHex(signed.value, 32, "payload.value"),
     sourceId: toFixedHex(signed.sourceId, 32, "sourceId"),
-    registryVersion: assertUint(signed.registryVersion, U32_MAX, "registryVersion"),
-    signaturesRequired: assertUint(signed.signaturesRequired, U8_MAX, "signaturesRequired"),
+    registryVersion: assertUint(
+      signed.registryVersion,
+      U32_MAX,
+      "registryVersion",
+    ),
+    signaturesRequired: assertUint(
+      signed.signaturesRequired,
+      U8_MAX,
+      "signaturesRequired",
+    ),
     timestamp: assertBigUint(signed.timestamp, U64_MAX, "timestamp"),
   };
 
@@ -211,14 +246,20 @@ export function encodeEvmVerifyCalldata(args: EvmVerifierArgs): `0x${string}` {
     VERIFY_SELECTOR,
     word(payload.value, 32, "value"),
     word(payload.sourceId, 32, "sourceId"),
-    u256beFromBigInt(BigInt(assertUint(payload.registryVersion, U32_MAX, "registryVersion"))),
     u256beFromBigInt(
-      BigInt(assertUint(payload.signaturesRequired, U8_MAX, "signaturesRequired")),
+      BigInt(assertUint(payload.registryVersion, U32_MAX, "registryVersion")),
+    ),
+    u256beFromBigInt(
+      BigInt(
+        assertUint(payload.signaturesRequired, U8_MAX, "signaturesRequired"),
+      ),
     ),
     u256beFromBigInt(assertBigUint(payload.timestamp, U64_MAX, "timestamp")),
     word(signature.signature, 32, "signature"),
     word(signature.commitment, 20, "commitment"),
-    u256beFromBigInt(assertBigUint(signature.signersBitmap, U256_MAX, "signersBitmap")),
+    u256beFromBigInt(
+      assertBigUint(signature.signersBitmap, U256_MAX, "signersBitmap"),
+    ),
     u256beFromBigInt(assertBigUint(args.maxAge, U64_MAX, "maxAge")),
   );
   return `0x${bytesToHex(data)}`;
@@ -252,7 +293,8 @@ export function parseEvmVerifyResult(
   } else {
     const success = result[0];
     const code = result[1];
-    successWord = typeof success === "boolean" ? (success ? 1n : 0n) : BigInt(success);
+    successWord =
+      typeof success === "boolean" ? (success ? 1n : 0n) : BigInt(success);
     if (typeof code === "number" && !Number.isSafeInteger(code)) {
       throw new RangeError(`verify result: code must fit uint8, got ${code}`);
     }
@@ -260,7 +302,9 @@ export function parseEvmVerifyResult(
   }
 
   if (successWord !== 0n && successWord !== 1n) {
-    throw new RangeError(`verify result: success must be 0 or 1, got ${successWord}`);
+    throw new RangeError(
+      `verify result: success must be 0 or 1, got ${successWord}`,
+    );
   }
   if (codeWord < 0n || codeWord > U8_MAX) {
     throw new RangeError(`verify result: code must fit uint8, got ${codeWord}`);
