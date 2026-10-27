@@ -339,7 +339,7 @@ const source = defineSource({
   inputs: {
     rate: sx.evmCall({
       chain: "eip155:1", to: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", sig: "stEthPerToken()",
-      finality: { mode: "finalized", lagMs: 900_000 },   // read a finalized block 15 minutes behind the round
+      finality: { mode: "finalized", lagMs: 1_200_000 },  // read a finalized block 20 minutes behind the round
       decode: sx.abiDecode(["uint256"], { rate: "0" }),
     }),
   },
