@@ -629,18 +629,50 @@ describe("MolphaGateway node count", () => {
     ]);
   });
 
-  it("throws when the cached node list disagrees with nodeCount", async () => {
+  it("throws when the cached node list does not fit nodeCount", async () => {
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
     const gw = new MolphaGateway("http://gw1", registry);
+    // Three nodes cannot sit in two slots: the context is stale.
     await expect(
       gw.requestSignedData({
         ...baseRequest,
-        context: { registryVersion: 1, redundancyBuffer: 2, nodeCount: 5, nodes },
+        context: { registryVersion: 1, redundancyBuffer: 2, nodeCount: 2, nodes },
       }),
-    ).rejects.toThrow(/node_count 5/);
+    ).rejects.toThrow(/node_count 2/);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts fewer nodes than slots: removed nodes leave holes", async () => {
+    globalThis.fetch = mockFetch({ execute: () => completed() }) as unknown as typeof fetch;
+    const gw = new MolphaGateway("http://gw1", registry, undefined, SUBSCRIPTION_OWNER);
+    // Slots 0..4, with slots 1 and 3 empty.
+    const live = [nodes[0]!, { ...nodes[2]!, index: 2 }, { ...nodes[1]!, index: 4 }];
+    await expect(
+      gw.requestSignedData({
+        ...baseRequest,
+        context: { registryVersion: 1, redundancyBuffer: 2, nodeCount: 5, nodes: live },
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("encrypts for the live slots only, not 0..nodeCount", async () => {
+    const verifyNodeKeys = vi.fn(async (_args: unknown) => undefined);
+    globalThis.fetch = mockFetch({ execute: () => completed() }) as unknown as typeof fetch;
+    const gw = new MolphaGateway("http://gw1", registry, undefined, {
+      verifyNodeKeys,
+      defaultSubscriptionOwner: SUBSCRIPTION_OWNER,
+    });
+    // Slots 0, 2 and 5 hold nodes; 1, 3 and 4 are holes.
+    const live = [0, 2, 5].map((index, i) => ({ ...encryptedNodes[i]!, index }));
+    await gw.requestSignedData({
+      signaturesRequired: 2,
+      source: privateSource,
+      encrypt: privateApiEncrypt,
+      context: { registryVersion: 1, redundancyBuffer: 5, nodeCount: 6, liveSlots: [0, 2, 5], nodes: live },
+    });
+    expect((verifyNodeKeys.mock.calls[0]?.[0] as { nodeIndexes: number[] }).nodeIndexes).toEqual([0, 2, 5]);
   });
 
   it("authenticates and encrypts for every registry node, not a selection", async () => {

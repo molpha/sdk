@@ -29,6 +29,8 @@ import type {
 import {
   type RegistryStateView,
   type RegistryView,
+  decodeRegistryAccount,
+  liveSlots,
   resolveRemainingAccounts,
 } from "./accounts.js";
 import {
@@ -38,6 +40,7 @@ import {
   setComputeUnitPrice,
   SYSTEM_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
+  toPublicKey,
   toSolanaAddress,
   type SolanaAccountMeta,
   type SolanaAddress,
@@ -426,7 +429,8 @@ export class MolphaSolanaClient {
 
   /**
    * Current registry version plus the selection inputs of that snapshot
-   * (`redundancy_buffer`, `node_count`). Two account reads: `RegistryState`, then the
+   * (`redundancy_buffer`, `node_count` = slots with holes, and the live slots the committee is
+   * drawn over). Two account reads: `RegistryState`, then the
    * version-addressed `Registry`. Prefer this over {@link getRegistryVersion} when
    * deriving gateway selection bitmaps.
    */
@@ -439,6 +443,7 @@ export class MolphaSolanaClient {
       registryVersion: state.currentVersion,
       redundancyBuffer: registry.redundancyBuffer,
       nodeCount: registry.nodeCount,
+      liveSlots: liveSlots(registry),
     };
   }
 
@@ -921,9 +926,13 @@ export class MolphaSolanaClient {
     await Promise.all(
       selectedNodes.map(async (node) => {
         const nodeAddress = registry.nodes[node.index];
-        if (node.index >= registry.nodeCount || nodeAddress === undefined) {
+        if (
+          node.index >= registry.nodeCount ||
+          nodeAddress === undefined ||
+          nodeAddress === null
+        ) {
           throw new Error(
-            `Gateway selected node ${node.index} is outside registry ${registry.version} node_count ${registry.nodeCount}`,
+            `Gateway selected node ${node.index} is not a live member of registry ${registry.version} (node_count ${registry.nodeCount}, holes included)`,
           );
         }
         const account = await this.fetchNodeAccount(nodeAddress, node.index);
@@ -976,9 +985,18 @@ export class MolphaSolanaClient {
   }
 
   private async fetchRegistry(version: number): Promise<RegistryView> {
-    const registry = await this.accounts.registry.fetch(
-      registryPda(version, this.programId),
-    );
+    const address = registryPda(version, this.programId);
+    // The current layout is a header followed by one record per slot, decoded here because the IDL
+    // describes the header only. A snapshot in the previous fixed layout (a 256-entry address
+    // array), or one that cannot be read raw, goes through the vendored IDL, which reports the
+    // read error itself.
+    const info = await this.program.provider.connection
+      .getAccountInfo(toPublicKey(address))
+      .catch(() => null);
+    if (info && info.data.length !== LEGACY_REGISTRY_LEN) {
+      return decodeRegistryAccount(Uint8Array.from(info.data));
+    }
+    const registry = await this.accounts.registry.fetch(address);
     const nodeCount: number = registry.nodeCount;
     const nodes = (registry.nodes as Array<Uint8Array | number[]>)
       .slice(0, nodeCount)
@@ -1081,6 +1099,9 @@ export function buildSubmitAttestationArgs(
     },
   };
 }
+
+/** Size of a `Registry` account in the previous layout: a fixed array of 256 node addresses. */
+const LEGACY_REGISTRY_LEN = 8_224;
 
 /** The attestation's keccak256 preimage if it has one the program can take (at most 256 bytes). */
 function attestationPreimage(attestation: Attestation): Uint8Array | undefined {

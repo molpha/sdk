@@ -48,7 +48,10 @@ export interface EvmSchnorrSignature {
   signature: `0x${string}`;
   /** `address` of the nonce point `R`. */
   commitment: `0x${string}`;
-  /** `uint256` signers bitmap; bit `i` is node `i` of the registry version. */
+  /**
+   * `uint256` signers bitmap; bit `i` is key slot `i` of the registry version. A node keeps its
+   * slot while it is registered (a removal leaves a hole), so the bit is stable across versions.
+   */
   signersBitmap: bigint;
 }
 

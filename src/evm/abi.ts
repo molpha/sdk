@@ -1,7 +1,9 @@
 /**
  * Molpha EVM verifier ABI: `verify(Attestation, uint64 maxAge) -> (bool, uint8)` plus every
- * read-only registry view on `IVerifier`. Owner-only mutators (`addNode`, `removeNode`,
- * `setRedundancyBuffer`) and `Ownable` plumbing are deliberately left out.
+ * read-only registry view on `IVerifier`. Owner-only mutators (`addNode`, `removeNode`) and
+ * `Ownable` plumbing are deliberately left out. The verifier keeps no redundancy buffer and does
+ * not check committee selection: any quorum of live nodes verifies. `getTotalNodes()` is the
+ * number of key slots, holes included.
  *
  * Mirrors `IVerifier.sol` in `molpha-core-contracts`. Struct member order is ABI-significant
  * and equals the signed message order, so it is not the flat gateway field order on `Attestation`.
@@ -75,13 +77,6 @@ export const MOLPHA_VERIFIER_ABI = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "totalNodes", type: "uint256", internalType: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "redundancyBuffer",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
   },
   {
     type: "function",

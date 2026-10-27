@@ -117,8 +117,8 @@ describe("builders", () => {
           `"read":{"method":"balance","address":"0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0"},"decode":{"format":"abi","types":["uint256"],"fields":{"v":{"pick":"0"}}}}},` +
           `"transform":{"ref":"r.v"},"output":{"type":"uint256","decimals":"0"}}`,
       );
-    checkChains(evm("900000"));
+    checkChains(evm("1200000"));
     expect(() => checkChains(evm("60000"))).toThrow(/must be between/);
-    expect(() => checkChains(evm("900000"), undefined, () => false)).toThrow(/not supported/);
+    expect(() => checkChains(evm("1200000"), undefined, () => false)).toThrow(/not supported/);
   });
 });
