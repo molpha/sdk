@@ -59,13 +59,20 @@ export type Signer = (message: Uint8Array) => Promise<Uint8Array>;
  */
 export interface RegistrySelectionConfig {
   registryVersion: number;
-  /** Selection padding: `min(signaturesRequired + redundancyBuffer, nodeCount)`. */
+  /** Selection padding: `min(signaturesRequired + redundancyBuffer, live members)`. */
   redundancyBuffer: number;
   /**
-   * `Registry.node_count` of the snapshot — the value the chain derives selection from.
-   * Optional for standalone callers; when absent the gateway node-list length is used.
+   * `Registry.node_count` of the snapshot: its slot count, holes included (a removed node leaves
+   * a hole and every other node keeps its slot). Optional for standalone callers; when absent
+   * the gateway node-list length is used.
    */
   nodeCount?: number;
+  /**
+   * Slots of the snapshot that hold a live member, ascending. The committee is drawn over these
+   * and `min(signaturesRequired + redundancyBuffer, liveSlots.length)` is its size. Absent means
+   * no holes are known: every slot below `nodeCount` is live.
+   */
+  liveSlots?: number[];
 }
 
 /**
@@ -123,7 +130,10 @@ export interface Attestation {
 export interface RegistryInfo {
   /** `RegistryState.current_version`. */
   version: number;
+  /** Slots of the snapshot, holes included. */
   nodeCount: number;
+  /** Live members, when the gateway reports it; the selection is drawn over these. */
+  liveCount?: number;
   redundancyBuffer: number;
 }
 

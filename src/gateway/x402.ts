@@ -71,17 +71,18 @@ export class UpstreamPaymentRequiredError extends Error {
 
 /**
  * Number of source fetches this round may perform, and so authorizations to
- * sign: `min(signaturesRequired + redundancyBuffer, nodeCount)`. Identical to
- * the round's selection size — the eligible set *is* the set that fetches.
+ * sign: `min(signaturesRequired + redundancyBuffer, live members)`. Identical to
+ * the round's selection size — the eligible set *is* the set that fetches. `liveCount` is the
+ * number of live members; `nodeCount` (slots, holes included) stands in when it is not known.
  */
 export function eligibleSetSize(
   signaturesRequired: number,
-  registry: { nodeCount: number; redundancyBuffer: number },
+  registry: { nodeCount: number; redundancyBuffer: number; liveCount?: number },
 ): number {
   return effectiveSelectionSize(
     signaturesRequired,
     registry.redundancyBuffer,
-    registry.nodeCount,
+    registry.liveCount ?? registry.nodeCount,
   );
 }
 

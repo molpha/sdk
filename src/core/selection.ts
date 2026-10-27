@@ -45,7 +45,10 @@ export function deriveSelectionSeed(
   );
 }
 
-/** `min(signaturesRequired + redundancyBuffer, nodeCount)`. */
+/**
+ * `min(signaturesRequired + redundancyBuffer, nodeCount)`. `nodeCount` is the number of members
+ * the committee is drawn over: the live members, not the registry's slot count when it has holes.
+ */
 export function effectiveSelectionSize(
   signaturesRequired: number,
   redundancyBuffer: number,
@@ -151,9 +154,35 @@ export function deriveGroupBitmap(
 }
 
 /**
+ * Map a bitmap drawn over `liveSlots.length` ranks onto the slots they stand for: rank `r`
+ * becomes slot `liveSlots[r]`. A registry whose members were removed leaves holes, and the
+ * committee is drawn over the live members only.
+ */
+export function mapRanksToSlots(
+  ranks: Uint8Array,
+  liveSlots: readonly number[],
+): Uint8Array {
+  const out = new Uint8Array(BITMAP_BYTES);
+  for (let rank = 0; rank < liveSlots.length; rank++) {
+    if (!bitmapBitSet(ranks, rank)) continue;
+    const slot = liveSlots[rank]!;
+    if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_NODES) {
+      throw new RangeError(`invalid registry slot ${slot}`);
+    }
+    setBit(out, slot);
+  }
+  return out;
+}
+
+/**
  * Convenience orchestrator: derive the selection bitmap end-to-end.
  * `redundancy` defaults to 0; `ts` is the timestamp in unix MILLISECONDS and defaults
  * to now. The gateway assigns the real timestamp of a round, so this is for tests and tools.
+ *
+ * `nodeCount` is the registry's slot count. When `liveSlots` (ascending slots that hold a
+ * member) is given and has fewer entries than `nodeCount`, the draw runs over the live members
+ * and each drawn rank is mapped to its slot, exactly as the program and the nodes do; without
+ * holes the result is the plain draw over the slots.
  */
 export function deriveSelectionBitmap(
   sourceId: Uint8Array,
@@ -162,12 +191,12 @@ export function deriveSelectionBitmap(
   signaturesRequired: number,
   redundancy = 0,
   ts: number | bigint = Date.now(),
+  liveSlots?: readonly number[],
 ): Uint8Array {
   const seed = deriveSelectionSeed(sourceId, registryVersion, ts);
-  const size = effectiveSelectionSize(
-    signaturesRequired,
-    redundancy,
-    nodeCount,
-  );
-  return deriveGroupBitmap(seed, nodeCount, size);
+  const drawn = liveSlots ? liveSlots.length : nodeCount;
+  const size = effectiveSelectionSize(signaturesRequired, redundancy, drawn);
+  const ranks = deriveGroupBitmap(seed, drawn, size);
+  if (!liveSlots || liveSlots.length === nodeCount) return ranks;
+  return mapRanksToSlots(ranks, liveSlots);
 }
