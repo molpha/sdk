@@ -34,6 +34,18 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./core": {
+      "import": "./dist/core.js",
+      "types": "./dist/core.d.ts"
+    },
+    "./evm": {
+      "import": "./dist/evm.js",
+      "types": "./dist/evm.d.ts"
+    },
+    "./starknet": {
+      "import": "./dist/starknet.js",
+      "types": "./dist/starknet.d.ts"
+    },
     "./utils": {
       "import": "./dist/utils.js",
       "types": "./dist/utils.d.ts"

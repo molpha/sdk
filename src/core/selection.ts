@@ -5,7 +5,14 @@
  * byte `31 - (i >> 3)`, mask `1 << (i & 7)`), matching the wire / on-chain form.
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { concatBytes, ensureLength, u32be, u64be, utf8 } from "./encoding.js";
+import {
+  concatBytes,
+  ensureLength,
+  hexToBytes,
+  u32be,
+  u64be,
+  utf8,
+} from "./encoding.js";
 
 const SELECTION_SEED_DOMAIN = keccak_256(utf8("MOLPHA_SELECTION_V1"));
 const SELECTION_DERIVE_DOMAIN = keccak_256(utf8("MOLPHA_SELECTION_DERIVE"));
@@ -76,6 +83,24 @@ export function selectedIndices(
     if (bitmapBitSet(bitmap, i)) out.push(i);
   }
   return out;
+}
+
+/**
+ * Set-bit indices of a 32-byte big-endian bitmap given as hex (`0x` optional), full 256-bit scan.
+ * Short hex is left-padded, the way the gateway sends it (a bitmap with only bit 2 set is `"4"`);
+ * hex longer than 32 bytes throws instead of being read from its first 32 bytes.
+ */
+export function bitmapToIndices(signersBitmapHex: string): number[] {
+  const clean = signersBitmapHex.replace(/^0[xX]/, "");
+  if (clean.length > BITMAP_BYTES * 2) {
+    throw new RangeError(
+      `signersBitmap: expected at most ${BITMAP_BYTES} bytes, got ${Math.ceil(clean.length / 2)}`,
+    );
+  }
+  return selectedIndices(
+    hexToBytes(clean.padStart(BITMAP_BYTES * 2, "0")),
+    MAX_NODES,
+  );
 }
 
 /**

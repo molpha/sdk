@@ -3,6 +3,10 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     index: "src/index.ts",
+    // Browser-safe entry points: `@noble` only, no Anchor, bn.js or Node built-ins.
+    core: "src/core/index.ts",
+    evm: "src/evm/index.ts",
+    starknet: "src/starknet/index.ts",
     utils: "src/utils.ts",
   },
   format: ["esm"],
