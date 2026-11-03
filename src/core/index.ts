@@ -9,6 +9,7 @@ export * from "./encoding.js";
 export * from "./int256.js";
 export * from "./message.js";
 export * from "./nodeKeys.js";
+export * from "./round.js";
 export * from "./selection.js";
 export * from "./source.js";
 export {

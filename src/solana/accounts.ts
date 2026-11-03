@@ -7,9 +7,11 @@
  * `account == registry.nodes[bit]` and reads each signer's secp256k1 key from it.
  */
 import type { Address } from "@solana/kit";
-import { hexToBytes } from "../core/encoding.js";
-import { selectedIndices } from "../core/selection.js";
+import { bitmapToIndices } from "../core/selection.js";
 import { type SolanaAccountMeta, toPublicKey } from "./kit.js";
+
+// `bitmapToIndices` lives in `core` so browsers can import it without the Solana surface.
+export { bitmapToIndices };
 
 /** On-chain `RegistryState` (Anchor camelCase): pointer to the current immutable snapshot. */
 export interface RegistryStateView {
@@ -31,11 +33,6 @@ export interface RegistryView {
   graceActiveUntil: bigint;
   /** Inclusive creation time (unix seconds): a version cannot verify a round dated before it existed. */
   activeFrom: bigint;
-}
-
-/** Set-bit indices of a 32-byte big-endian bitmap (full 256-bit scan). */
-export function bitmapToIndices(signersBitmapHex: string): number[] {
-  return selectedIndices(hexToBytes(signersBitmapHex), 256);
 }
 
 /**
