@@ -73,7 +73,7 @@ describe("deployment profile", () => {
     );
     expect(manifest.stable.gatewayUrl).toContain("gateway.molpha.io");
     expect(manifest.dev.solanaProgramId).toBe(
-      "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt",
+      "dzemhcTeUnUEhDcyUssWP8GfcMCYwKezVg4U1hvdEJe",
     );
     expect(manifest.dev.gatewayUrl).toContain("dev-gateway.molpha.io");
   });

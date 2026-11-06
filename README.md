@@ -85,7 +85,7 @@ Defaults are baked at publish time from `config/deployments.json` (`MOLPHA_SDK_P
 | npm dist-tag | Profile | Default gateway | Solana program | EVM / Starknet |
 |---|---|---|---|---|
 | `latest` | `stable` | `https://gateway.molpha.io/` | `MoLF3pgVA9MENSuEujxNNSMaTo71aLyewaH5nrWfUZs` | Documented CREATE2 / Sepolia addresses |
-| `dev` | `dev` | `https://dev-gateway.molpha.io/` | `chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt` | Provisional until redeploy (`MOLPHA_DEV_VERIFIERS_PROVISIONAL`); falls back to stable addresses |
+| `dev` | `dev` | `https://dev-gateway.molpha.io/` | `dzemhcTeUnUEhDcyUssWP8GfcMCYwKezVg4U1hvdEJe` | Provisional until redeploy (`MOLPHA_DEV_VERIFIERS_PROVISIONAL`); falls back to stable addresses |
 
 Inspect the active profile via `MOLPHA_SDK_PROFILE` and `MOLPHA_DEV_VERIFIERS_PROVISIONAL`. Local builds: `MOLPHA_SDK_PROFILE=stable pnpm build` or `MOLPHA_SDK_PROFILE=dev pnpm build` (default `dev`).
 
@@ -374,7 +374,7 @@ A gateway response is a coordination result, not proof of settlement or of on-ch
 const { signature, feed } = await sdk.solana.submitAttestation(result);
 ```
 
-`submit_attestation` takes `{ attestation: { payload, signature }, rawValue, coalitionKey }` plus one read-only `Node` account per signer (ascending signer-bit order, resolved from the registry snapshot the round was signed against). The SDK builds all of it: it fetches the signer `Node` accounts in one batched read, sums their secp256k1 keys into the affine **coalition key** (`computeCoalitionKey`), and checks the program's signer-count bounds before sending. The coalition key is unsigned instruction data that the program checks projectively against its own sum, so a wrong key only fails the transaction. Pass `{ coalitionKey }` to skip the `Node` fetch when you already hold it.
+`submit_attestation` takes `{ attestation: { payload, signature }, rawValue, coalitionKey }` and the `Registry` snapshot the round was signed against, and no signer accounts: each record of the snapshot holds the key its member (a node, or a provider at bit `64 + p`) signs with under that version, and the program reads the signers' keys from there. The SDK builds all of it: it reads the snapshot once per version, sums the signers' record keys into the affine **coalition key** (`computeCoalitionKey`), and checks the program's signer-count bounds before sending. The coalition key is unsigned instruction data that the program checks projectively against its own sum, so a wrong key only fails the transaction. Pass `{ coalitionKey }` when you already hold it.
 
 A source with a `keccak256` output signs the digest of a longer byte string. The gateway returns those bytes as `result.valuePreimage`, and `submitAttestation` passes them as `rawValue` when they are at most 256 bytes, verifying the digest before sending (the program then stores the preimage's hash and marks the feed `Hash`). To pass a preimage yourself:
 
@@ -628,7 +628,34 @@ try {
 To drive the payment yourself, `probeSource`, `signSourcePayments` and `eligibleSetSize`
 are exported for x402-native agents calling `/v1/x402/execute` with their own client.
 `gateway.getNodesInfo()` reports the gateway's advisory view of the registry policy that
-sizes the eligible set, for callers with no Solana connection.
+sizes the eligible set, for callers with no Solana connection: its `registry.nodeCount` is the
+number of live nodes (what `eligibleSetSize` takes) and `registry.slotCount` the slot count, holes
+included.
+
+## Provider-signed rounds
+
+A source may name its data provider in a top-level `provenance` block. With
+`requireProvider: true` the round is also signed by that provider's own signer, and its bit
+(`64 + slot`) in the attestation's signers proves the provider signed exactly this attestation. It
+proves who signed, not that the value is right.
+
+```ts
+const source = defineSource({ v: "1", provenance: { provider: "1" }, /* inputs, transform, ... */ });
+const result = await sdk.gateway.requestSignedData({ source, signaturesRequired: 3, requireProvider: true });
+```
+
+- The provider counts toward `signaturesRequired` like a node, so the round is
+  `signaturesRequired - 1` nodes plus the provider (`nodeQuorum`), and `signaturesRequired` must be
+  at least 2. The committee, the paid-source authorizations and `eligibleSetSize(..., true)` use
+  that node quorum.
+- An attestation carries at most one provider bit; every verifier rejects two.
+- There is no committee-only fallback: while the provider's signer is down, or when it refuses the
+  round, the gateway answers 503 and the round is lost. `requireProvider` on a source without
+  provenance, or for a provider that is not an active signer, is a 400.
+- A provider round and a committee round of one feed cannot run in the same tick: the second is a
+  409 and is retried after the next tick.
+- A verifier cannot tell which provider a source names, so any registered provider's bit counts on
+  any source. A consumer that needs one provider pins it with the chain's `verifyProvenance`.
 
 ## EVM verification
 
@@ -910,10 +937,10 @@ A Molpha attestation is valid only if the verifier can confirm:
 - the update targets the expected `sourceId`;
 - the result was signed against a specific `registryVersion` (an immutable node-set snapshot);
 - the quorum satisfies `signaturesRequired`;
-- the signer bitmap is a subset of the deterministic selection for `(sourceId, registryVersion, timestamp)`;
+- every set bit names a live member of that registry version (verifiers do not check committee selection: any quorum of live members verifies), with at most one provider bit;
 - the aggregate Schnorr signature over `attestationMessageHash(...)` is valid;
 - the timestamp is within the accepted freshness bounds;
-- on Solana, the signer `Node` accounts passed as remaining accounts are exactly `registry.nodes[bit]` for every set bit, and the supplied coalition key matches the sum of their keys.
+- on Solana, the supplied coalition key matches the sum of the signers' keys as the registry snapshot records them.
 
 A valid signature does not replace consumer policy: freshness, source, quorum and replay checks remain the consumer's responsibility.
 
@@ -931,7 +958,7 @@ import { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "@molpha/sdk";
 
 Override `idl` and `programId` when targeting another deployment.
 
-The vendored IDL is `anchor idl build -p molpha` output for `molpha-solana-program` `3d01170` ("Epoch settlements (#47)").
+The `dev` profile's IDL is `anchor idl build -p molpha` output for `molpha-solana-program` `333b5c9` ("registry update (#67)"): provider signers, stable registry slots and signing keys held in the registry records.
 
 Keep the vendored IDL aligned with the deployed program. Mismatched IDL/program versions can produce invalid account derivations, decoding errors, or failed instruction simulation.
 
@@ -990,7 +1017,7 @@ Known limitations:
 - production deployments should use authenticated gateway requests;
 - testnet verifier addresses may change between protocol releases.
 
-Solana paths such as selection bitmap and `submit_attestation` remaining-accounts resolution are aligned with the IDL selected by the active deployment profile (`idl/profiles/{stable,dev}/molpha.json`).
+Solana paths such as the selection bitmap and the `submit_attestation` signer keys are aligned with the IDL selected by the active deployment profile (`idl/profiles/{stable,dev}/molpha.json`).
 
 ## Develop
 

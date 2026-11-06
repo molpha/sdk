@@ -59,12 +59,15 @@ export type Signer = (message: Uint8Array) => Promise<Uint8Array>;
  */
 export interface RegistrySelectionConfig {
   registryVersion: number;
-  /** Selection padding: `min(signaturesRequired + redundancyBuffer, live members)`. */
+  /**
+   * Selection padding: `min(nodeQuorum + redundancyBuffer, live members)`, where the node quorum is
+   * `signaturesRequired`, less one for a provider round (`requireProvider`).
+   */
   redundancyBuffer: number;
   /**
-   * `Registry.node_count` of the snapshot: its slot count, holes included (a removed node leaves
-   * a hole and every other node keeps its slot). Optional for standalone callers; when absent
-   * the gateway node-list length is used.
+   * `Registry.node_count` of the snapshot: its node slot count, holes included (a removed node
+   * leaves a hole and every other node keeps its slot). Provider slots are counted apart and never
+   * included. Optional for standalone callers; when absent the gateway node-list length is used.
    */
   nodeCount?: number;
   /**
@@ -130,10 +133,13 @@ export interface Attestation {
 export interface RegistryInfo {
   /** `RegistryState.current_version`. */
   version: number;
-  /** Slots of the snapshot, holes included. */
+  /**
+   * Live nodes: what the committee is drawn over. Each node's `index` is its registry slot, and
+   * removed nodes leave holes, so indexes can reach past this count (see `slotCount`).
+   */
   nodeCount: number;
-  /** Live members, when the gateway reports it; the selection is drawn over these. */
-  liveCount?: number;
+  /** Node slots of the snapshot, holes included: every node index is below it. */
+  slotCount?: number;
   redundancyBuffer: number;
 }
 
@@ -197,7 +203,10 @@ export interface UpstreamQuote {
   signaturesRequired: number;
   redundancyBuffer: number;
   nodeCount: number;
-  /** Source fetches this round may perform, and so authorizations to sign. */
+  /**
+   * Source fetches this round may perform, and so authorizations to sign:
+   * `min(nodeQuorum + redundancyBuffer, live members)`, with one node less in a provider round.
+   */
   eligibleSetSize: number;
   supportedX402Versions: number[];
   /** The source's own rejection detail, when a round hit the paywall the hard way. */

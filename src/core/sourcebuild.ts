@@ -303,6 +303,8 @@ export interface SourceInput {
     mode?: "tolerance";
     rule?: "median";
   } | null;
+  /** The registry provider whose signer co-signs rounds that ask for provenance. Omit for none. */
+  provenance?: { provider: Num } | null;
 }
 
 const isRec = (x: unknown): x is Record<string, any> =>
@@ -416,7 +418,7 @@ function normInput(x: any): any {
 export function sourceDocFor(input: SourceInput): SourceDoc {
   const numeric =
     input.output.type === "int256" || input.output.type === "uint256";
-  return {
+  const doc: SourceDoc = {
     v: "1",
     inputs: Object.fromEntries(
       Object.entries(input.inputs).map(([name, x]) => [name, normInput(x)]),
@@ -438,6 +440,9 @@ export function sourceDocFor(input: SourceInput): SourceDoc {
         }
       : null,
   };
+  if (input.provenance)
+    doc.provenance = { provider: numStr(input.provenance.provider) as string };
+  return doc;
 }
 
 /** Fill in the defaults of a short-form source and validate it. Throws a `SourceError` with a path. */

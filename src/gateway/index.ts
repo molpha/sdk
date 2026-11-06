@@ -12,7 +12,7 @@ import { MOLPHA_PROGRAM_ID } from "../core/constants.js";
 import { DEFAULT_GATEWAY_ENDPOINT } from "../deployment.generated.js";
 import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
-import { effectiveSelectionSize } from "../core/selection.js";
+import { effectiveSelectionSize, nodeQuorum } from "../core/selection.js";
 import { ROUND_TICK_MS } from "../core/timestamp.js";
 import type {
   Attestation,
@@ -93,6 +93,19 @@ export interface RequestSignedDataOptions {
    * Without this, a paywalled source throws {@link UpstreamPaymentRequiredError}.
    */
   sourcePayment?: SourcePaymentOptions;
+  /**
+   * Ask for a round the source's provider also signs. The source must name the provider in its
+   * `provenance` block. The provider's bit in the attestation's signers then proves the provider signed
+   * exactly this attestation. It counts toward `signaturesRequired` like a node's (an attestation
+   * carries at most one provider bit), so a provider round is `signaturesRequired - 1` nodes plus the
+   * provider: the committee is drawn with that smaller quorum, which is also the number of source
+   * fetches (and paid-source authorizations) the round may perform. The signature proves the provider
+   * signed, not that the value is right, and a verifier cannot tell which provider the source names:
+   * pin it with the chain's `verifyProvenance`. There is no committee-only fallback: while the
+   * provider's signer is down the gateway answers 503 and no round runs. Provider rounds and
+   * committee rounds of one feed cannot run in the same tick; the loser is retried.
+   */
+  requireProvider?: boolean;
   /** Max accepted value age in seconds. Default 60. */
   maxAge?: number;
   /**
@@ -533,7 +546,18 @@ export class MolphaGateway {
     // Validation is part of parsing: an invalid source is refused here, with its path, before any
     // request. Tolerance additionally needs a quorum of at least 3.
     const source = asParsedSource(opts.source);
+    if (opts.requireProvider && !source.provenance) {
+      throw new Error(
+        "requireProvider needs a source with a provenance block naming the provider",
+      );
+    }
     assertToleranceQuorum(source, signaturesRequired);
+    // Nodes a round draws: one fewer when the provider signs as well. Selection, the paid-source
+    // authorizations and the gateway's quote all use this, never the wire `signaturesRequired`.
+    const committeeQuorum = nodeQuorum(
+      signaturesRequired,
+      opts.requireProvider === true,
+    );
     const sourceIdBytes = source.id;
     const sourceId = bytesToHex(sourceIdBytes);
 
@@ -613,7 +637,7 @@ export class MolphaGateway {
           });
       if (terms) {
         authorizations = effectiveSelectionSize(
-          signaturesRequired,
+          committeeQuorum,
           redundancyBuffer,
           nodeCount,
         );
@@ -622,7 +646,7 @@ export class MolphaGateway {
 
     let lastError: unknown;
     let groupSize = effectiveSelectionSize(
-      signaturesRequired,
+      committeeQuorum,
       redundancyBuffer,
       nodeCount,
     );
@@ -685,6 +709,7 @@ export class MolphaGateway {
       };
       if (encKeyBundle) baseBody.encKeyBundle = encKeyBundle;
       if (sourcePayments) baseBody.sourcePayments = sourcePayments;
+      if (opts.requireProvider) baseBody.requireProvider = true;
 
       /** Set when a relayed source quote makes this attempt's round obsolete. */
       let requote = false;
@@ -745,7 +770,7 @@ export class MolphaGateway {
             requoted = true;
             if (quote.eligibleSetSize !== groupSize) {
               throw new GatewayError(
-                `Gateway upstream quote eligibleSetSize ${quote.eligibleSetSize} does not match this round's selection size ${groupSize} (min(signaturesRequired + redundancyBuffer, live members))`,
+                `Gateway upstream quote eligibleSetSize ${quote.eligibleSetSize} does not match this round's selection size ${groupSize} (min(node quorum + redundancyBuffer, live members); node quorum is signaturesRequired, less one for a provider round)`,
                 402,
               );
             }
@@ -872,7 +897,7 @@ export class MolphaGateway {
         registryIndexes = liveSlotsOf(round);
         nodeCount = registryIndexes.length;
         groupSize = effectiveSelectionSize(
-          signaturesRequired,
+          committeeQuorum,
           redundancyBuffer,
           nodeCount,
         );

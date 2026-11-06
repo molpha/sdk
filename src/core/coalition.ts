@@ -2,7 +2,7 @@
  * Coalition key: the affine sum of the signers' secp256k1 public keys.
  *
  * `submit_attestation` takes it as untrusted instruction data and checks it projectively
- * against its own sum of the signers' `Node` keys (`X ≡ x·Z²`, `Y ≡ y·Z³`), so a wrong key
+ * against its own sum of the signers' registry record keys (`X ≡ x·Z²`, `Y ≡ y·Z³`), so a wrong key
  * only fails the transaction — it can never select another key. It is a property of the
  * point, not of any library's arithmetic: summing in any order with any secp256k1
  * implementation gives the same `(x, y)`. Mirrors `molpha_verifier::coalition_key`.

@@ -4,7 +4,6 @@
  */
 import { Program, Wallet, web3 } from "@anchor-lang/core";
 import { describe, expect, it, vi } from "vitest";
-import { hexToBytes } from "../src/core/encoding.js";
 import type { Attestation } from "../src/core/types.js";
 import {
   BatchTooLargeError,
@@ -16,10 +15,9 @@ import {
   MolphaSolanaClient,
   SUBMIT_INSTRUCTION_DATA_BYTES,
 } from "../src/solana/client.js";
-import { addressFromBytes } from "../src/solana/kit.js";
+import { MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 import { FIXTURE_SIGNER_BITS, PUBKEYS } from "./fixtures/registry12.js";
-
-const nodeAddress = (i: number) => addressFromBytes(new Uint8Array(32).fill(0xc0 + i));
+import { accountInfo, registryAccountBytes } from "./fixtures/registry-bytes.js";
 const SIGNERS = FIXTURE_SIGNER_BITS.length;
 
 /** The 12-node message fixture (message.test.ts), 7 signers, at the given timestamp. */
@@ -50,32 +48,22 @@ function harness() {
     wallet,
   });
   const inner = client as unknown as {
-    program: { account: Record<string, unknown>; methods: unknown };
+    program: { methods: unknown; provider: { connection: { getAccountInfo: unknown } } };
     provider: { sendAndConfirm: unknown };
   };
 
-  inner.program.account = {
-    registry: {
-      fetch: async () => ({
-        version: 12,
-        nodeCount: 12,
-        redundancyBuffer: 2,
-        nodes: Array.from({ length: 12 }, (_, i) => Array.from(new Uint8Array(32).fill(0xc0 + i))),
-        graceActiveUntil: { toString: () => "0" },
-        activeFrom: { toString: () => "1700000000" },
-      }),
-    },
-    node: {
-      fetchMultiple: async (addresses: web3.PublicKey[]) =>
-        addresses.map((address) => {
-          const index = Array.from({ length: 12 }, (_, i) => i).find((i) => nodeAddress(i) === address.toBase58())!;
-          return {
-            secp256k1PubkeyX: Array.from(hexToBytes(PUBKEYS[index]!.x)),
-            secp256k1PubkeyY: Array.from(hexToBytes(PUBKEYS[index]!.y)),
-          };
-        }),
-    },
-  };
+  // The 12-node registry of the fixture; signer keys come from its records.
+  const registry = registryAccountBytes({
+    version: 12,
+    redundancyBuffer: 2,
+    nodes: Array.from({ length: 12 }, (_, i) => ({
+      account: new Uint8Array(32).fill(0xc0 + i),
+      x: PUBKEYS[i]!.x,
+      y: PUBKEYS[i]!.y,
+    })),
+  });
+  inner.program.provider.connection.getAccountInfo = async () =>
+    accountInfo(registry, MOLPHA_PROGRAM_ADDRESS);
 
   const timestamps: number[] = [];
   const rpc = vi.fn(async () => "single-sig");
@@ -84,10 +72,12 @@ function harness() {
       const args = rawArgs as { attestation: { payload: { timestamp: { toString(): string } } } };
       timestamps.push(Number(args.attestation.payload.timestamp.toString()));
       let accounts: Record<string, unknown> = {};
-      let remaining: web3.AccountMeta[] = [];
       const builder = {
         accountsPartial: (a: Record<string, unknown>) => ((accounts = a), builder),
-        remainingAccounts: (r: web3.AccountMeta[]) => ((remaining = r), builder),
+        // The program refuses remaining accounts; the SDK must never pass any.
+        remainingAccounts: () => {
+          throw new Error("submit_attestation takes no remaining accounts");
+        },
         preInstructions: () => builder,
         rpc,
         // The same accounts, in the same order, as the program's instruction.
@@ -100,7 +90,6 @@ function harness() {
               { pubkey: new web3.PublicKey(String(accounts.feed)), isSigner: false, isWritable: true },
               { pubkey: new web3.PublicKey(String(accounts.protocolConfig)), isSigner: false, isWritable: false },
               { pubkey: new web3.PublicKey(String(accounts.systemProgram)), isSigner: false, isWritable: false },
-              ...remaining,
             ],
             data: Buffer.alloc(SUBMIT_INSTRUCTION_DATA_BYTES),
           }),
@@ -116,7 +105,7 @@ function harness() {
 }
 
 const FIRST = 1_705_257_421_000;
-/** Seven signers: only two such attestations fit in a transaction. */
+/** Seven signers. Signers take no accounts, so three fit in a transaction, as with any count. */
 const batchOf = (n: number) => Array.from({ length: n }, (_, i) => attestation(FIRST + i * 250));
 /** Three signers (nodes 0, 1 and 2), the usual quorum: three fit. */
 const threeSigners = (timestamp: number): Attestation => ({
@@ -190,8 +179,8 @@ describe("MolphaSolanaClient.submitAttestations", () => {
 describe("a batch that does not fit", () => {
   it("sends nothing and says how many do fit", async () => {
     const { client, sendAndConfirm } = harness();
-    const fits = maxAttestationsPerTransaction(SIGNERS, { distinctSigners: SIGNERS });
-    expect(fits).toBe(2);
+    const fits = maxAttestationsPerTransaction(SIGNERS);
+    expect(fits).toBe(3);
 
     const error = await client.submitAttestations(batchOf(fits + 1)).catch((e: unknown) => e);
 
@@ -218,9 +207,8 @@ describe("transaction size estimate", () => {
       tx.feePayer = keypair.publicKey;
       tx.recentBlockhash = "11111111111111111111111111111111";
       tx.add(web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 1 }));
-      // Three signers, all attestations on the same three Node accounts.
+      // The program's accounts only: signers are read from the registry, not passed.
       const [registry, feed, config, program] = [0, 1, 2, 3].map(() => web3.Keypair.generate().publicKey);
-      const nodes = [0, 1, 2].map(() => web3.Keypair.generate().publicKey);
       for (let i = 0; i < count; i++) {
         tx.add(
           new web3.TransactionInstruction({
@@ -231,7 +219,6 @@ describe("transaction size estimate", () => {
               { pubkey: feed!, isSigner: false, isWritable: true },
               { pubkey: config!, isSigner: false, isWritable: false },
               { pubkey: web3.SystemProgram.programId, isSigner: false, isWritable: false },
-              ...nodes.map((pubkey) => ({ pubkey, isSigner: false, isWritable: false })),
             ],
             data: Buffer.alloc(SUBMIT_INSTRUCTION_DATA_BYTES),
           }),
@@ -253,13 +240,12 @@ describe("transaction size estimate", () => {
     expect(encoded.length).toBe(SUBMIT_INSTRUCTION_DATA_BYTES);
   });
 
-  it("fits three attestations of three signers, and fewer as signers or fee instructions grow", () => {
+  it("fits three attestations whatever the signer count, since signers take no accounts", () => {
     expect(maxAttestationsPerTransaction(3)).toBe(3);
-    // The worst case: each attestation has a different signer triple out of five registry nodes.
-    expect(maxAttestationsPerTransaction(3, { distinctSigners: 5 })).toBe(3);
-    // A priority-fee instruction costs bytes the worst case does not have.
-    expect(maxAttestationsPerTransaction(3, { distinctSigners: 5, priorityFee: true })).toBe(2);
-    expect(maxAttestationsPerTransaction(4, { distinctSigners: 5 })).toBe(2);
-    expect(maxAttestationsPerTransaction(5, { distinctSigners: 5 })).toBe(2);
+    expect(maxAttestationsPerTransaction(7)).toBe(3);
+    expect(maxAttestationsPerTransaction(3, { priorityFee: true })).toBe(3);
+    // `distinctSigners` no longer changes anything.
+    expect(maxAttestationsPerTransaction(5, { distinctSigners: 12, priorityFee: true })).toBe(3);
+    expect(estimateSubmitTransactionSize(3, 3)).toBe(estimateSubmitTransactionSize(3, 12));
   });
 });

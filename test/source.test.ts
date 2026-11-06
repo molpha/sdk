@@ -81,6 +81,25 @@ describe("builders", () => {
     expect(evm.idHex).toBe(idOf("evm-call-sig"));
   });
 
+  it("provenance names a provider ID, is optional, and never changes a source without it", () => {
+    const input = {
+      inputs: { px: httpInput({ url: "https://api.example.com/v1/price?symbol=BTC", headers: { accept: "application/json" }, decode: jsonDecode({ price: "$.data.price" }) }) },
+      transform: rescale(num(ref("px.price")), { scale: 8 }),
+      assert: [gt(ref("$out"), cst(0))],
+      output: { type: "int256" as const, decimals: 8 },
+      aggregation: { maxDeviationBps: 50, maxAgeMs: 2000 },
+    };
+    expect(defineSource({ ...input, provenance: { provider: 7 } }).idHex).toBe(idOf("provenance-tolerance"));
+    expect(defineSource({ ...input, provenance: null }).idHex).toBe(idOf("http-tolerance"));
+    expect(defineSource(input).idHex).toBe(idOf("http-tolerance"));
+    const withProvenance = defineSource({ ...input, provenance: { provider: 7 } });
+    expect(withProvenance.provenance).toEqual({ providerId: 7 });
+    expect(defineSource(input).provenance).toBeNull();
+    expect(withProvenance.canonical).toMatch(/"output":.*"provenance":\{"provider":"7"\}.*"transform":/);
+    expect(() => defineSource({ ...input, provenance: { provider: 0 } })).toThrow(/provenance\.provider/);
+    expect(() => defineSource({ ...input, provenance: { provider: 4294967296 } })).toThrow(/provenance\.provider/);
+  });
+
   it("jsonPriceSource and the lint", async () => {
     const s = jsonPriceSource({ url: "https://a.example/p", path: "$.price", decimals: 8 });
     expect(s.tolerance).toBe(false);
