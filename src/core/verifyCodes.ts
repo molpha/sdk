@@ -20,7 +20,10 @@ export const VERIFY_CODES = {
   VERSION_EXPIRED: 5,
   /** Reserved. Never returned. */
   COMPROMISED_QUORUM: 6,
-  /** The signer set is not within the round's derived selection group. */
+  /**
+   * A set signer bit names no live node: it is past the last slot or on a hole left by a removed
+   * node. The verifier does not check committee selection; any quorum of live nodes verifies.
+   */
   BAD_QUORUM: 7,
   /** The signers' aggregate public key is the point at infinity. */
   BAD_AGGREGATE: 8,

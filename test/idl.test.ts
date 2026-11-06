@@ -1,7 +1,7 @@
 /**
- * Offline guard for the vendored IDL (program 3d01170, "Epoch settlements"): the Anchor
- * client must build `submit_attestation` with the SDK's PDAs and decode the program's
- * zero-copy `Registry` and borsh account layouts.
+ * Offline guard for the vendored IDL (program `dev`, provider signers and stable registry slots):
+ * the Anchor client must build `submit_attestation` with the SDK's PDAs and decode the program's
+ * zero-copy `Registry` header and borsh account layouts.
  */
 import { AnchorProvider, BN, Program, Wallet, web3 } from "@anchor-lang/core";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -14,6 +14,7 @@ import type { Attestation } from "../src/core/types.js";
 import { buildSubmitAttestationArgs } from "../src/solana/client.js";
 import { SYSTEM_PROGRAM_ADDRESS } from "../src/solana/kit.js";
 import { feedPda, protocolConfigPda, registryPda } from "../src/solana/pdas.js";
+import PROVIDER_ACCOUNTS from "./fixtures/provider_accounts.json" with { type: "json" };
 
 /** Layout/instruction guards below target the parity IDL; skip under the Brebeneskul stable profile. */
 const describeParityIdl = MOLPHA_SDK_PROFILE === "dev" ? describe : describe.skip;
@@ -201,30 +202,41 @@ describeParityIdl("vendored IDL (parity / epoch-settlement)", () => {
   });
 
 
-  it("decodes the zero-copy Registry snapshot", () => {
+  it("decodes the Registry header of a snapshot the program built", () => {
     const { program } = offlineProgram();
-    // version 4 + node_count 2 + redundancy_buffer 1 + bump 1, nodes 256 * 32, then two i64s.
-    const body = Buffer.alloc(8216);
-    body.writeUInt32LE(7, 0); // version
-    body.writeUInt16LE(3, 4); // node_count
-    body[6] = 2; // redundancy_buffer
-    body[7] = 255; // bump
-    for (let i = 0; i < 3; i++) body.fill(0xa0 + i, 8 + i * 32, 8 + (i + 1) * 32);
-    body.writeBigInt64LE(123_456_789n, 8200); // grace_active_until
-    body.writeBigInt64LE(1_700_000_000n, 8208); // active_from
-
-    const data = Buffer.concat([Buffer.from(REGISTRY_DISCRIMINATOR), body]);
-    expect(data.length).toBe(8224);
+    // Real bytes: three nodes, then provider slots 0 (reserved), 1 and 2 (`provider_accounts.json`).
+    const fixture = PROVIDER_ACCOUNTS.registries[0]!;
+    const data = Buffer.from(fixture.data, "hex");
+    expect(Array.from(data.subarray(0, 8))).toEqual(REGISTRY_DISCRIMINATOR);
     const registry = program.coder.accounts.decode("registry", data);
-    expect(registry.version).toBe(7);
+    expect(registry.version).toBe(fixture.version);
     expect(registry.nodeCount).toBe(3);
-    expect(registry.redundancyBuffer).toBe(2);
-    expect(registry.bump).toBe(255);
-    expect(registry.nodes).toHaveLength(256);
-    expect(Buffer.from(registry.nodes[2]).toString("hex")).toBe("a2".repeat(32));
-    expect(Buffer.from(registry.nodes[3]).toString("hex")).toBe("00".repeat(32));
-    expect(registry.graceActiveUntil.toString()).toBe("123456789");
-    expect(registry.activeFrom.toString()).toBe("1700000000");
+    expect(registry.providerCount).toBe(3);
+    // The records follow the header and are not in the IDL: 32 bytes of header, 96 per record.
+    expect(data.length).toBe(32 + (registry.nodeCount + registry.providerCount) * 96);
+  });
+
+  it("decodes RegistryState with the next provider id", () => {
+    const { program } = offlineProgram();
+    const fixture = PROVIDER_ACCOUNTS.registry_state;
+    const state = program.coder.accounts.decode(
+      "registryState",
+      Buffer.from(fixture.data, "hex"),
+    );
+    expect(state.currentVersion).toBe(fixture.current_version);
+    expect(state.nextVersion).toBe(fixture.next_version);
+    expect(state.nextProviderId).toBe(fixture.next_provider_id);
+  });
+
+  it("declares submit_attestation without signer accounts", () => {
+    const ix = MOLPHA_IDL.instructions.find((i) => i.name === "submit_attestation")!;
+    expect(ix.accounts.map((a) => a.name)).toEqual([
+      "submitter",
+      "registry",
+      "feed",
+      "protocol_config",
+      "system_program",
+    ]);
   });
 
   it("decodes the new Feed layout (fixed 32-byte value, kind, submitter)", () => {

@@ -1,17 +1,16 @@
 /**
- * `MolphaSolanaClient.submitAttestation`: remaining accounts, coalition key and argument
- * shape, with the Anchor account / method namespaces stubbed (no RPC).
+ * `MolphaSolanaClient.submitAttestation`: coalition key from the registry records, no signer
+ * accounts, and argument shape, with the registry read and the method namespace stubbed (no RPC).
  */
 import { Program, Wallet, web3 } from "@anchor-lang/core";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { describe, expect, it, vi } from "vitest";
-import { bytesToHex, hexToBytes } from "../src/core/encoding.js";
+import { bytesToHex } from "../src/core/encoding.js";
 import type { Attestation } from "../src/core/types.js";
 import { estimateSubmitComputeUnits, MolphaSolanaClient } from "../src/solana/client.js";
-import { addressFromBytes } from "../src/solana/kit.js";
+import { MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 import { FIXTURE_SIGNER_BITS, PUBKEYS, RUST_VECTORS } from "./fixtures/registry12.js";
-
-const nodeAddress = (i: number) => addressFromBytes(new Uint8Array(32).fill(0xc0 + i));
+import { accountInfo, registryAccountBytes } from "./fixtures/registry-bytes.js";
 
 /** The 12-node message fixture (message.test.ts), with the 7-signer bitmap 4008. */
 const result: Attestation = {
@@ -31,18 +30,21 @@ const result: Attestation = {
   fresh: true,
 };
 
-function registryAccount(buffer = 2) {
-  return {
+/** The 12-node registry of the fixture, version 12; `hole` leaves that slot empty. */
+function registryAccount(buffer = 2, opts: { hole?: number; owner?: string } = {}) {
+  const data = registryAccountBytes({
     version: 12,
-    nodeCount: 12,
     redundancyBuffer: buffer,
-    nodes: Array.from({ length: 12 }, (_, i) => Array.from(new Uint8Array(32).fill(0xc0 + i))),
-    graceActiveUntil: { toString: () => "0" },
-    activeFrom: { toString: () => "1700000000" },
-  };
+    nodes: Array.from({ length: 12 }, (_, i) =>
+      i === opts.hole
+        ? null
+        : { account: new Uint8Array(32).fill(0xc0 + i), x: PUBKEYS[i]!.x, y: PUBKEYS[i]!.y },
+    ),
+  });
+  return accountInfo(data, opts.owner ?? MOLPHA_PROGRAM_ADDRESS);
 }
 
-function harness(opts: { registry?: ReturnType<typeof registryAccount>; missingNode?: number } = {}) {
+function harness(opts: { registry?: web3.AccountInfo<Buffer> | null } = {}) {
   const wallet = new Wallet(web3.Keypair.generate());
   const client = MolphaSolanaClient.create({
     connection: new web3.Connection("http://127.0.0.1:8899"),
@@ -51,25 +53,19 @@ function harness(opts: { registry?: ReturnType<typeof registryAccount>; missingN
   const program = (client as unknown as { program: Program }).program as unknown as {
     account: Record<string, unknown>;
     methods: unknown;
+    provider: { connection: { getAccountInfo: unknown } };
   };
 
-  const fetchMultiple = vi.fn(async (addresses: web3.PublicKey[]) =>
-    addresses.map((address) => {
-      const index = Array.from({ length: 12 }, (_, i) => i).find(
-        (i) => nodeAddress(i) === address.toBase58(),
-      )!;
-      if (index === opts.missingNode) return null;
-      return {
-        secp256k1PubkeyX: Array.from(hexToBytes(PUBKEYS[index]!.x)),
-        secp256k1PubkeyY: Array.from(hexToBytes(PUBKEYS[index]!.y)),
-      };
-    }),
-  );
-  const registryFetch = vi.fn(async () => opts.registry ?? registryAccount());
-  program.account = {
-    registry: { fetch: registryFetch },
-    node: { fetchMultiple },
-  };
+  // The program reads signer keys from the registry: nothing may fetch a Node account to submit.
+  const fetchMultiple = vi.fn(async () => {
+    throw new Error("submit must not read Node accounts");
+  });
+  const registryFetch = vi.fn(async (address: web3.PublicKey) => {
+    void address;
+    return opts.registry === undefined ? registryAccount() : opts.registry;
+  });
+  program.provider.connection.getAccountInfo = registryFetch;
+  program.account = { node: { fetchMultiple, fetch: fetchMultiple } };
 
   const captured: { args?: any; remaining?: web3.AccountMeta[]; accounts?: any; pre?: unknown[] } = {};
   const rpc = vi.fn(async () => "sig");
@@ -89,20 +85,17 @@ function harness(opts: { registry?: ReturnType<typeof registryAccount>; missingN
 }
 
 describe("MolphaSolanaClient.submitAttestation", () => {
-  it("passes the signer Node accounts in bit order and the summed coalition key", async () => {
-    const { client, captured, rpc, fetchMultiple, wallet } = harness();
+  it("passes no signer accounts and the coalition key summed from the registry records", async () => {
+    const { client, captured, rpc, fetchMultiple, wallet, registryFetch } = harness();
     const out = await client.submitAttestation(result);
 
     expect(out.signature).toBe("sig");
     expect(rpc).toHaveBeenCalledOnce();
-    // One read-only Node account per set bit, ascending.
-    expect(captured.remaining!.map((m) => m.pubkey.toBase58())).toEqual(
-      FIXTURE_SIGNER_BITS.map(nodeAddress),
-    );
-    expect(captured.remaining!.every((m) => !m.isSigner && !m.isWritable)).toBe(true);
-    expect(fetchMultiple.mock.calls[0]![0].map((k: web3.PublicKey) => k.toBase58())).toEqual(
-      FIXTURE_SIGNER_BITS.map(nodeAddress),
-    );
+    // The program refuses remaining accounts (`UnexpectedSignerAccounts`).
+    expect(captured.remaining).toBeUndefined();
+    expect(fetchMultiple).not.toHaveBeenCalled();
+    expect(String(captured.accounts.registry)).toBe(registryFetch.mock.calls[0]![0].toBase58());
+    expect(FIXTURE_SIGNER_BITS).toHaveLength(7);
 
     // Coalition key = Rust `molpha_verifier::coalition_key` over the same seven signers.
     const expected = RUST_VECTORS[0]!;
@@ -121,11 +114,10 @@ describe("MolphaSolanaClient.submitAttestation", () => {
     expect(out.feed).toBeTruthy();
   });
 
-  it("uses an explicit coalition key without fetching Node accounts", async () => {
-    const { client, captured, fetchMultiple } = harness();
+  it("uses an explicit coalition key as given", async () => {
+    const { client, captured } = harness();
     const coalitionKey = { x: new Uint8Array(32).fill(1), y: new Uint8Array(32).fill(2) };
     await client.submitAttestation(result, { coalitionKey });
-    expect(fetchMultiple).not.toHaveBeenCalled();
     expect(captured.args.coalitionKey).toEqual({
       x: Array.from(coalitionKey.x),
       y: Array.from(coalitionKey.y),
@@ -143,10 +135,26 @@ describe("MolphaSolanaClient.submitAttestation", () => {
     expect(Buffer.from(captured.args.rawValue).toString("hex")).toBe("010203");
   });
 
-  it("fails clearly when a signer's Node account is missing", async () => {
-    const { client, rpc } = harness({ missingNode: 7 });
-    await expect(client.submitAttestation(result)).rejects.toThrow(/does not exist/);
+  it("refuses a signer bit on a hole of the registry", async () => {
+    const { client, rpc } = harness({ registry: registryAccount(2, { hole: 7 }) });
+    await expect(client.submitAttestation(result)).rejects.toThrow(/bit 7 names no live member/);
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("refuses a missing registry, or one another program owns", async () => {
+    const { client, rpc } = harness({ registry: null });
+    await expect(client.submitAttestation(result)).rejects.toThrow(/Registry version 12 .* does not exist/);
+    const other = web3.Keypair.generate().publicKey.toBase58();
+    const { client: client2 } = harness({ registry: registryAccount(2, { owner: other }) });
+    await expect(client2.submitAttestation(result)).rejects.toThrow(/is owned by/);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("refuses an account that is not a Registry", async () => {
+    const info = registryAccount();
+    info.data[0] = info.data[0]! ^ 0xff;
+    const { client } = harness({ registry: info });
+    await expect(client.submitAttestation(result)).rejects.toThrow(/is not a Registry account/);
   });
 
   it("mirrors the program's signer-count bounds before sending", async () => {
@@ -241,31 +249,31 @@ describe("compute budget", () => {
 });
 
 describe("registry and signer-key caching", () => {
-  it("reads the registry and the signer Node accounts once for many submits", async () => {
-    const { client, registryFetch, fetchMultiple } = harness();
+  it("reads the registry once for many submits", async () => {
+    const { client, registryFetch } = harness();
     for (let i = 0; i < 5; i++) await client.submitAttestation(result);
     expect(registryFetch).toHaveBeenCalledTimes(1);
-    expect(fetchMultiple).toHaveBeenCalledTimes(1);
   });
 
   it("coalesces concurrent submits into one read", async () => {
-    const { client, registryFetch, fetchMultiple, rpc } = harness();
+    const { client, registryFetch, rpc } = harness();
     await Promise.all(Array.from({ length: 20 }, () => client.submitAttestation(result)));
     expect(rpc).toHaveBeenCalledTimes(20);
     expect(registryFetch).toHaveBeenCalledTimes(1);
-    expect(fetchMultiple).toHaveBeenCalledTimes(1);
   });
 
-  it("reads only the Node accounts it has not seen when the signer set changes", async () => {
-    const { client, fetchMultiple } = harness();
+  it("sums a changed signer set from the same registry read", async () => {
+    const { client, registryFetch, captured } = harness();
     await client.submitAttestation(result);
+    const full = captured.args.coalitionKey;
     // Drop one signer (bit 3 of 4008 = 0b111110101000): still a valid 6-signer set for quorum 5.
     const without = {
       ...result,
       signature: { ...result.signature, signersBitmap: "00".repeat(30) + "0fa0" },
     };
     await client.submitAttestation(without);
-    expect(fetchMultiple).toHaveBeenCalledTimes(1);
+    expect(registryFetch).toHaveBeenCalledTimes(1);
+    expect(captured.args.coalitionKey).not.toEqual(full);
   });
 
   it("does not remember a failed read", async () => {
@@ -274,13 +282,6 @@ describe("registry and signer-key caching", () => {
     await expect(client.submitAttestation(result)).rejects.toThrow(/rpc down/);
     await client.submitAttestation(result);
     expect(registryFetch).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not cache a missing Node account", async () => {
-    const { client, rpc } = harness({ missingNode: 7 });
-    await expect(client.submitAttestation(result)).rejects.toThrow(/does not exist/);
-    await expect(client.submitAttestation(result)).rejects.toThrow(/does not exist/);
-    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("gives a client with a different registry version its own entry", async () => {

@@ -447,10 +447,15 @@ function isFelt(s: string): boolean {
 const join = (path: string, key: string): string =>
   path ? `${path}.${key}` : key;
 
-function exact(v: Json, path: string, keys: string[]): JObj {
+function exact(
+  v: Json,
+  path: string,
+  keys: string[],
+  opt: string[] = [],
+): JObj {
   if (!isObj(v))
     throw new SourceError(path, "type", `expected object, got ${kindName(v)}`);
-  const want = new Set(keys);
+  const want = new Set([...keys, ...opt]);
   for (const k of v.keys())
     if (!want.has(k))
       throw new SourceError(join(path, k), "unknown_key", "unknown key");
@@ -2201,17 +2206,31 @@ export interface ParsedSource {
   inputNames: string[];
   output: { type: OutputType; decimals: number };
   tolerance: boolean;
+  /** The provider named by the source, or null when the source has no provenance block. */
+  provenance: { providerId: number } | null;
+}
+
+/** The optional provenance block: the registry provider whose signer may co-sign the source's rounds. */
+function checkProvenance(v: Json): { providerId: number } {
+  if (v === null) val("provenance", "omit provenance instead of writing null");
+  const m = exact(v, "provenance", ["provider"]);
+  return {
+    providerId: uintField(
+      m.get("provider")!,
+      "provenance.provider",
+      1,
+      4_294_967_295,
+    ),
+  };
 }
 
 function build(v: Json, maxCanonical: number): ParsedSource {
-  const m = exact(v, "", [
-    "aggregation",
-    "assert",
-    "inputs",
-    "output",
-    "transform",
-    "v",
-  ]);
+  const m = exact(
+    v,
+    "",
+    ["aggregation", "assert", "inputs", "output", "transform", "v"],
+    ["provenance"],
+  );
   const ver = str(m.get("v"), "v");
   if (ver !== SOURCE_VERSION)
     val("v", `unsupported version ${JSON.stringify(ver)}`);
@@ -2252,6 +2271,9 @@ function build(v: Json, maxCanonical: number): ParsedSource {
       "aggregation",
       `tolerance aggregation needs output.type int256, got ${JSON.stringify(output.type)}`,
     );
+
+  const pv = m.get("provenance");
+  const provenance = pv === undefined ? null : checkProvenance(pv);
 
   const ctx: ExprCtx = {
     leaves,
@@ -2294,6 +2316,7 @@ function build(v: Json, maxCanonical: number): ParsedSource {
     inputNames: names,
     output,
     tolerance,
+    provenance,
   };
 }
 
@@ -2470,6 +2493,8 @@ export interface SourceDoc {
   assert: Expr[];
   output: OutputDoc;
   aggregation: AggregationDoc | null;
+  /** Absent unless the source names a provider; never `null`. */
+  provenance?: { provider: string };
 }
 
 /** Whether the source declares keccak256 output (its signed value is a hash of a preimage). */

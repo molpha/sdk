@@ -26,20 +26,24 @@ import type {
   NodeKeyVerifierArgs,
   RegistrySelectionConfig,
 } from "../core/types.js";
+import { NODE_SLOTS, nodeQuorum } from "../core/selection.js";
 import {
   type RegistryStateView,
   type RegistryView,
-  resolveRemainingAccounts,
+  bitmapToIndices,
+  decodeRegistryAccount,
+  liveSlots,
+  type RegistryMemberKey,
+  resolveSignerKeys,
 } from "./accounts.js";
 import {
-  addressFromBytes,
   getAssociatedTokenAddressSync,
   setComputeUnitLimit,
   setComputeUnitPrice,
   SYSTEM_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
+  toPublicKey,
   toSolanaAddress,
-  type SolanaAccountMeta,
   type SolanaAddress,
   type SolanaConnection,
 } from "./kit.js";
@@ -150,9 +154,9 @@ function transactionSize(
 
 /**
  * Serialized size of a transaction with `count` attestations of `signerCount` signers each, to plan
- * a batch before there is one. The signer `Node` accounts are shared between attestations, so the
- * size depends on how many distinct ones there are: `distinctSigners` (default `signerCount`, the
- * best case; the registry's node count is the worst).
+ * a batch before there is one. `submit_attestation` takes no signer accounts (the program reads the
+ * signers' keys from the registry snapshot), so the size does not depend on `signerCount` or
+ * `opts.distinctSigners`; both are kept so existing callers still compile.
  */
 export function estimateSubmitTransactionSize(
   count: number,
@@ -167,8 +171,7 @@ export function estimateSubmitTransactionSize(
     key(),
     key(),
   ];
-  const distinct = Math.max(signerCount, opts.distinctSigners ?? signerCount);
-  const nodes = Array.from({ length: distinct }, key);
+  void signerCount;
   const instructions: web3.TransactionInstruction[] = [setComputeUnitLimit(1)];
   if (opts.priorityFee) instructions.push(setComputeUnitPrice(1));
   for (let i = 0; i < count; i++) {
@@ -185,11 +188,6 @@ export function estimateSubmitTransactionSize(
             isSigner: false,
             isWritable: false,
           },
-          ...Array.from({ length: signerCount }, (_, j) => ({
-            pubkey: nodes[(i * signerCount + j) % distinct]!,
-            isSigner: false,
-            isWritable: false,
-          })),
         ],
         data: Buffer.alloc(SUBMIT_INSTRUCTION_DATA_BYTES),
       }),
@@ -214,7 +212,7 @@ export function maxAttestationsPerTransaction(
 
 /** How long a registry read is reused. A registry version's node list never changes. */
 const REGISTRY_CACHE_MS = 30_000;
-/** Cap on remembered node keys / coalition keys, so a long-lived client stays bounded. */
+/** Cap on remembered coalition keys, so a long-lived client stays bounded. */
 const KEY_CACHE_LIMIT = 8_192;
 /** How long a recent-prioritization-fee read is reused. */
 const PRIORITY_FEE_CACHE_MS = 5_000;
@@ -347,8 +345,8 @@ export interface SubmitAttestationOptions {
    */
   priorityFeeMicroLamports?: number | "auto";
   /**
-   * Precomputed signer coalition key. When omitted, the client fetches signer `Node`
-   * accounts and sums their secp256k1 keys ({@link computeCoalitionKey}).
+   * Precomputed signer coalition key. When omitted, the client sums the signers' secp256k1 keys
+   * from the round's registry snapshot ({@link computeCoalitionKey}).
    */
   coalitionKey?: CoalitionKey;
   /**
@@ -387,11 +385,7 @@ export class MolphaSolanaClient {
     number,
     { at: number; value: Promise<RegistryView> }
   >();
-  private readonly nodeKeyCache = new Map<
-    string,
-    { x: Uint8Array; y: Uint8Array }
-  >();
-  private readonly coalitionCache = new Map<string, Promise<CoalitionKey>>();
+  private readonly coalitionCache = new Map<string, CoalitionKey>();
   private priorityFeeCache?: { at: number; value: Promise<number> };
 
   private constructor(
@@ -426,7 +420,8 @@ export class MolphaSolanaClient {
 
   /**
    * Current registry version plus the selection inputs of that snapshot
-   * (`redundancy_buffer`, `node_count`). Two account reads: `RegistryState`, then the
+   * (`redundancy_buffer`, `node_count` = slots with holes, and the live slots the committee is
+   * drawn over). Two account reads: `RegistryState`, then the
    * version-addressed `Registry`. Prefer this over {@link getRegistryVersion} when
    * deriving gateway selection bitmaps.
    */
@@ -439,6 +434,7 @@ export class MolphaSolanaClient {
       registryVersion: state.currentVersion,
       redundancyBuffer: registry.redundancyBuffer,
       nodeCount: registry.nodeCount,
+      liveSlots: liveSlots(registry),
     };
   }
 
@@ -595,11 +591,10 @@ export class MolphaSolanaClient {
    * Submit a gateway attestation via `submit_attestation`. The feed account for
    * `(sourceId, signaturesRequired, submitter)` is created on first use.
    *
-   * Per the program, the instruction takes one read-only `Node` account per signer bit
-   * (ascending bit order, resolved from the registry snapshot the round was signed
-   * against) and a {@link CoalitionKey} argument. Unless `opts.coalitionKey` is given the
-   * SDK fetches those `Node` accounts and sums their secp256k1 keys client-side
-   * (`computeCoalitionKey`); the program only checks the key, so a wrong one fails the
+   * The instruction takes the round's `Registry` snapshot and a {@link CoalitionKey} argument, and
+   * no signer accounts: the program reads each signer's key from the snapshot's record for its bit.
+   * Unless `opts.coalitionKey` is given the SDK sums the same keys client-side from the same
+   * snapshot (`computeCoalitionKey`); the program only checks the key, so a wrong one fails the
    * transaction and nothing else.
    *
    * `opts.rawValue` is for values longer than 32 bytes: the signed `payload.value` must be
@@ -609,13 +604,13 @@ export class MolphaSolanaClient {
     attestation: Attestation,
     opts?: SubmitAttestationOptions,
   ): Promise<SubmitResult> {
-    const { args, accounts, remaining, feed } = await this.prepareSubmit(
+    const { args, accounts, signerCount, feed } = await this.prepareSubmit(
       attestation,
       opts,
     );
     const preInstructions = [
       setComputeUnitLimit(
-        opts?.computeUnitLimit ?? estimateSubmitComputeUnits(remaining.length),
+        opts?.computeUnitLimit ?? estimateSubmitComputeUnits(signerCount),
       ),
     ];
     const price = await this.resolvePriorityFee(
@@ -627,7 +622,6 @@ export class MolphaSolanaClient {
     const signature = await this.methods
       .submitAttestation(args)
       .accountsPartial(accounts)
-      .remainingAccounts(remaining)
       .preInstructions(preInstructions)
       .rpc();
     return { signature, feed };
@@ -690,7 +684,6 @@ export class MolphaSolanaClient {
         this.methods
           .submitAttestation(p.args)
           .accountsPartial(p.accounts)
-          .remainingAccounts(p.remaining)
           .instruction(),
       ),
     );
@@ -699,7 +692,7 @@ export class MolphaSolanaClient {
       setComputeUnitLimit(
         opts?.computeUnitLimit ??
           estimateSubmitBatchComputeUnits(
-            prepared.map((p) => p.remaining.length),
+            prepared.map((p) => p.signerCount),
           ),
       ),
     ];
@@ -737,7 +730,7 @@ export class MolphaSolanaClient {
 
   /**
    * Everything one `submit_attestation` instruction needs: the arguments, the named accounts, the
-   * signer `Node` accounts (ascending bit order) and the feed address.
+   * number of signers (for the compute budget) and the feed address.
    */
   private async prepareSubmit(
     attestation: Attestation,
@@ -747,15 +740,19 @@ export class MolphaSolanaClient {
     const sourceId = toFixedBytes(payload.sourceId, 32, "sourceId");
     const submitter = this.wallet;
     const registry = await this.fetchRegistryCached(payload.registryVersion);
-    const remaining = resolveRemainingAccounts(schnorr.signersBitmap, registry);
-    assertSignerCount(remaining.length, payload.signaturesRequired, registry);
+    const signerKeys = resolveSignerKeys(schnorr.signersBitmap, registry);
+    assertSignerCount(
+      bitmapToIndices(schnorr.signersBitmap),
+      payload.signaturesRequired,
+      registry,
+    );
     const coalitionKey =
       opts?.coalitionKey ??
-      (await this.computeSignerCoalitionKey(
-        remaining,
+      this.computeSignerCoalitionKey(
+        signerKeys,
         registry,
         schnorr.signersBitmap,
-      ));
+      );
     const feed = feedPda(
       sourceId,
       payload.signaturesRequired,
@@ -775,7 +772,7 @@ export class MolphaSolanaClient {
         protocolConfig: protocolConfigPda(this.programId),
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
       },
-      remaining,
+      signerCount: signerKeys.length,
       feed,
     };
   }
@@ -839,57 +836,23 @@ export class MolphaSolanaClient {
     return this.priorityFeeCache.value;
   }
 
-  /** Sum of the signers' keys, read from their on-chain `Node` accounts (one batched fetch). */
+  /**
+   * Sum of the signers' keys as the round's registry snapshot records them. A version's records never
+   * change, so the sum for one (registry version, signer set) is reused.
+   */
   private computeSignerCoalitionKey(
-    remaining: SolanaAccountMeta[],
+    signerKeys: RegistryMemberKey[],
     registry: RegistryView,
     signersBitmap: string,
-  ): Promise<CoalitionKey> {
-    // A node's key never changes, so the sum for one (registry, signer set) is reusable, and
-    // each Node account is read at most once however many signer sets include it. The promise is
-    // cached, so concurrent submits of one signer set share a single read.
+  ): CoalitionKey {
     const setKey = `${registry.version}:${signersBitmap}`;
     const known = this.coalitionCache.get(setKey);
     if (known) return known;
     if (this.coalitionCache.size >= KEY_CACHE_LIMIT)
       this.coalitionCache.clear();
-    const pending = this.sumSignerKeys(remaining, registry);
-    this.coalitionCache.set(setKey, pending);
-    pending.catch(() => {
-      if (this.coalitionCache.get(setKey) === pending)
-        this.coalitionCache.delete(setKey);
-    });
-    return pending;
-  }
-
-  private async sumSignerKeys(
-    remaining: SolanaAccountMeta[],
-    registry: RegistryView,
-  ): Promise<CoalitionKey> {
-    const addresses = remaining.map((meta) => meta.pubkey);
-    const missing = addresses.filter(
-      (a) => !this.nodeKeyCache.has(a.toBase58()),
-    );
-    if (missing.length > 0) {
-      const accounts: Array<NodeAccount | null> =
-        await this.accounts.node.fetchMultiple(missing);
-      if (this.nodeKeyCache.size + missing.length > KEY_CACHE_LIMIT)
-        this.nodeKeyCache.clear();
-      accounts.forEach((account, i) => {
-        if (!account) {
-          throw new Error(
-            `Node account ${missing[i]!.toBase58()} (registry ${registry.version}) does not exist`,
-          );
-        }
-        this.nodeKeyCache.set(missing[i]!.toBase58(), {
-          x: nodeCoordinate(account, "secp256k1PubkeyX", "secp256k1_pubkey_x"),
-          y: nodeCoordinate(account, "secp256k1PubkeyY", "secp256k1_pubkey_y"),
-        });
-      });
-    }
-    return computeCoalitionKey(
-      addresses.map((a) => this.nodeKeyCache.get(a.toBase58())!),
-    );
+    const key = computeCoalitionKey(signerKeys);
+    this.coalitionCache.set(setKey, key);
+    return key;
   }
 
   /**
@@ -921,9 +884,13 @@ export class MolphaSolanaClient {
     await Promise.all(
       selectedNodes.map(async (node) => {
         const nodeAddress = registry.nodes[node.index];
-        if (node.index >= registry.nodeCount || nodeAddress === undefined) {
+        if (
+          node.index >= registry.nodeCount ||
+          nodeAddress === undefined ||
+          nodeAddress === null
+        ) {
           throw new Error(
-            `Gateway selected node ${node.index} is outside registry ${registry.version} node_count ${registry.nodeCount}`,
+            `Gateway selected node ${node.index} is not a live member of registry ${registry.version} (node_count ${registry.nodeCount}, holes included)`,
           );
         }
         const account = await this.fetchNodeAccount(nodeAddress, node.index);
@@ -976,21 +943,33 @@ export class MolphaSolanaClient {
   }
 
   private async fetchRegistry(version: number): Promise<RegistryView> {
-    const registry = await this.accounts.registry.fetch(
-      registryPda(version, this.programId),
+    const address = registryPda(version, this.programId);
+    // A header followed by the node records and the provider records (each with its signing key),
+    // decoded here because the IDL describes the header only.
+    const info = await this.program.provider.connection.getAccountInfo(
+      toPublicKey(address),
     );
-    const nodeCount: number = registry.nodeCount;
-    const nodes = (registry.nodes as Array<Uint8Array | number[]>)
-      .slice(0, nodeCount)
-      .map((entry) => addressFromBytes(Uint8Array.from(entry)));
-    return {
-      version: registry.version,
-      nodeCount,
-      redundancyBuffer: registry.redundancyBuffer,
-      nodes,
-      graceActiveUntil: BigInt(registry.graceActiveUntil.toString()),
-      activeFrom: BigInt(registry.activeFrom.toString()),
-    };
+    if (!info) {
+      throw new Error(`Registry version ${version} (${address}) does not exist`);
+    }
+    if (!info.owner.equals(toPublicKey(this.programId))) {
+      throw new Error(
+        `Registry version ${version} (${address}) is owned by ${info.owner.toBase58()}, not the program ${this.programId}`,
+      );
+    }
+    // Anchor's `Program` camel-cases IDL names, so match either spelling.
+    const discriminator = this.program.idl.accounts?.find(
+      (account) => account.name.toLowerCase() === "registry",
+    )?.discriminator;
+    if (
+      discriminator !== undefined &&
+      !discriminator.every((byte, i) => info.data[i] === byte)
+    ) {
+      throw new Error(
+        `Registry version ${version} (${address}) is not a Registry account`,
+      );
+    }
+    return decodeRegistryAccount(Uint8Array.from(info.data));
   }
 
   private async fetchNodeAccount(
@@ -1092,22 +1071,35 @@ function attestationPreimage(attestation: Attestation): Uint8Array | undefined {
 }
 
 /**
- * Mirror the program's signer-count bounds (`verify_attestation_core`):
- * `signaturesRequired <= popcount <= signaturesRequired + redundancyBuffer`.
+ * Mirror the program's signer-count bounds (`verify_attestation_core` and the verifier's quorum
+ * rule) for the signer `bits` of an attestation. Every signer counts toward the threshold, a
+ * provider (bit `>= NODE_SLOTS`) included; the credit bound counts node bits only, against the
+ * round's node quorum, which is one less when the provider signed; and an attestation carries at
+ * most one provider bit:
+ * `signaturesRequired <= bits`, `nodes <= nodeQuorum + redundancyBuffer`, `providers <= 1`.
+ * The checks run in the program's order, so the first error is the one the chain would return.
  */
-function assertSignerCount(
-  signerCount: number,
+export function assertSignerCount(
+  bits: readonly number[],
   signaturesRequired: number,
-  registry: RegistryView,
+  registry: Pick<RegistryView, "redundancyBuffer" | "version">,
 ): void {
-  if (signerCount < signaturesRequired) {
+  const providers = bits.filter((bit) => bit >= NODE_SLOTS).length;
+  const nodes = bits.length - providers;
+  if (bits.length < signaturesRequired) {
     throw new Error(
-      `QuorumBelowThreshold: ${signerCount} signers < signaturesRequired ${signaturesRequired}`,
+      `QuorumBelowThreshold: ${bits.length} signers < signaturesRequired ${signaturesRequired}`,
     );
   }
-  if (signerCount > signaturesRequired + registry.redundancyBuffer) {
+  const quorum = nodeQuorum(signaturesRequired, providers > 0);
+  if (nodes > quorum + registry.redundancyBuffer) {
     throw new Error(
-      `CreditedExceedsSelection: ${signerCount} signers > signaturesRequired ${signaturesRequired} + redundancy buffer ${registry.redundancyBuffer} of registry ${registry.version}`,
+      `CreditedExceedsSelection: ${nodes} node signers > node quorum ${quorum} (signaturesRequired ${signaturesRequired}${providers > 0 ? ", less one for the provider" : ""}) + redundancy buffer ${registry.redundancyBuffer} of registry ${registry.version}`,
+    );
+  }
+  if (providers > 1) {
+    throw new Error(
+      `InvalidSignersBitmap: ${providers} provider bits set; an attestation carries at most one`,
     );
   }
 }

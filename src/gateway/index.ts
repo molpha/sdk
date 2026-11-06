@@ -12,7 +12,7 @@ import { MOLPHA_PROGRAM_ID } from "../core/constants.js";
 import { DEFAULT_GATEWAY_ENDPOINT } from "../deployment.generated.js";
 import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
-import { effectiveSelectionSize } from "../core/selection.js";
+import { effectiveSelectionSize, nodeQuorum } from "../core/selection.js";
 import { ROUND_TICK_MS } from "../core/timestamp.js";
 import type {
   Attestation,
@@ -93,6 +93,19 @@ export interface RequestSignedDataOptions {
    * Without this, a paywalled source throws {@link UpstreamPaymentRequiredError}.
    */
   sourcePayment?: SourcePaymentOptions;
+  /**
+   * Ask for a round the source's provider also signs. The source must name the provider in its
+   * `provenance` block. The provider's bit in the attestation's signers then proves the provider signed
+   * exactly this attestation. It counts toward `signaturesRequired` like a node's (an attestation
+   * carries at most one provider bit), so a provider round is `signaturesRequired - 1` nodes plus the
+   * provider: the committee is drawn with that smaller quorum, which is also the number of source
+   * fetches (and paid-source authorizations) the round may perform. The signature proves the provider
+   * signed, not that the value is right, and a verifier cannot tell which provider the source names:
+   * pin it with the chain's `verifyProvenance`. There is no committee-only fallback: while the
+   * provider's signer is down the gateway answers 503 and no round runs. Provider rounds and
+   * committee rounds of one feed cannot run in the same tick; the loser is retried.
+   */
+  requireProvider?: boolean;
   /** Max accepted value age in seconds. Default 60. */
   maxAge?: number;
   /**
@@ -533,7 +546,18 @@ export class MolphaGateway {
     // Validation is part of parsing: an invalid source is refused here, with its path, before any
     // request. Tolerance additionally needs a quorum of at least 3.
     const source = asParsedSource(opts.source);
+    if (opts.requireProvider && !source.provenance) {
+      throw new Error(
+        "requireProvider needs a source with a provenance block naming the provider",
+      );
+    }
     assertToleranceQuorum(source, signaturesRequired);
+    // Nodes a round draws: one fewer when the provider signs as well. Selection, the paid-source
+    // authorizations and the gateway's quote all use this, never the wire `signaturesRequired`.
+    const committeeQuorum = nodeQuorum(
+      signaturesRequired,
+      opts.requireProvider === true,
+    );
     const sourceIdBytes = source.id;
     const sourceId = bytesToHex(sourceIdBytes);
 
@@ -552,22 +576,43 @@ export class MolphaGateway {
 
     let round = await this.resolveContext(opts.context, encrypt !== undefined);
     let { registryVersion, redundancyBuffer } = round;
-    const nodeCountOf = (r: ResolvedRound): number => {
-      if (
-        r.nodeCount !== undefined &&
-        r.nodes !== undefined &&
-        r.nodes.length !== r.nodeCount
-      ) {
-        throw new Error(
-          `Gateway node list has ${r.nodes.length} nodes but registry ${r.registryVersion} has node_count ${r.nodeCount} — refresh the round context`,
-        );
+    // The slots that hold a live member, ascending: the committee is drawn over them and the
+    // envelope set covers them. A removed node leaves a hole, so this is not `0..node_count`.
+    const liveSlotsOf = (r: ResolvedRound): number[] => {
+      if (r.liveSlots !== undefined) {
+        if (r.nodes !== undefined && r.nodes.length !== r.liveSlots.length) {
+          throw new Error(
+            `Gateway node list has ${r.nodes.length} nodes but registry ${r.registryVersion} has ${r.liveSlots.length} live members — refresh the round context`,
+          );
+        }
+        return r.liveSlots;
       }
-      const n = r.nodeCount ?? r.nodes?.length;
-      if (n === undefined)
+      if (r.nodes !== undefined) {
+        // Fewer nodes than slots is normal (removed nodes leave holes); more nodes than slots,
+        // or a node past the last slot, is a stale context.
+        const slots = r.nodes.map((node) => node.index).sort((a, b) => a - b);
+        const repeated = slots.find((slot, i) => i > 0 && slot === slots[i - 1]);
+        if (repeated !== undefined) {
+          throw new Error(`Gateway returned duplicate node index: ${repeated}`);
+        }
+        if (
+          r.nodeCount !== undefined &&
+          (slots.length > r.nodeCount ||
+            (slots.length > 0 && slots[slots.length - 1]! >= r.nodeCount))
+        ) {
+          throw new Error(
+            `Gateway node list does not fit registry ${r.registryVersion} node_count ${r.nodeCount} (${r.nodes.length} nodes, highest slot ${slots[slots.length - 1]}) — refresh the round context`,
+          );
+        }
+        return slots;
+      }
+      if (r.nodeCount === undefined)
         throw new Error("Round context resolved neither nodeCount nor nodes");
-      return n;
+      return Array.from({ length: r.nodeCount }, (_, index) => index);
     };
-    let nodeCount = nodeCountOf(round);
+    let registryIndexes = liveSlotsOf(round);
+    // Live members: what the committee is drawn over.
+    let nodeCount = registryIndexes.length;
 
     // A paywalled source is paid by the caller, per node fetch, from their own
     // wallet. Read the source's terms once, then sign fresh authorizations per
@@ -592,7 +637,7 @@ export class MolphaGateway {
           });
       if (terms) {
         authorizations = effectiveSelectionSize(
-          signaturesRequired,
+          committeeQuorum,
           redundancyBuffer,
           nodeCount,
         );
@@ -601,16 +646,12 @@ export class MolphaGateway {
 
     let lastError: unknown;
     let groupSize = effectiveSelectionSize(
-      signaturesRequired,
+      committeeQuorum,
       redundancyBuffer,
       nodeCount,
     );
-    // Every registry node, ascending: the committee is not known until the gateway has stamped
-    // the round, so the envelope set cannot be narrowed here.
-    let registryIndexes = Array.from(
-      { length: nodeCount },
-      (_, index) => index,
-    );
+    // Every live registry node, ascending: the committee is not known until the gateway has
+    // stamped the round, so the envelope set cannot be narrowed here.
     // What made the last attempt fail decides how long to wait before the next.
     let cause: RetryCause = { kind: "error" };
     // A stale registry version is refreshed at most once per call, and the refreshed attempt is
@@ -668,6 +709,7 @@ export class MolphaGateway {
       };
       if (encKeyBundle) baseBody.encKeyBundle = encKeyBundle;
       if (sourcePayments) baseBody.sourcePayments = sourcePayments;
+      if (opts.requireProvider) baseBody.requireProvider = true;
 
       /** Set when a relayed source quote makes this attempt's round obsolete. */
       let requote = false;
@@ -728,7 +770,7 @@ export class MolphaGateway {
             requoted = true;
             if (quote.eligibleSetSize !== groupSize) {
               throw new GatewayError(
-                `Gateway upstream quote eligibleSetSize ${quote.eligibleSetSize} does not match this round's selection size ${groupSize} (min(signaturesRequired + redundancyBuffer, nodeCount))`,
+                `Gateway upstream quote eligibleSetSize ${quote.eligibleSetSize} does not match this round's selection size ${groupSize} (min(node quorum + redundancyBuffer, live members); node quorum is signaturesRequired, less one for a provider round)`,
                 402,
               );
             }
@@ -852,15 +894,12 @@ export class MolphaGateway {
       if (restartForRefresh) {
         round = await this.resolveContext(undefined, encrypt !== undefined);
         ({ registryVersion, redundancyBuffer } = round);
-        nodeCount = nodeCountOf(round);
+        registryIndexes = liveSlotsOf(round);
+        nodeCount = registryIndexes.length;
         groupSize = effectiveSelectionSize(
-          signaturesRequired,
+          committeeQuorum,
           redundancyBuffer,
           nodeCount,
-        );
-        registryIndexes = Array.from(
-          { length: nodeCount },
-          (_, index) => index,
         );
         refreshedOnce = true;
         retryNow = true;
@@ -894,6 +933,9 @@ export class MolphaGateway {
           redundancyBuffer: cached.redundancyBuffer!,
           ...(cached.nodeCount !== undefined
             ? { nodeCount: cached.nodeCount }
+            : {}),
+          ...(cached.liveSlots !== undefined
+            ? { liveSlots: cached.liveSlots }
             : {}),
         })
       : this.getRegistrySelectionConfig();
@@ -1054,11 +1096,8 @@ function selectedNodesForPrivateApiEncryption(
         `Gateway node index must be a non-negative integer: ${node.index}`,
       );
     }
-    if (node.index >= nodes.length) {
-      throw new Error(
-        `Gateway node index ${node.index} is outside the node list range 0..${nodes.length - 1}`,
-      );
-    }
+    // No upper bound on the index: a node keeps its registry slot, so with holes in the registry
+    // the highest index can exceed the number of nodes.
     if (nodeIndexes.has(node.index)) {
       throw new Error(`Gateway returned duplicate node index: ${node.index}`);
     }

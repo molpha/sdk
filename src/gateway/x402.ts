@@ -13,10 +13,11 @@ import {
   bytesToHex0x,
   utf8,
 } from "../core/encoding.js";
-import { effectiveSelectionSize } from "../core/selection.js";
+import { effectiveSelectionSize, nodeQuorum } from "../core/selection.js";
 import type {
   AssetDomain,
   EvmSigner,
+  RegistryInfo,
   UpstreamQuote,
   UpstreamTerms,
 } from "../core/types.js";
@@ -71,15 +72,20 @@ export class UpstreamPaymentRequiredError extends Error {
 
 /**
  * Number of source fetches this round may perform, and so authorizations to
- * sign: `min(signaturesRequired + redundancyBuffer, nodeCount)`. Identical to
- * the round's selection size — the eligible set *is* the set that fetches.
+ * sign: `min(nodeQuorum + redundancyBuffer, live members)`. Identical to
+ * the round's selection size — the eligible set *is* the set that fetches. `nodeCount` is the
+ * number of live nodes, as the gateway's `GET /v1/nodes` registry reports it (not the slot count).
+ *
+ * `requireProvider` asks for a provider round, whose node quorum is `signaturesRequired - 1`
+ * (the provider counts toward `signaturesRequired`), so it fetches from one node fewer.
  */
 export function eligibleSetSize(
   signaturesRequired: number,
-  registry: { nodeCount: number; redundancyBuffer: number },
+  registry: Pick<RegistryInfo, "nodeCount" | "redundancyBuffer">,
+  requireProvider = false,
 ): number {
   return effectiveSelectionSize(
-    signaturesRequired,
+    nodeQuorum(signaturesRequired, requireProvider),
     registry.redundancyBuffer,
     registry.nodeCount,
   );

@@ -5,10 +5,10 @@ import { u32le } from "../src/core/encoding.js";
 import {
   type RegistryView,
   bitmapToIndices,
-  resolveRemainingAccounts,
+  resolveSignerKeys,
 } from "../src/solana/accounts.js";
 import { MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
-import { addressFromBytes, type SolanaAccountMeta } from "../src/solana/kit.js";
+import { addressFromBytes } from "../src/solana/kit.js";
 import {
   feedPda,
   gatewayPda,
@@ -27,17 +27,21 @@ const OWNER = "9K9FknHzW7j8a88yKTrzxKfDrxnV2QLqSR58ETAVdc8P";
 const BITMAP_012 = "00".repeat(31) + "07";
 
 const nodeAddress = (i: number) => addressFromBytes(new Uint8Array(32).fill(0xa0 + i));
+const nodeKey = (i: number) => ({ x: new Uint8Array(32).fill(0x10 + i), y: new Uint8Array(32).fill(0x20 + i) });
 
 const registry: RegistryView = {
   version: 5,
   nodeCount: 3,
+  providerCount: 0,
   redundancyBuffer: 2,
   nodes: [nodeAddress(0), nodeAddress(1), nodeAddress(2)],
+  providers: [],
+  nodeKeys: [nodeKey(0), nodeKey(1), nodeKey(2)],
+  providerKeys: [],
   graceActiveUntil: 0n,
   activeFrom: 1_700_000_000n,
 };
 
-const keys = (metas: SolanaAccountMeta[]) => metas.map((m) => m.pubkey.toBase58());
 
 function pdaWith(seeds: Uint8Array[]): string {
   const [pda] = web3.PublicKey.findProgramAddressSync(
@@ -53,24 +57,19 @@ describe("bitmapToIndices", () => {
   });
 });
 
-describe("resolveRemainingAccounts", () => {
-  it("maps signer bits to the registry snapshot's Node addresses, ascending", () => {
-    const metas = resolveRemainingAccounts(BITMAP_012, registry);
-    expect(keys(metas)).toEqual([nodeAddress(0), nodeAddress(1), nodeAddress(2)]);
-    expect(metas.every((m) => !m.isSigner && !m.isWritable)).toBe(true);
+describe("resolveSignerKeys", () => {
+  it("maps signer bits to the registry snapshot's record keys, ascending", () => {
+    expect(resolveSignerKeys(BITMAP_012, registry)).toEqual([nodeKey(0), nodeKey(1), nodeKey(2)]);
   });
 
   it("skips unset bits", () => {
     const bitmap = "00".repeat(31) + "05"; // bits 0 and 2
-    expect(keys(resolveRemainingAccounts(bitmap, registry))).toEqual([
-      nodeAddress(0),
-      nodeAddress(2),
-    ]);
+    expect(resolveSignerKeys(bitmap, registry)).toEqual([nodeKey(0), nodeKey(2)]);
   });
 
   it("rejects a signer bit at or beyond node_count", () => {
     const bitmap = "00".repeat(31) + "0f"; // bits 0..3, but node_count == 3
-    expect(() => resolveRemainingAccounts(bitmap, registry)).toThrow(/InvalidNodeIndex.*bit 3/);
+    expect(() => resolveSignerKeys(bitmap, registry)).toThrow(/InvalidNodeIndex.*bit 3/);
   });
 });
 

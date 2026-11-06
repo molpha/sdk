@@ -1,4 +1,4 @@
-import { jsonPriceSource } from "../src/core/sourcebuild.js";
+import { defineSource, httpInput, jsonDecode, jsonPriceSource, num, ref, rescale } from "../src/core/sourcebuild.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { base64ToBytes } from "../src/core/encoding.js";
 import { createEvmSignerFromPrivateKey } from "../src/evm/eip712.js";
@@ -528,5 +528,63 @@ describe("GET /v1/nodes", () => {
     const gw = new MolphaGateway("http://gw1", registry);
     expect((await gw.getNodesInfo()).registry).toBeUndefined();
     expect(await gw.getNodes()).toHaveLength(3);
+  });
+});
+
+describe("provider rounds fetch from one node fewer", () => {
+  // Quorum 3 over six nodes with a buffer of 1: a committee round may fetch from 4 nodes
+  // (min(3 + 1, 6)), a provider round from 3 (the provider counts toward the quorum, so 2 nodes + 1).
+  const sixNodes = Array.from({ length: 6 }, (_, index) => ({
+    index,
+    peerId: `p${index}`,
+    address: `n${index}`,
+    signingKey: "02".padEnd(66, String(index)),
+  }));
+  const buffer1 = async () => ({ registryVersion: 1, redundancyBuffer: 1 });
+  const providerSource = defineSource({
+    inputs: { px: httpInput({ url: SOURCE_URL, decode: jsonDecode({ price: "$.price" }) }) },
+    transform: rescale(num(ref("px.price")), { scale: 0 }),
+    output: { type: "int256", decimals: 0 },
+    provenance: { provider: 7 },
+  });
+  const nodesHandler = () => jsonResponse({ status: "ok", data: { nodes: sixNodes } });
+  const providerRequest = (extra: Record<string, unknown> = {}) =>
+    request({
+      signaturesRequired: 3,
+      source: providerSource,
+      sourcePayment: { signer: evmSigner() },
+      ...extra,
+    });
+
+  it("funds only the provider round's eligible set", async () => {
+    const mock = mockFetch({ nodes: nodesHandler, round: () => completed() });
+    await new MolphaGateway("http://gw1", buffer1).requestSignedData(
+      providerRequest({ requireProvider: true }),
+    );
+    expect(mock.rounds[0]!.requireProvider).toBe(true);
+    expect(decodedPayments(mock.rounds[0]!)).toHaveLength(3);
+
+    // The same source asked as a committee round funds the whole committee.
+    const committee = mockFetch({ nodes: nodesHandler, round: () => completed() });
+    await new MolphaGateway("http://gw1", buffer1).requestSignedData(providerRequest());
+    expect(committee.rounds[0]).not.toHaveProperty("requireProvider");
+    expect(decodedPayments(committee.rounds[0]!)).toHaveLength(4);
+  });
+
+  it("checks the gateway's quote against the provider round's own selection size", async () => {
+    // The gateway quotes 3 for a provider round; the committee's 4 is a mismatch.
+    mockFetch({ nodes: nodesHandler, round: () => upstreamQuote(4) });
+    await expect(
+      new MolphaGateway("http://gw1", buffer1).requestSignedData(
+        providerRequest({ requireProvider: true }),
+      ),
+    ).rejects.toThrow(/eligibleSetSize 4 does not match this round's selection size 3/);
+
+    mockFetch({ nodes: nodesHandler, round: () => upstreamQuote(3, "source payment rejected") });
+    await expect(
+      new MolphaGateway("http://gw1", buffer1).requestSignedData(
+        providerRequest({ requireProvider: true }),
+      ),
+    ).rejects.not.toThrow(/does not match this round's selection size/);
   });
 });

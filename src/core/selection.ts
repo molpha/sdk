@@ -30,6 +30,10 @@ const MAX_ROUNDS = 65_536;
 
 const BITMAP_BYTES = 32;
 const MAX_NODES = BITMAP_BYTES * 8; // 256
+/**
+ * Bits `[0, 64)` of the signers bitmap are operator nodes; bits `[64, 256)` are provider signers.
+ */
+export const NODE_SLOTS = 64;
 const U32_MAX = 0xffff_ffff;
 
 /**
@@ -52,13 +56,52 @@ export function deriveSelectionSeed(
   );
 }
 
-/** `min(signaturesRequired + redundancyBuffer, nodeCount)`. */
+/**
+ * `min(signaturesRequired + redundancyBuffer, nodeCount)`. `nodeCount` is the number of members
+ * the committee is drawn over: the live members, not the registry's slot count when it has holes.
+ * For a provider round pass the {@link nodeQuorum} (`signaturesRequired - 1`), not the wire threshold.
+ */
 export function effectiveSelectionSize(
   signaturesRequired: number,
   redundancyBuffer: number,
   nodeCount: number,
 ): number {
   return Math.min(signaturesRequired + redundancyBuffer, nodeCount);
+}
+
+/**
+ * How many **nodes** a round's committee holds: `signaturesRequired`, less one for a provider
+ * round (a round the source's provider also signs). The provider counts toward `signaturesRequired`
+ * like a node, so a provider round is `signaturesRequired - 1` nodes plus the provider.
+ *
+ * Selection, dispatch, tickets and slashing size the committee by this number, not by the wire
+ * `signaturesRequired`, and the two draws are not nested (a node can sit in the `t - 1` draw and
+ * not in the `t` draw), so a caller that draws with the wrong one disagrees with the gateway.
+ * `provider` is `requireProvider` for a round about to be asked for, or the 32-byte signers bitmap
+ * of an attestation (a provider round has a bit set in `[NODE_SLOTS, 256)`). Mirrors
+ * `molpha_verifier::node_quorum`.
+ */
+export function nodeQuorum(
+  signaturesRequired: number,
+  provider: boolean | Uint8Array,
+): number {
+  const isProviderRound =
+    typeof provider === "boolean" ? provider : hasProviderBit(provider);
+  return isProviderRound ? Math.max(signaturesRequired - 1, 0) : signaturesRequired;
+}
+
+/** Is any provider bit (`>= NODE_SLOTS`) set in the 32-byte big-endian `bitmap`? */
+export function hasProviderBit(bitmap: Uint8Array): boolean {
+  return providerBitCount(bitmap) > 0;
+}
+
+/** Number of provider bits (`>= NODE_SLOTS`) set in the 32-byte big-endian `bitmap`. */
+export function providerBitCount(bitmap: Uint8Array): number {
+  let count = 0;
+  for (let bit = NODE_SLOTS; bit < MAX_NODES; bit++) {
+    if (bitmapBitSet(bitmap, bit)) count++;
+  }
+  return count;
 }
 
 /** Is bit `bit` set in the 32-byte big-endian `bitmap`? */
@@ -176,9 +219,44 @@ export function deriveGroupBitmap(
 }
 
 /**
+ * Map a bitmap drawn over `liveSlots.length` ranks onto the slots they stand for: rank `r`
+ * becomes slot `liveSlots[r]`. A registry whose members were removed leaves holes, and the
+ * committee is drawn over the live nodes only. `liveSlots` are node slots, below {@link NODE_SLOTS}:
+ * a provider record (slot 64 and up) is refused.
+ */
+export function mapRanksToSlots(
+  ranks: Uint8Array,
+  liveSlots: readonly number[],
+): Uint8Array {
+  // Every listed slot is checked, not only the drawn ones: a provider record in the list is a caller's
+  // mistake whichever way the draw falls.
+  for (const slot of liveSlots) {
+    if (!Number.isInteger(slot) || slot < 0 || slot >= NODE_SLOTS) {
+      throw new RangeError(
+        `invalid registry slot ${slot}: selection draws over node slots below ${NODE_SLOTS}, never over provider records`,
+      );
+    }
+  }
+  const out = new Uint8Array(BITMAP_BYTES);
+  for (let rank = 0; rank < liveSlots.length; rank++) {
+    if (bitmapBitSet(ranks, rank)) setBit(out, liveSlots[rank]!);
+  }
+  return out;
+}
+
+/**
  * Convenience orchestrator: derive the selection bitmap end-to-end.
  * `redundancy` defaults to 0; `ts` is the timestamp in unix MILLISECONDS and defaults
  * to now. The gateway assigns the real timestamp of a round, so this is for tests and tools.
+ *
+ * `nodeCount` is the registry's node slot count, holes included; at most {@link NODE_SLOTS} are drawn.
+ * When `liveSlots` (ascending node slots that hold a member) is given and has fewer entries than
+ * the node records, the draw runs over the live nodes and each drawn rank is mapped to its slot,
+ * exactly as the program and the nodes do; without holes the result is the plain draw over the
+ * slots. A count above {@link NODE_SLOTS} draws over the 64 node slots.
+ *
+ * `requireProvider` draws a **provider round**: the committee of {@link nodeQuorum} nodes
+ * (`signaturesRequired - 1`) plus the buffer, which is not contained in the committee round's draw.
  */
 export function deriveSelectionBitmap(
   sourceId: Uint8Array,
@@ -187,12 +265,18 @@ export function deriveSelectionBitmap(
   signaturesRequired: number,
   redundancy = 0,
   ts: number | bigint = Date.now(),
+  liveSlots?: readonly number[],
+  requireProvider = false,
 ): Uint8Array {
   const seed = deriveSelectionSeed(sourceId, registryVersion, ts);
+  const nodeRecords = Math.min(nodeCount, NODE_SLOTS);
+  const drawn = liveSlots ? liveSlots.length : nodeRecords;
   const size = effectiveSelectionSize(
-    signaturesRequired,
+    nodeQuorum(signaturesRequired, requireProvider),
     redundancy,
-    nodeCount,
+    drawn,
   );
-  return deriveGroupBitmap(seed, nodeCount, size);
+  const ranks = deriveGroupBitmap(seed, drawn, size);
+  if (!liveSlots || liveSlots.length === nodeRecords) return ranks;
+  return mapRanksToSlots(ranks, liveSlots);
 }

@@ -81,6 +81,25 @@ describe("builders", () => {
     expect(evm.idHex).toBe(idOf("evm-call-sig"));
   });
 
+  it("provenance names a provider ID, is optional, and never changes a source without it", () => {
+    const input = {
+      inputs: { px: httpInput({ url: "https://api.example.com/v1/price?symbol=BTC", headers: { accept: "application/json" }, decode: jsonDecode({ price: "$.data.price" }) }) },
+      transform: rescale(num(ref("px.price")), { scale: 8 }),
+      assert: [gt(ref("$out"), cst(0))],
+      output: { type: "int256" as const, decimals: 8 },
+      aggregation: { maxDeviationBps: 50, maxAgeMs: 2000 },
+    };
+    expect(defineSource({ ...input, provenance: { provider: 7 } }).idHex).toBe(idOf("provenance-tolerance"));
+    expect(defineSource({ ...input, provenance: null }).idHex).toBe(idOf("http-tolerance"));
+    expect(defineSource(input).idHex).toBe(idOf("http-tolerance"));
+    const withProvenance = defineSource({ ...input, provenance: { provider: 7 } });
+    expect(withProvenance.provenance).toEqual({ providerId: 7 });
+    expect(defineSource(input).provenance).toBeNull();
+    expect(withProvenance.canonical).toMatch(/"output":.*"provenance":\{"provider":"7"\}.*"transform":/);
+    expect(() => defineSource({ ...input, provenance: { provider: 0 } })).toThrow(/provenance\.provider/);
+    expect(() => defineSource({ ...input, provenance: { provider: 4294967296 } })).toThrow(/provenance\.provider/);
+  });
+
   it("jsonPriceSource and the lint", async () => {
     const s = jsonPriceSource({ url: "https://a.example/p", path: "$.price", decimals: 8 });
     expect(s.tolerance).toBe(false);
@@ -117,8 +136,8 @@ describe("builders", () => {
           `"read":{"method":"balance","address":"0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0"},"decode":{"format":"abi","types":["uint256"],"fields":{"v":{"pick":"0"}}}}},` +
           `"transform":{"ref":"r.v"},"output":{"type":"uint256","decimals":"0"}}`,
       );
-    checkChains(evm("900000"));
+    checkChains(evm("1200000"));
     expect(() => checkChains(evm("60000"))).toThrow(/must be between/);
-    expect(() => checkChains(evm("900000"), undefined, () => false)).toThrow(/not supported/);
+    expect(() => checkChains(evm("1200000"), undefined, () => false)).toThrow(/not supported/);
   });
 });

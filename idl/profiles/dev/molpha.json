@@ -1,5 +1,5 @@
 {
-  "address": "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt",
+  "address": "dzemhcTeUnUEhDcyUssWP8GfcMCYwKezVg4U1hvdEJe",
   "metadata": {
     "name": "molpha",
     "version": "0.1.0",
@@ -650,8 +650,14 @@
       "accounts": [
         {
           "name": "authority",
+          "docs": [
+            "The node owner, or the provider authority. Pays for the new registry version."
+          ],
           "writable": true,
-          "signer": true
+          "signer": true,
+          "relations": [
+            "provider"
+          ]
         },
         {
           "name": "protocol_config",
@@ -741,6 +747,9 @@
         },
         {
           "name": "new_registry",
+          "docs": [
+            "`extend_registry` allocated, and writes the snapshot."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -774,7 +783,11 @@
         },
         {
           "name": "node",
+          "docs": [
+            "The node to deactivate; omit it when a provider leaves."
+          ],
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -801,6 +814,43 @@
           }
         },
         {
+          "name": "provider",
+          "docs": [
+            "The provider to eject; omit it when a node leaves."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  112,
+                  114,
+                  111,
+                  118,
+                  105,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "provider.id",
+                "account": "Provider"
+              }
+            ]
+          }
+        },
+        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
@@ -809,6 +859,128 @@
         {
           "name": "node_owner",
           "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "extend_registry",
+      "discriminator": [
+        180,
+        169,
+        56,
+        232,
+        182,
+        173,
+        113,
+        23
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "registry_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.current_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.next_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "members",
+          "type": "u16"
         }
       ]
     },
@@ -1468,7 +1640,7 @@
           "docs": [
             "This program. Its account names the ProgramData account holding the upgrade authority."
           ],
-          "address": "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt"
+          "address": "dzemhcTeUnUEhDcyUssWP8GfcMCYwKezVg4U1hvdEJe"
         },
         {
           "name": "program_data"
@@ -1606,6 +1778,9 @@
       "accounts": [
         {
           "name": "authority",
+          "docs": [
+            "The protocol authority: every member, node or provider, is admitted with its signature."
+          ],
           "signer": true,
           "relations": [
             "protocol_config"
@@ -1613,6 +1788,10 @@
         },
         {
           "name": "node_owner",
+          "docs": [
+            "The node owner, or the provider authority. Pays the rent of the member, its key claim and",
+            "the registry version, and (a node) the deposit."
+          ],
           "writable": true,
           "signer": true
         },
@@ -1704,6 +1883,9 @@
         },
         {
           "name": "new_registry",
+          "docs": [
+            "`extend_registry` allocated, and writes the snapshot."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1737,7 +1919,11 @@
         },
         {
           "name": "node",
+          "docs": [
+            "The node being registered; omit it for a provider."
+          ],
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -1764,12 +1950,57 @@
           }
         },
         {
-          "name": "secp256k1_key_claim",
+          "name": "provider",
+          "docs": [
+            "The provider being registered, at the next provider id; omit it for a node."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  112,
+                  114,
+                  111,
+                  118,
+                  105,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.next_provider_id",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "key_x_claim",
+          "docs": [
+            "Reserves the key's x coordinate, so a duplicate or negated key (a node's or a provider's)",
+            "cannot be registered."
+          ],
           "writable": true
         },
         {
           "name": "owner_usdc",
+          "docs": [
+            "The node owner's USDC, which pays the deposit; omit it for a provider."
+          ],
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -1827,7 +2058,11 @@
         },
         {
           "name": "node_deposit_vault",
+          "docs": [
+            "The node-deposit vault; omit it for a provider."
+          ],
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -2012,6 +2247,9 @@
         },
         {
           "name": "new_registry",
+          "docs": [
+            "`extend_registry` allocated, and writes the snapshot."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -2182,6 +2420,239 @@
       ]
     },
     {
+      "name": "rotate_node_key",
+      "discriminator": [
+        179,
+        134,
+        24,
+        67,
+        144,
+        8,
+        185,
+        154
+      ],
+      "accounts": [
+        {
+          "name": "node_owner",
+          "docs": [
+            "The node authority, or the provider authority. Pays for the new registry version and the",
+            "new key's claim."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "current_registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.current_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_registry",
+          "docs": [
+            "`extend_registry` allocated, and writes the snapshot."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry_state.next_version",
+                "account": "RegistryState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "node",
+          "docs": [
+            "The node whose key rotates; omit it when a provider rotates."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  110,
+                  111,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "node_owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "provider",
+          "docs": [
+            "The provider whose key rotates; omit it when a node rotates. It must be in the registry."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  112,
+                  114,
+                  111,
+                  118,
+                  105,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "provider.id",
+                "account": "Provider"
+              }
+            ]
+          }
+        },
+        {
+          "name": "key_x_claim",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "proof",
+          "type": {
+            "defined": {
+              "name": "KeyRotationProof"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "slash_offence",
       "discriminator": [
         108,
@@ -2319,6 +2790,9 @@
         },
         {
           "name": "new_registry",
+          "docs": [
+            "`extend_registry` allocated, and writes the snapshot."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -3316,11 +3790,18 @@
       "accounts": [
         {
           "name": "node_owner",
+          "docs": [
+            "The node owner, or the provider authority."
+          ],
           "signer": true
         },
         {
           "name": "node",
+          "docs": [
+            "The node that moves; omit it for a provider."
+          ],
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -3345,14 +3826,51 @@
               }
             ]
           }
+        },
+        {
+          "name": "provider",
+          "docs": [
+            "The provider whose libp2p identity changes; omit it for a node."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  111,
+                  108,
+                  112,
+                  104,
+                  97,
+                  95,
+                  112,
+                  114,
+                  111,
+                  118,
+                  105,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "provider.id",
+                "account": "Provider"
+              }
+            ]
+          }
         }
       ],
       "args": [
         {
-          "name": "args",
+          "name": "endpoint",
           "type": {
             "defined": {
-              "name": "UpdateNodeEndpointArgs"
+              "name": "MemberEndpoint"
             }
           }
         }
@@ -3529,6 +4047,9 @@
         },
         {
           "name": "new_registry",
+          "docs": [
+            "`extend_registry` allocated, and writes the snapshot."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -3976,6 +4497,19 @@
       ]
     },
     {
+      "name": "KeyXClaim",
+      "discriminator": [
+        100,
+        114,
+        84,
+        214,
+        192,
+        112,
+        113,
+        3
+      ]
+    },
+    {
       "name": "Node",
       "discriminator": [
         208,
@@ -4015,6 +4549,19 @@
       ]
     },
     {
+      "name": "Provider",
+      "discriminator": [
+        164,
+        180,
+        71,
+        17,
+        75,
+        216,
+        80,
+        195
+      ]
+    },
+    {
       "name": "PunishmentCase",
       "discriminator": [
         215,
@@ -4051,19 +4598,6 @@
         183,
         99,
         97
-      ]
-    },
-    {
-      "name": "Secp256k1KeyClaim",
-      "discriminator": [
-        128,
-        160,
-        40,
-        228,
-        165,
-        251,
-        194,
-        86
       ]
     },
     {
@@ -4251,6 +4785,19 @@
       ]
     },
     {
+      "name": "NodeKeyRotated",
+      "discriminator": [
+        123,
+        130,
+        217,
+        152,
+        87,
+        120,
+        110,
+        235
+      ]
+    },
+    {
       "name": "NodePunished",
       "discriminator": [
         5,
@@ -4365,6 +4912,71 @@
         58,
         218,
         183
+      ]
+    },
+    {
+      "name": "ProviderEjected",
+      "discriminator": [
+        183,
+        237,
+        116,
+        56,
+        189,
+        132,
+        84,
+        59
+      ]
+    },
+    {
+      "name": "ProviderKeyRotated",
+      "discriminator": [
+        40,
+        171,
+        214,
+        207,
+        18,
+        165,
+        198,
+        6
+      ]
+    },
+    {
+      "name": "ProviderP2pKeyUpdated",
+      "discriminator": [
+        142,
+        149,
+        5,
+        72,
+        252,
+        22,
+        246,
+        15
+      ]
+    },
+    {
+      "name": "ProviderRegistered",
+      "discriminator": [
+        38,
+        209,
+        137,
+        78,
+        185,
+        19,
+        147,
+        14
+      ]
+    },
+    {
+      "name": "RegistryExtended",
+      "discriminator": [
+        58,
+        3,
+        219,
+        65,
+        196,
+        22,
+        123,
+        216
       ]
     },
     {
@@ -4992,6 +5604,91 @@
       "code": 6103,
       "name": "NotUpgradeAuthority",
       "msg": "initialize must be signed by the program's upgrade authority"
+    },
+    {
+      "code": 6104,
+      "name": "InvalidKeyRotationSignature",
+      "msg": "the node's current signing key did not sign this rotation"
+    },
+    {
+      "code": 6105,
+      "name": "KeyRotationCooldownActive",
+      "msg": "the node already rotated its signing key within the settlement window"
+    },
+    {
+      "code": 6106,
+      "name": "KeyRotationKeyUnchanged",
+      "msg": "the new signing key is the node's current key"
+    },
+    {
+      "code": 6107,
+      "name": "RegistryNotAllocated",
+      "msg": "the next registry version is too large to allocate in one instruction; call extend_registry first"
+    },
+    {
+      "code": 6108,
+      "name": "EvidenceExpired",
+      "msg": "evidence against a superseded registry version must be filed within max_settlement_delay_seconds of its grace window ending"
+    },
+    {
+      "code": 6109,
+      "name": "ProviderIdExhausted",
+      "msg": "provider ids are exhausted"
+    },
+    {
+      "code": 6110,
+      "name": "ProviderAlreadyInRegistry",
+      "msg": "provider is already in the registry"
+    },
+    {
+      "code": 6111,
+      "name": "ProviderSlotsFull",
+      "msg": "all provider slots are taken"
+    },
+    {
+      "code": 6112,
+      "name": "ProviderNotInRegistry",
+      "msg": "provider is not in the registry"
+    },
+    {
+      "code": 6113,
+      "name": "InvalidP2pKey",
+      "msg": "p2p key is not a valid ed25519 public key"
+    },
+    {
+      "code": 6114,
+      "name": "ProviderNotActive",
+      "msg": "provider is not active"
+    },
+    {
+      "code": 6115,
+      "name": "ProviderRemoved",
+      "msg": "provider was removed"
+    },
+    {
+      "code": 6116,
+      "name": "ProviderBitInNodeSet",
+      "msg": "a node bitmap may not name a provider bit"
+    },
+    {
+      "code": 6117,
+      "name": "ProviderAbsent",
+      "msg": "no set provider bit names the required provider"
+    },
+    {
+      "code": 6118,
+      "name": "ExactlyOneMember",
+      "msg": "pass exactly one of the node and provider accounts"
+    },
+    {
+      "code": 6119,
+      "name": "MemberKindMismatch",
+      "msg": "the endpoint kind does not match the account being registered"
+    },
+    {
+      "code": 6120,
+      "name": "NodeDepositAccountsMissing",
+      "msg": "a node registration needs the owner's USDC account and the node deposit vault"
     }
   ],
   "types": [
@@ -5075,7 +5772,7 @@
           {
             "name": "timestamp",
             "docs": [
-              "Gateway-assigned round time in unix **milliseconds**."
+              "Round time in unix **milliseconds**."
             ],
             "type": "u64"
           }
@@ -5417,8 +6114,9 @@
         "One epoch of the reward pool: its window, pinned ticket threshold, swept income and the",
         "per-node participation counters fed by tickets.",
         "",
-        "Counters are keyed by an epoch-local roster of `Node` PDAs rather than by registry position,",
-        "because registry positions move between versions (swap-remove) while one epoch spans several.",
+        "Counters are keyed by an epoch-local roster of `Node` PDAs rather than by registry slot,",
+        "because a slot is handed to another node once its holder leaves (a new registration takes the",
+        "lowest hole) while one epoch spans several versions.",
         "The roster fills lazily as tickets name nodes for the first time.",
         "",
         "PDA: `[SEED_PREFIX, epoch.to_le_bytes()]`. Layout has no implicit padding."
@@ -6026,9 +6724,158 @@
       }
     },
     {
+      "name": "KeyRotationProof",
+      "docs": [
+        "Both signatures that authorize replacing a node's signing key.",
+        "",
+        "Field layout matches the on-chain instruction args. With `borsh` the struct supports wire",
+        "encode/decode; with `anchor` it can be used directly as an Anchor instruction argument."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "new_public_key_compressed",
+            "docs": [
+              "The replacement key, compressed."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                33
+              ]
+            }
+          },
+          {
+            "name": "old_key_sig_s",
+            "docs": [
+              "The current key's signature `s` over [`key_rotation_digest`], in the aggregate format."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "old_key_commitment",
+            "docs": [
+              "The current key's signature commitment (nonce address) over [`key_rotation_digest`]."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "pop_sig_r",
+            "docs": [
+              "The replacement key's proof of possession `r` (see [`validate_key_and_verify_pop`])."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "pop_sig_s",
+            "docs": [
+              "The replacement key's proof of possession `s`."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "KeyXClaim",
+      "docs": [
+        "Permanent reservation for the x coordinate of a secp256k1 signing key, held by the node or",
+        "provider the key belongs to.",
+        "",
+        "PDA `[\"molpha_key_x\", x]`. The claim is on `x` alone, so a key and its negation (same `x`,",
+        "other parity) are one key: a duplicate or negated key is refused at registration, in O(1). A",
+        "rotated-away key keeps its claim, so a retired key can never be registered again."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "docs": [
+              "The `Node` or `Provider` PDA that holds the key."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MemberEndpoint",
+      "docs": [
+        "Where the gateway reaches the member. Its variant names the kind being registered and must",
+        "match the account passed."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Node",
+            "fields": [
+              {
+                "name": "ip",
+                "type": {
+                  "array": [
+                    "u8",
+                    4
+                  ]
+                }
+              },
+              {
+                "name": "port",
+                "type": "u16"
+              }
+            ]
+          },
+          {
+            "name": "Provider",
+            "fields": [
+              {
+                "name": "p2p_key",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "Node",
       "docs": [
-        "Permanent node identity and reward account; never closed or re-keyed."
+        "Permanent node identity and reward account; never closed.",
+        "",
+        "`secp256k1_pubkey_{x,y}` is the node's current signing key. Rotating it publishes a registry",
+        "version that names the new key; versions already published keep the key they were created",
+        "with, so nothing signed under them stops verifying."
       ],
       "type": {
         "kind": "struct",
@@ -6099,6 +6946,13 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "key_rotated_at",
+            "docs": [
+              "When the signing key was last rotated; `0` if it never was."
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -6183,6 +7037,76 @@
           },
           {
             "name": "updated_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NodeKeyRotated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "node",
+            "type": "pubkey"
+          },
+          {
+            "name": "node_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "docs": [
+              "Registry position of the node, unchanged by the rotation."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "registry_version",
+            "docs": [
+              "The version that names the new key. The previous version keeps the old one."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "old_pubkey_x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "old_pubkey_y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_pubkey_x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_pubkey_y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "rotated_at",
             "type": "i64"
           }
         ]
@@ -7037,6 +7961,328 @@
       }
     },
     {
+      "name": "Provider",
+      "docs": [
+        "A provider signer: a data provider whose secp256k1 key co-signs the node committee's aggregate",
+        "at bit `64 + slot` of the signers bitmap, proving the provider signed that exact attestation.",
+        "Its bit counts toward `signatures_required` like a node's (at most one provider bit per",
+        "attestation), so a provider round is `signatures_required - 1` nodes plus the provider.",
+        "",
+        "Admitted like a node: `register_node` with the `provider` account, co-signed by the protocol",
+        "authority, puts it in the registry at once. It leaves through `deactivate_node` and rotates",
+        "its key through `rotate_node_key`. It locks no deposit: nothing slashes a provider.",
+        "",
+        "PDA `[\"molpha_provider\", id.to_le_bytes()]`, which is also the `account` of the provider's",
+        "record in the registry's provider table (provider slot `slot`). `id` is stable: assigned from",
+        "`RegistryState.next_provider_id`, never reused, so consumers bind a source to an id rather than",
+        "to a slot, and a slot handed to another provider later transfers no trust.",
+        "",
+        "Byte layout: `docs/provider-accounts.md`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u32"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Registers the provider (with the protocol authority), ejects it, rotates its keys. Never",
+              "signs rounds."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "x",
+            "docs": [
+              "The signing key, affine and big-endian. It is the registry record's key."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "p2p_key",
+            "docs": [
+              "ed25519 libp2p identity the gateway dials. Not the signing key."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "slot",
+            "docs": [
+              "Provider slot `p` (bit `64 + p`). A `Removed` provider keeps the slot it last held, for",
+              "reference only."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "ProviderStatus"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "key_rotated_at",
+            "docs": [
+              "When the signing key was last rotated; `0` if it never was."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProviderEjected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u32"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "docs": [
+              "The slot it held."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "registry_version",
+            "docs": [
+              "The version that dropped it."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "ejected_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProviderKeyRotated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u32"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "docs": [
+              "Provider slot `p`, unchanged by the rotation; the provider signs at bit `64 + p`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "registry_version",
+            "docs": [
+              "The version that names the new key. The previous version keeps the old one."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "old_pubkey_x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "old_pubkey_y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_pubkey_x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_pubkey_y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "rotated_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProviderP2pKeyUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u32"
+          },
+          {
+            "name": "old_p2p_key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_p2p_key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProviderRegistered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u32"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "docs": [
+              "Provider slot `p`; the provider signs at bit `64 + p`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "registry_version",
+            "docs": [
+              "The version that added it."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "pubkey_x",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "pubkey_y",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "p2p_key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "registered_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProviderStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Removed"
+          }
+        ]
+      }
+    },
+    {
       "name": "PunishmentCase",
       "docs": [
         "Permanent, on-chain record of an executed node punishment.",
@@ -7147,17 +8393,12 @@
             }
           },
           {
-            "name": "ip",
+            "name": "endpoint",
             "type": {
-              "array": [
-                "u8",
-                4
-              ]
+              "defined": {
+                "name": "MemberEndpoint"
+              }
             }
-          },
-          {
-            "name": "port",
-            "type": "u16"
           },
           {
             "name": "secp256k1_pubkey_compressed",
@@ -7170,6 +8411,10 @@
           },
           {
             "name": "pop_sig_r",
+            "docs": [
+              "Proof of possession, `MOLPHA_NODE_POP_V1` over the node id",
+              "`keccak256(\"MOLPHA_NODE_ID_V1\" ‖ node_owner ‖ key ‖ salt)`, for a provider too."
+            ],
             "type": {
               "array": [
                 "u8",
@@ -7192,10 +8437,24 @@
     {
       "name": "Registry",
       "docs": [
-        "Immutable, version-addressed snapshot of the ordered node set and selection policy.",
+        "Header of an immutable, version-addressed registry snapshot: the selection policy and how",
+        "many slots each segment has.",
         "",
-        "Only `nodes[..node_count]` is populated. Node addresses are stored as bytes to keep the",
-        "zero-copy layout POD-safe. `SPACE` includes the Anchor discriminator."
+        "The members follow the header in the same account as two tables, one [`RegistryMember`] each:",
+        "the `node_count` node slots (node slot `i` signs at bit `i`), then the `provider_count` provider",
+        "slots (provider slot `p` signs at bit `PROVIDER_BIT_BASE + p`). A provider therefore costs one",
+        "record, not padding up to bit 64.",
+        "",
+        "A member keeps its slot for as long as it is in a snapshot: removing one leaves a hole (a vacant",
+        "record) rather than moving the last member into it, and a later registration takes the lowest",
+        "hole of its segment. Each count includes the holes; trailing holes are trimmed, so the last",
+        "slot of each segment is live. The account is sized to hold exactly the two tables",
+        "([`Registry::space`] of [`Registry::records`]), so a snapshot costs what its slots need. That is",
+        "also how the verifier reads it. Use [`RegistryRef`] to read a snapshot with its members; this",
+        "struct alone gives the header.",
+        "",
+        "A snapshot without providers has the bytes of the earlier layout, whose `node_count` was a",
+        "`u16` at the same offset."
       ],
       "serialization": "bytemuck",
       "repr": {
@@ -7204,36 +8463,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "type": "u32"
-          },
-          {
-            "name": "node_count",
-            "type": "u16"
-          },
-          {
-            "name": "redundancy_buffer",
-            "type": "u8"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          },
-          {
-            "name": "nodes",
-            "type": {
-              "array": [
-                {
-                  "array": [
-                    "u8",
-                    32
-                  ]
-                },
-                256
-              ]
-            }
-          },
           {
             "name": "grace_active_until",
             "type": "i64"
@@ -7244,6 +8473,58 @@
               "Inclusive creation time. A version cannot verify a round dated before it existed."
             ],
             "type": "i64"
+          },
+          {
+            "name": "version",
+            "type": "u32"
+          },
+          {
+            "name": "node_count",
+            "docs": [
+              "Node slots, holes included: at most [`NODE_SLOTS`]."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "provider_count",
+            "docs": [
+              "Provider slots, holes included: at most [`MAX_PROVIDER_SLOTS`]."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "redundancy_buffer",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RegistryExtended",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "The registry version whose account was grown. It is not published yet."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "data_len",
+            "docs": [
+              "The account's length after this call, and the length it is being grown toward."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "target_len",
+            "type": "u32"
           }
         ]
       }
@@ -7267,6 +8548,13 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "next_provider_id",
+            "docs": [
+              "The id of the next provider to register. Starts at 1 and only grows: ids are never reused."
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -7282,6 +8570,9 @@
           },
           {
             "name": "node_count",
+            "docs": [
+              "Node slots of the new version, holes included."
+            ],
             "type": "u16"
           },
           {
@@ -7299,6 +8590,13 @@
           {
             "name": "updated_at",
             "type": "i64"
+          },
+          {
+            "name": "provider_count",
+            "docs": [
+              "Provider slots of the new version, holes included (slot 0 is reserved)."
+            ],
+            "type": "u16"
           }
         ]
       }
@@ -7322,6 +8620,9 @@
           },
           {
             "name": "NodeReinstated"
+          },
+          {
+            "name": "ProviderEjected"
           }
         ]
       }
@@ -7425,25 +8726,6 @@
       }
     },
     {
-      "name": "Secp256k1KeyClaim",
-      "docs": [
-        "Permanent reservation for a secp256k1 node key."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "node_pubkey",
-            "type": "pubkey"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
       "name": "SubmitAttestationArgs",
       "type": {
         "kind": "struct",
@@ -7471,7 +8753,7 @@
             "name": "coalition_key",
             "docs": [
               "Affine sum of the signers' secp256k1 keys (`molpha_verifier::coalition_key`, or any",
-              "library's point sum over their `Node` accounts). Unsigned and untrusted: the verifier",
+              "library's point sum over their registry member keys). Unsigned and untrusted: the verifier",
               "checks it projectively against its own sum instead of inverting. A wrong key only fails",
               "the instruction."
             ],
@@ -7796,27 +9078,6 @@
           },
           {
             "name": "protocol_fee_bps",
-            "type": "u16"
-          }
-        ]
-      }
-    },
-    {
-      "name": "UpdateNodeEndpointArgs",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "ip",
-            "type": {
-              "array": [
-                "u8",
-                4
-              ]
-            }
-          },
-          {
-            "name": "port",
             "type": "u16"
           }
         ]

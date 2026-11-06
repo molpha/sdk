@@ -8,7 +8,7 @@
   },
   "dev": {
     "gatewayUrl": "https://dev-gateway.molpha.io/",
-    "solanaProgramId": "chivcFQgxzwkpLvW41PV431HQ4dYpaW3povQH3AdpQt",
+    "solanaProgramId": "dzemhcTeUnUEhDcyUssWP8GfcMCYwKezVg4U1hvdEJe",
     "evmVerifier": null,
     "starknetSepolia": null,
     "note": "EVM/Starknet verifier addresses are unset until the Attestation-interface redeploy. Codegen falls back to stable addresses and sets MOLPHA_DEV_VERIFIERS_PROVISIONAL."
