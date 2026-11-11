@@ -1,7 +1,7 @@
 {
   "name": "@molpha/sdk",
   "version": "0.2.0",
-  "description": "Molpha Consumer SDK — subscribe, request signed data from the gateway, submit attestations and read on-chain feeds.",
+  "description": "Molpha Consumer SDK \u2014 subscribe, request signed data from the gateway, submit attestations and read on-chain feeds.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -45,6 +45,10 @@
     "./starknet": {
       "import": "./dist/starknet.js",
       "types": "./dist/starknet.d.ts"
+    },
+    "./data": {
+      "import": "./dist/data.js",
+      "types": "./dist/data.d.ts"
     },
     "./utils": {
       "import": "./dist/utils.js",

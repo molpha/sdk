@@ -7,6 +7,7 @@ export default defineConfig({
     core: "src/core/index.ts",
     evm: "src/evm/index.ts",
     starknet: "src/starknet/index.ts",
+    data: "src/data/index.ts",
     utils: "src/utils.ts",
   },
   format: ["esm"],
