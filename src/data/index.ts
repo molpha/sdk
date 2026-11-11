@@ -14,6 +14,7 @@
  */
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { parseSource, type ParsedSource } from "../core/source.js";
+import { formatValue } from "../core/sourcebuild.js";
 import type { Attestation } from "../core/types.js";
 import { buildEvmVerifierArgs, encodeEvmVerifyCalldata } from "../evm/helpers.js";
 import { buildStarknetVerifierArgs, encodeStarknetVerifyCalldata } from "../starknet/helpers.js";
@@ -257,9 +258,11 @@ function bytesOf(h: string): Uint8Array {
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 /**
- * Check an envelope against itself: the source re-hashes to its `sourceId`; a `payload` hashes to the
- * value of a `keccak256` output; a signed envelope's attestation names this source and this value,
- * and its EVM and Starknet calldata are what this SDK builds. Returns the parsed source.
+ * Check an envelope against itself: the source re-hashes to its `sourceId`; `data.type` and
+ * `data.decimals` are the source's declared output and `data.value` is `data.encoded` rendered by it;
+ * a `keccak256` output's `payload` hashes to the value (and no other output carries one); a signed
+ * envelope's attestation names this source and this value, and its EVM and Starknet calldata are what
+ * this SDK builds. Returns the parsed source.
  *
  * It does not verify the aggregate signature: an on-chain verifier is the authority (`verifierArgs`),
  * or `MolphaDataClient.verify` asks the service and the configured verifier contracts.
@@ -274,7 +277,26 @@ export function checkEnvelope(env: Envelope): ParsedSource {
   if (!same(parsed.idHex, env.source.sourceId)) {
     throw new DataIntegrityError(`the returned source hashes to ${parsed.idHex}, not to the sourceId ${env.source.sourceId}`);
   }
-  if (env.payload != null && env.data.type === "keccak256") {
+  // What is shown and decoded follows the parsed source, never the response's own description of it.
+  const out = parsed.output;
+  if (env.data.type !== out.type) {
+    throw new DataIntegrityError(`data.type is ${env.data.type}, but the source's output is ${out.type}`);
+  }
+  const numeric = out.type === "int256" || out.type === "uint256";
+  if (numeric && env.data.decimals !== out.decimals) {
+    throw new DataIntegrityError(`data.decimals is ${env.data.decimals}, but the source's output has ${out.decimals}`);
+  }
+  let rendered: string;
+  try {
+    rendered = formatValue(env.data.encoded, out);
+  } catch {
+    throw new DataIntegrityError("data.encoded is not a 32-byte value");
+  }
+  if (rendered !== env.data.value) {
+    throw new DataIntegrityError(`data.value ${env.data.value} is not the encoded value, which renders as ${rendered}`);
+  }
+  if (env.payload != null) {
+    if (out.type !== "keccak256") throw new DataIntegrityError("a payload on a source whose output is not keccak256");
     if (!same(hex(keccak_256(bytesOf(env.payload))), env.data.encoded)) {
       throw new DataIntegrityError("the payload does not hash to the value");
     }
@@ -301,6 +323,14 @@ export function checkEnvelope(env: Envelope): ParsedSource {
   return parsed;
 }
 
+/** A response to a signed request must be signed: refuse an unsigned envelope in its place. */
+function requireSigned(env: Envelope): Envelope {
+  if (!env.signed || !env.attestation || !env.signature) {
+    throw new DataIntegrityError("a signed read was requested, and the service answered with an unsigned envelope");
+  }
+  return env;
+}
+
 /**
  * A signed envelope as the SDK's `Attestation`, for `submitAttestation` on Solana or the EVM and
  * Starknet argument builders.
@@ -314,7 +344,8 @@ export function toAttestation(env: Envelope): Attestation {
       commitmentAddr: env.signature.commitment,
       signersBitmap: env.signature.signersBitmap,
     },
-    value: env.data.value,
+    // Rendered here from the signed bytes and the source (checkEnvelope holds data.value to the same).
+    value: formatValue(env.data.encoded, parseSource(env.source.config).output),
     fresh: env.round?.fresh ?? true,
     ...(env.payload ? { valuePreimage: env.payload } : {}),
   };
@@ -550,7 +581,7 @@ export class MolphaDataClient {
   async readSigned(req: DataRequest, auth: SignedReadAuth, opts: ReadOptions = {}): Promise<Envelope> {
     const body = { ...req, attest: true, signatures: opts.signatures, verifierMaxAge: opts.verifierMaxAge };
     const env = await this.post<Envelope>("/v1/read", body, authHeaders(auth), opts.signal);
-    checkEnvelope(env);
+    checkEnvelope(requireSigned(env));
     return env;
   }
 
@@ -566,7 +597,12 @@ export class MolphaDataClient {
       headers,
       opts.signal,
     );
-    for (const item of r.results) if (item.envelope) checkEnvelope(item.envelope);
+    items.forEach((item, i) => {
+      const result = r.results.find((x) => x.index === i);
+      if (!result?.envelope) return;
+      if (opts.attest || item.attest) requireSigned(result.envelope);
+      checkEnvelope(result.envelope);
+    });
     return r.results;
   }
 
@@ -577,7 +613,7 @@ export class MolphaDataClient {
   ): Promise<Envelope> {
     const body = { ...req, attest: !!opts.auth, signatures: opts.signatures, verifierMaxAge: opts.verifierMaxAge };
     const env = await this.post<Envelope>("/v1/snapshot", body, opts.auth ? authHeaders(opts.auth) : {}, opts.signal);
-    checkEnvelope(env);
+    checkEnvelope(opts.auth ? requireSigned(env) : env);
     return env;
   }
 
