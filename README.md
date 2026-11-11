@@ -946,6 +946,52 @@ A valid signature does not replace consumer policy: freshness, source, quorum an
 
 Solana verification finalizes feed state via `submit_attestation`. EVM and Starknet verification are stateless and return whether the signed Molpha attestation is valid for the deployed verifier registry.
 
+## Molpha Data
+
+`@molpha/sdk/data` is a browser-safe client (`@noble/hashes` only) for Molpha Data, the catalog of on-chain
+data templates: token supply, pool prices, LST rates, lending rates and health factors, and more. The service
+expands a template into a source, reads it unsigned, or has it signed through the gateway with your own session,
+RequestAuth or x402 payment.
+
+```ts
+import { MolphaDataClient, decodePayload, toAttestation } from "@molpha/sdk/data";
+
+const data = new MolphaDataClient(); // https://data.molpha.io
+
+// Unsigned: the service's own read, for deciding.
+const price = await data.read({
+  template: "dex.pool.price",
+  params: { chain: "ethereum", pool: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640" },
+});
+console.log(price.data.value, price.facts?.quote);
+
+// Signed with a gateway session: the same template, threshold-signed, with verifier arguments.
+const signed = await data.readSigned(
+  { template: "lst.rate", params: { chain: "ethereum", token: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0" } },
+  { bearer: sessionToken },
+);
+signed.verifierArgs?.evm.calldata; // for a raw eth_call to a verifier
+const attestation = toAttestation(signed); // for sdk.solana.submitAttestation
+```
+
+Every source the service returns is re-hashed with this SDK and refused when it does not match its `sourceId`; a
+signed envelope must sign that source and value, and its EVM and Starknet calldata must be what this SDK builds
+(`DataIntegrityError` otherwise). It does not verify the aggregate signature: a verifier contract, or Solana's
+`submit_attestation`, does.
+
+To sign with RequestAuth, derive first and sign the digest with the consumer key:
+
+```ts
+const { sourceId, parsed } = await data.derive({ template: "token.supply", params: { chain: "solana", token: mint } });
+const digest = requestAuthDigest({ programId, gatewayPda, sourceId, signatures: 3, authTimestamp: nowSeconds });
+// ... sign `digest` (Ed25519), then data.readSigned(request, { requestAuth: { consumerAuthority, authSig, authTimestamp } })
+// or skip the service and send `parsed` to the gateway with sdk.requestSignedData({ source: parsed, ... }).
+```
+
+Snapshots (`token.snapshot`, `dex.pool.snapshot`, `data.snapshot(...)`) sign `keccak256(payload)`; the envelope's
+`fields` are the service's decoding, and `decodePayload(env.layout, env.payload)` repeats it locally after
+`checkEnvelope` has checked the hash.
+
 ## IDL vendoring
 
 The Solana client needs the Anchor IDL for the Molpha program.
