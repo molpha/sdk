@@ -73,6 +73,35 @@ describe("checkEnvelope", () => {
     expect(() => checkEnvelope(d)).toThrow(/Starknet verify calldata/);
   });
 
+  it("holds data.value, data.type and data.decimals to the signed bytes and the parsed source", () => {
+    const base = fixture<Envelope>("signed-lst-rate.json");
+    const a = clone(base);
+    a.data.value = "1000000";
+    expect(() => checkEnvelope(a)).toThrow(/not the encoded value/);
+    const b = clone(base);
+    b.data.decimals = 6;
+    expect(() => checkEnvelope(b)).toThrow(/data.decimals/);
+    const c = clone(fixture<Envelope>("unsigned-token-snapshot-solana.json"));
+    c.data.type = "bytes32";
+    expect(() => checkEnvelope(c)).toThrow(/data.type/);
+  });
+
+  it("checks a keccak256 payload whatever the response says its type is, and refuses a payload elsewhere", () => {
+    // A corrupted payload with data.type relabelled: the parsed source still says keccak256, so it is refused.
+    const env = clone(fixture<Envelope>("unsigned-token-snapshot-solana.json"));
+    env.payload = env.payload!.replace(/.$/, (c) => (c === "0" ? "1" : "0"));
+    env.data.type = "bytes32";
+    expect(() => checkEnvelope(env)).toThrow(DataIntegrityError);
+    const plain = clone(fixture<Envelope>("unsigned-pool-price.json"));
+    plain.payload = "0x00";
+    expect(() => checkEnvelope(plain)).toThrow(/not keccak256/);
+  });
+
+  it("renders the Attestation's value from the signed bytes", () => {
+    const env = fixture<Envelope>("signed-lst-rate.json");
+    expect(toAttestation(env).value).toBe(env.data.value);
+  });
+
   it("turns a signed envelope into the SDK's Attestation", () => {
     const env = fixture<Envelope>("signed-lst-rate.json");
     const att = toAttestation(env);
@@ -193,6 +222,19 @@ describe("MolphaDataClient", () => {
     expect((calls[2]!.init.headers as Record<string, string>).authorization).toBe("Bearer tok");
     await client.readSigned({ template: "lst.rate" }, { payment: "cGF5" });
     expect((calls[3]!.init.headers as Record<string, string>)["payment-signature"]).toBe("cGF5");
+  });
+
+  it("refuses an unsigned answer to a signed request", async () => {
+    const unsigned = fixture<Envelope>("unsigned-pool-price.json");
+    const c = new MolphaDataClient({ fetch: fakeFetch(() => ({ body: unsigned })).fn });
+    await expect(c.readSigned({ template: "dex.pool.price" }, { bearer: "t" })).rejects.toThrow(/unsigned envelope/);
+    const snap = fixture<Envelope>("unsigned-token-snapshot-solana.json");
+    const cs = new MolphaDataClient({ fetch: fakeFetch(() => ({ body: snap })).fn });
+    await expect(cs.snapshot({ chain: "solana", reads: [] }, { auth: { bearer: "t" } })).rejects.toThrow(/unsigned envelope/);
+    await expect(cs.snapshot({ chain: "solana", reads: [] })).resolves.toBeDefined();
+    const cb = new MolphaDataClient({ fetch: fakeFetch(() => ({ body: { results: [{ index: 0, status: 200, envelope: unsigned }] } })).fn });
+    await expect(cb.batch([{ template: "dex.pool.price", attest: true }], { bearer: "t" })).rejects.toThrow(/unsigned envelope/);
+    await expect(cb.batch([{ template: "dex.pool.price" }])).resolves.toHaveLength(1);
   });
 
   it("surfaces the gateway's 402 quote and the service's error codes", async () => {
