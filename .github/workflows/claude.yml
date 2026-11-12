@@ -1,0 +1,43 @@
+name: Claude
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+concurrency:
+  group: claude-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Non-draft PRs from branches of this repo only: fork runs are not reviewed.
+    if: >-
+      github.event_name == 'pull_request'
+      && !github.event.pull_request.draft
+      && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    uses: molpha/.github/.github/workflows/claude-review.yml@v1
+    with:
+      model: claude-sonnet-5-5
+
+  mention:
+    if: >-
+      github.event_name != 'pull_request'
+      && contains(github.event.comment.body, '@claude')
+      && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    uses: molpha/.github/.github/workflows/claude-mention.yml@v1
+    with:
+      model: claude-sonnet-5-5
