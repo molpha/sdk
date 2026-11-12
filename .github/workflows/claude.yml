@@ -8,10 +8,6 @@ on:
   pull_request_review_comment:
     types: [created]
 
-concurrency:
-  group: claude-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
-  cancel-in-progress: true
-
 jobs:
   review:
     # Non-draft PRs from branches of this repo only: fork runs are not reviewed.
@@ -19,6 +15,11 @@ jobs:
       github.event_name == 'pull_request'
       && !github.event.pull_request.draft
       && github.event.pull_request.head.repo.full_name == github.repository
+    # A new push supersedes the review in progress. Job level, not workflow level:
+    # a workflow-level group would also cancel runs for unrelated comment events.
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: read
@@ -33,6 +34,11 @@ jobs:
       github.event_name != 'pull_request'
       && contains(github.event.comment.body, '@claude')
       && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    # One group per comment, never cancelled: other comments, replies and
+    # non-mention comments must not stop a request that is running.
+    concurrency:
+      group: claude-mention-${{ github.event.comment.id }}
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: write
