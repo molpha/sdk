@@ -11,3 +11,8 @@ export function average(values: number[]): number {
   for (const v of values) sum += v;
   return sum / values.length;
 }
+
+/** Clamp `x` into [lo, hi]. */
+export function clamp(x: number, lo: number, hi: number): number {
+  return Math.min(lo, Math.max(hi, x));
+}
