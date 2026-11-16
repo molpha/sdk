@@ -2160,12 +2160,12 @@ function checkInput(name: string, v: Json, path: string): InputInfo {
 
 function checkAggregation(v: Json): boolean {
   if (v === null) return false;
-  const m = exact(v, "aggregation", [
-    "maxAgeMs",
-    "maxDeviationBps",
-    "mode",
-    "rule",
-  ]);
+  const m = exact(
+    v,
+    "aggregation",
+    ["maxAgeMs", "maxDeviationBps", "mode", "rule"],
+    ["maxDeviationAbs"],
+  );
   oneOf("aggregation.mode", str(m.get("mode"), "aggregation.mode"), [
     "tolerance",
   ]);
@@ -2177,7 +2177,30 @@ function checkAggregation(v: Json): boolean {
     0,
     10_000,
   );
+  const abs = m.get("maxDeviationAbs");
+  if (abs !== undefined) checkAbsBand(abs);
   return true;
+}
+
+/** The largest int256 value, the widest absolute band a word can need. */
+const MAX_ABS_BAND = (1n << 255n) - 1n;
+
+/**
+ * The optional absolute band: an unsigned integer string from 1 to 2^255 - 1 in raw output units (the
+ * int256 word, before output.decimals). Omitted when unused, never null, so tolerance sources written
+ * before it keep their IDs.
+ */
+function checkAbsBand(v: Json): void {
+  const path = "aggregation.maxDeviationAbs";
+  if (v === null) val(path, "omit maxDeviationAbs instead of writing null");
+  const n = parseUint(str(v, path), MAX_ABS_BAND);
+  if (n === null)
+    val(
+      path,
+      "must be an unsigned integer string of at most 2^255 - 1 (no sign, no leading zeros)",
+    );
+  if (n === 0n)
+    val(path, "must be at least 1; omit the key for no absolute band");
 }
 
 export const OUTPUT_TYPES = [
@@ -2500,6 +2523,8 @@ export interface AggregationDoc {
   mode: "tolerance";
   rule: "median";
   maxDeviationBps: string;
+  /** Absent unless the source sets an absolute band (raw output units); never `null`. */
+  maxDeviationAbs?: string;
   maxAgeMs: string;
 }
 
