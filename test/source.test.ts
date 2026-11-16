@@ -141,6 +141,30 @@ describe("builders", () => {
     expect((await lintSource(pool, { ownerOf: async () => "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc" }))[0]?.severity).toBe("error");
   });
 
+  it("layoutDecode writes a ring only when given", () => {
+    const d = layoutDecode({
+      index: { offset: 17, type: "u16le" },
+      oldTs: { offset: 51, type: "u32le", ring: { index: "index", back: 10, len: 100, stride: 44 } },
+    });
+    const s = defineSource({
+      inputs: {
+        o: svmAccount({ chain: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", address: "3Y695CuQ8AP4anbwAqiEBeQF9KxqHFr8piEwvw3UePnQ", maxAgeMs: 10000, dataSlice: { offset: 0, length: 4411 }, decode: d }),
+      },
+      transform: rescale(ref("o.oldTs"), { scale: 0 }),
+      output: { type: "int256", decimals: 0 },
+    });
+    expect(s.canonical).toContain('"oldTs":{"offset":"51","ring":{"back":"10","index":"index","len":"100","stride":"44"},"type":"u32le"}');
+    expect(s.canonical).toContain('"index":{"offset":"17","type":"u16le"}');
+    const short = { offset: 0, length: 4410 };
+    expect(() =>
+      defineSource({
+        inputs: { o: svmAccount({ chain: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", address: "3Y695CuQ8AP4anbwAqiEBeQF9KxqHFr8piEwvw3UePnQ", maxAgeMs: 10000, dataSlice: short, decode: d }) },
+        transform: rescale(ref("o.oldTs"), { scale: 0 }),
+        output: { type: "int256", decimals: 0 },
+      }),
+    ).toThrow(/outside dataSlice/);
+  });
+
   it("formatValue and verifyPreimage", () => {
     const word = (hex: string): string => hex.padStart(64, "0");
     expect(formatValue(word("632eac"), { type: "int256", decimals: 2 })).toBe("65000.12");
