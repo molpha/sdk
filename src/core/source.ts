@@ -513,6 +513,9 @@ interface Ops {
   max: number;
   params: string[];
 }
+/** The most points interp takes (x, then up to this many x, y pairs). A Kamino borrow-rate curve has 11. */
+export const MAX_INTERP_POINTS = 16;
+
 const OPS: Record<string, Ops> = {
   num: { min: 1, max: 1, params: ["mode"] },
   int: { min: 1, max: 1, params: [] },
@@ -527,6 +530,7 @@ const OPS: Record<string, Ops> = {
   abs: { min: 1, max: 1, params: [] },
   div: { min: 2, max: 2, params: ["round", "scale"] },
   pow: { min: 2, max: 2, params: ["round", "scale"] },
+  interp: { min: 5, max: 1 + 2 * MAX_INTERP_POINTS, params: ["round", "scale"] },
   rescale: { min: 1, max: 1, params: ["round", "scale"] },
   shift: { min: 1, max: 1, params: ["n"] },
   eq: { min: 2, max: 2, params: [] },
@@ -618,6 +622,13 @@ function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
         path + ".args",
         "value",
         `${op} takes ${spec.min}..${spec.max} arguments, got ${args.length}`,
+      );
+    }
+    if (op === "interp" && args.length % 2 === 0) {
+      throw new SourceError(
+        path + ".args",
+        "value",
+        `interp takes x and then x, y pairs: an odd number of arguments, got ${args.length}`,
       );
     }
     args.forEach((a, i) => checkExpr(a, `${path}.args[${i}]`, ctx, depth + 1));
