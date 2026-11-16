@@ -50,6 +50,18 @@
       "sourceId": "0xd02d6cfcbcca7b4101e4bae4b088df5d7efe103418741016b40084b69e91d4c7"
     },
     {
+      "name": "tolerance-abs-and-bps",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"50\", \"maxDeviationAbs\": \"500000\", \"maxAgeMs\": \"2000\"}\n}",
+      "canonical": "{\"aggregation\":{\"maxAgeMs\":\"2000\",\"maxDeviationAbs\":\"500000\",\"maxDeviationBps\":\"50\",\"mode\":\"tolerance\",\"rule\":\"median\"},\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"0\"}],\"op\":\"gt\"}],\"inputs\":{\"px\":{\"decode\":{\"fields\":{\"price\":{\"path\":\"$.data.price\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{\"accept\":\"application/json\"},\"method\":\"GET\",\"url\":\"https://api.example.com/v1/price?symbol=BTC\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"transform\":{\"args\":[{\"args\":[{\"ref\":\"px.price\"}],\"mode\":\"dec\",\"op\":\"num\"}],\"op\":\"rescale\",\"round\":\"halfEven\",\"scale\":\"8\"},\"v\":\"1\"}",
+      "sourceId": "0x97942a7b36dd77d4400256056dfcc558492db26aeb52832c2d2567527cf52ee6"
+    },
+    {
+      "name": "tolerance-abs-only",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationAbs\": \"57896044618658097711785492504343953926634992332820282019728792003956564819967\", \"maxDeviationBps\": \"0\", \"maxAgeMs\": \"2000\"}\n}",
+      "canonical": "{\"aggregation\":{\"maxAgeMs\":\"2000\",\"maxDeviationAbs\":\"57896044618658097711785492504343953926634992332820282019728792003956564819967\",\"maxDeviationBps\":\"0\",\"mode\":\"tolerance\",\"rule\":\"median\"},\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"0\"}],\"op\":\"gt\"}],\"inputs\":{\"px\":{\"decode\":{\"fields\":{\"price\":{\"path\":\"$.data.price\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{\"accept\":\"application/json\"},\"method\":\"GET\",\"url\":\"https://api.example.com/v1/price?symbol=BTC\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"transform\":{\"args\":[{\"args\":[{\"ref\":\"px.price\"}],\"mode\":\"dec\",\"op\":\"num\"}],\"op\":\"rescale\",\"round\":\"halfEven\",\"scale\":\"8\"},\"v\":\"1\"}",
+      "sourceId": "0x4a5144c1d173d3a5bf23f9d9af9dead76a4dc1ddb3dcca0c820ae6adecc7cf9f"
+    },
+    {
       "name": "provenance-exact-max-id",
       "input": "{\"v\":\"1\",\"provenance\":{\"provider\":\"4294967295\"},\"aggregation\":null,\"assert\":[],\n \"inputs\":{\"t\":{\"kind\":\"http\",\"read\":{\"method\":\"GET\",\"url\":\"https://x.example.com/t\",\"headers\":{},\"body\":null},\n   \"decode\":{\"format\":\"text\",\"fields\":{\"sig\":{\"regex\":\"sig=([0-9a-f]+)\"}}}}},\n \"transform\":{\"op\":\"hexBytes\",\"args\":[{\"ref\":\"t.sig\"}]},\"output\":{\"type\":\"keccak256\",\"decimals\":null}}",
       "canonical": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"t\":{\"decode\":{\"fields\":{\"sig\":{\"regex\":\"sig=([0-9a-f]+)\"}},\"format\":\"text\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://x.example.com/t\"}}},\"output\":{\"decimals\":null,\"type\":\"keccak256\"},\"provenance\":{\"provider\":\"4294967295\"},\"transform\":{\"args\":[{\"ref\":\"t.sig\"}],\"op\":\"hexBytes\"},\"v\":\"1\"}",
@@ -282,6 +294,41 @@
       "name": "aggregation-bps-over-10000",
       "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"10001\", \"maxAgeMs\": \"2000\"}\n}",
       "class": "value"
+    },
+    {
+      "name": "aggregation-abs-null",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"50\", \"maxDeviationAbs\": null, \"maxAgeMs\": \"2000\"}\n}",
+      "class": "value"
+    },
+    {
+      "name": "aggregation-abs-zero",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"50\", \"maxDeviationAbs\": \"0\", \"maxAgeMs\": \"2000\"}\n}",
+      "class": "value"
+    },
+    {
+      "name": "aggregation-abs-negative",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"50\", \"maxDeviationAbs\": \"-5\", \"maxAgeMs\": \"2000\"}\n}",
+      "class": "value"
+    },
+    {
+      "name": "aggregation-abs-leading-zero",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"50\", \"maxDeviationAbs\": \"05\", \"maxAgeMs\": \"2000\"}\n}",
+      "class": "value"
+    },
+    {
+      "name": "aggregation-abs-decimal",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"50\", \"maxDeviationAbs\": \"1.5\", \"maxAgeMs\": \"2000\"}\n}",
+      "class": "value"
+    },
+    {
+      "name": "aggregation-abs-over-int256",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"50\", \"maxDeviationAbs\": \"57896044618658097711785492504343953926634992332820282019728792003956564819968\", \"maxAgeMs\": \"2000\"}\n}",
+      "class": "value"
+    },
+    {
+      "name": "aggregation-abs-number",
+      "input": "{\n  \"v\": \"1\",\n  \"inputs\": {\"px\": {\"kind\": \"http\",\n    \"read\": {\"method\": \"GET\", \"url\": \"https://api.example.com/v1/price?symbol=BTC\", \"headers\": {\"accept\": \"application/json\"}, \"body\": null},\n    \"decode\": {\"format\": \"json\", \"fields\": {\"price\": {\"path\": \"$.data.price\"}}}}},\n  \"transform\": {\"op\": \"rescale\", \"args\": [{\"op\": \"num\", \"args\": [{\"ref\": \"px.price\"}], \"mode\": \"dec\"}], \"scale\": \"8\", \"round\": \"halfEven\"},\n  \"assert\": [{\"op\": \"gt\", \"args\": [{\"ref\": \"$out\"}, {\"const\": \"0\"}]}],\n  \"output\": {\"type\": \"int256\", \"decimals\": \"8\"},\n  \"aggregation\": {\"mode\": \"tolerance\", \"rule\": \"median\", \"maxDeviationBps\": \"50\", \"maxDeviationAbs\": 5, \"maxAgeMs\": \"2000\"}\n}",
+      "class": "number"
     },
     {
       "name": "input-name-bad",

@@ -322,9 +322,14 @@ export interface SourceInput {
   transform: Expr;
   assert?: Expr[];
   output: { type: OutputType; decimals?: Num | null };
-  /** Median tolerance. Omit or `null` for exact mode. */
+  /**
+   * Median tolerance. Omit or `null` for exact mode. `maxDeviationAbs` (raw int256 output units, before
+   * `output.decimals`) also admits values within that distance of the median: use it for values near
+   * zero, such as a deviation or an age. Omit it for none.
+   */
   aggregation?: {
     maxDeviationBps: Num;
+    maxDeviationAbs?: Num | null;
     maxAgeMs: Num;
     mode?: "tolerance";
     rule?: "median";
@@ -462,6 +467,9 @@ export function sourceDocFor(input: SourceInput): SourceDoc {
           mode: "tolerance",
           rule: "median",
           maxDeviationBps: numStr(input.aggregation.maxDeviationBps) as string,
+          ...(input.aggregation.maxDeviationAbs != null && {
+            maxDeviationAbs: numStr(input.aggregation.maxDeviationAbs) as string,
+          }),
           maxAgeMs: numStr(input.aggregation.maxAgeMs) as string,
         }
       : null,
@@ -487,7 +495,7 @@ export function jsonPriceSource(o: {
   decimals: Num;
   valueIs?: "number" | "string";
   headers?: Record<string, string>;
-  tolerance?: { maxDeviationBps: Num; maxAgeMs: Num };
+  tolerance?: { maxDeviationBps: Num; maxDeviationAbs?: Num | null; maxAgeMs: Num };
 }): ParsedSource {
   const value = o.valueIs === "string" ? num(ref("px.value")) : ref("px.value");
   return defineSource({

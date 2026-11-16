@@ -81,6 +81,20 @@ describe("builders", () => {
     expect(evm.idHex).toBe(idOf("evm-call-sig"));
   });
 
+  it("an absolute tolerance band is optional and never changes a source without it", () => {
+    const input = {
+      inputs: { px: httpInput({ url: "https://api.example.com/v1/price?symbol=BTC", headers: { accept: "application/json" }, decode: jsonDecode({ price: "$.data.price" }) }) },
+      transform: rescale(num(ref("px.price")), { scale: 8 }),
+      assert: [gt(ref("$out"), cst(0))],
+      output: { type: "int256" as const, decimals: 8 },
+    };
+    expect(defineSource({ ...input, aggregation: { maxDeviationBps: 50, maxDeviationAbs: 500000n, maxAgeMs: 2000 } }).idHex).toBe(idOf("tolerance-abs-and-bps"));
+    expect(defineSource({ ...input, aggregation: { maxDeviationBps: 50, maxDeviationAbs: null, maxAgeMs: 2000 } }).idHex).toBe(idOf("http-tolerance"));
+    expect(defineSource({ ...input, aggregation: { maxDeviationBps: 0, maxDeviationAbs: (1n << 255n) - 1n, maxAgeMs: 2000 } }).idHex).toBe(idOf("tolerance-abs-only"));
+    expect(() => defineSource({ ...input, aggregation: { maxDeviationBps: 50, maxDeviationAbs: 0, maxAgeMs: 2000 } })).toThrow(/maxDeviationAbs/);
+    expect(() => defineSource({ ...input, aggregation: { maxDeviationBps: 50, maxDeviationAbs: 1n << 255n, maxAgeMs: 2000 } })).toThrow(/maxDeviationAbs/);
+  });
+
   it("provenance names a provider ID, is optional, and never changes a source without it", () => {
     const input = {
       inputs: { px: httpInput({ url: "https://api.example.com/v1/price?symbol=BTC", headers: { accept: "application/json" }, decode: jsonDecode({ price: "$.data.price" }) }) },
