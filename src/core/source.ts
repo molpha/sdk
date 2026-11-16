@@ -530,7 +530,11 @@ const OPS: Record<string, Ops> = {
   abs: { min: 1, max: 1, params: [] },
   div: { min: 2, max: 2, params: ["round", "scale"] },
   pow: { min: 2, max: 2, params: ["round", "scale"] },
-  interp: { min: 5, max: 1 + 2 * MAX_INTERP_POINTS, params: ["round", "scale"] },
+  interp: {
+    min: 5,
+    max: 1 + 2 * MAX_INTERP_POINTS,
+    params: ["round", "scale"],
+  },
   rescale: { min: 1, max: 1, params: ["round", "scale"] },
   shift: { min: 1, max: 1, params: ["n"] },
   eq: { min: 2, max: 2, params: [] },
@@ -702,6 +706,9 @@ function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
 // -- selectors ---------------------------------------------------------------------------------
 
 const MAX_PATH_LEN = 256;
+/** A layout ring's largest slot count. */
+const MAX_RING_LEN = 4096;
+const cmpStr = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const MAX_PATH_SEGS = 16;
 const isPathNameChar = (c: string): boolean => /[A-Za-z0-9_-]/.test(c);
 const plainQuoted = (s: string): boolean =>
@@ -749,24 +756,43 @@ function checkBracket(inner: string): string | null {
   if (inner.startsWith("?(@.")) {
     if (!inner.endsWith(")")) return "malformed filter";
     const body = inner.slice("?(@.".length, -1);
-    let at = body.indexOf("==");
-    if (at < 0) at = body.indexOf("!=");
-    if (at <= 0) return "filter needs == or !=";
-    const key = body.slice(0, at);
-    const rest = body.slice(at + 2);
-    if (![...key].every(isPathNameChar)) return "invalid filter key";
-    if (
-      rest.length < 2 ||
-      rest[0] !== "'" ||
-      rest[rest.length - 1] !== "'" ||
-      !(plainQuoted(rest.slice(1, -1)) || rest === "''")
-    ) {
-      return "filter value must be a single-quoted plain string";
+    // Terms are joined by exactly "' && @."; a value cannot hold a quote, so the sequence only ever
+    // separates terms. Any other spacing around && leaves a quote inside a value and is refused.
+    const terms = body.split(FILTER_SEP);
+    if (terms.length > MAX_FILTER_TERMS)
+      return `filter has more than ${MAX_FILTER_TERMS} terms`;
+    for (let i = 0; i < terms.length; i++) {
+      const bad = checkFilterTerm(
+        i < terms.length - 1 ? terms[i] + "'" : terms[i]!,
+      );
+      if (bad) return bad;
     }
     return null;
   }
   if (!isInt(inner)) return "index must be an integer";
   return Math.abs(Number(inner)) > 1_000_000 ? "index out of range" : null;
+}
+
+const FILTER_SEP = "' && @.";
+const MAX_FILTER_TERMS = 4;
+
+/** Checks one "key=='v'" or "key!='v'" filter term (the leading "@." already removed). */
+function checkFilterTerm(body: string): string | null {
+  let at = body.indexOf("==");
+  if (at < 0) at = body.indexOf("!=");
+  if (at <= 0) return "filter needs == or !=";
+  const key = body.slice(0, at);
+  const rest = body.slice(at + 2);
+  if (![...key].every(isPathNameChar)) return "invalid filter key";
+  if (
+    rest.length < 2 ||
+    rest[0] !== "'" ||
+    rest[rest.length - 1] !== "'" ||
+    !(plainQuoted(rest.slice(1, -1)) || rest === "''")
+  ) {
+    return "filter value must be a single-quoted plain string";
+  }
+  return null;
 }
 
 function isXName(s: string): boolean {
@@ -1477,7 +1503,13 @@ function checkDecode(
       `1 to ${MAX_FIELDS} fields`,
     );
   const leaves: string[] = [];
-  const layoutFields: { name: string; offset: number; size: number }[] = [];
+  const layoutFields: {
+    name: string;
+    offset: number;
+    size: number;
+    type: string;
+    ring: { index: string; len: number; stride: number } | null;
+  }[] = [];
   for (const [name, f] of fv) {
     if (!isName(name))
       val(
@@ -1555,19 +1587,71 @@ function checkDecode(
         break;
       }
       case "layout": {
-        const fm = exact(f, fp, ["offset", "type"]);
+        const fm = exact(f, fp, ["offset", "type"], ["ring"]);
         const offset = uintField(fm.get("offset")!, fp + ".offset", 0, 1 << 24);
-        const size = layoutSize(str(fm.get("type"), fp + ".type"));
+        const type = str(fm.get("type"), fp + ".type");
+        const size = layoutSize(type);
         if (size === null)
           val(
             fp + ".type",
             "must be u8, i8, bool, u16le, i16le, u32le, i32le, u64le, i64le, u128le, i128le, pubkey or bytes[n]",
           );
-        layoutFields.push({ name, offset, size: size! });
+        let ring: { index: string; len: number; stride: number } | null = null;
+        if (fm.has("ring")) {
+          const rv = fm.get("ring")!;
+          if (rv === null)
+            val(fp + ".ring", "omit ring instead of writing null");
+          const rm = exact(rv, fp + ".ring", [
+            "back",
+            "index",
+            "len",
+            "stride",
+          ]);
+          const index = str(rm.get("index"), fp + ".ring.index");
+          if (!isName(index))
+            val(fp + ".ring.index", "must name a field of this decode");
+          const len = uintField(
+            rm.get("len")!,
+            fp + ".ring.len",
+            1,
+            MAX_RING_LEN,
+          );
+          uintField(rm.get("back")!, fp + ".ring.back", 0, len - 1);
+          const stride = uintField(
+            rm.get("stride")!,
+            fp + ".ring.stride",
+            1,
+            1 << 16,
+          );
+          ring = { index, len, stride };
+        }
+        layoutFields.push({ name, offset, size: size!, type, ring });
         break;
       }
     }
     leaves.push(name);
+  }
+  if (format === "layout") {
+    // A ring's index is a plain unsigned field of the same decode; the stride holds the field.
+    const byName = new Map(layoutFields.map((f) => [f.name, f]));
+    for (const f of [...layoutFields].sort((a, b) => cmpStr(a.name, b.name))) {
+      if (!f.ring) continue;
+      const at = `${path}.fields.${f.name}.ring`;
+      const idx = byName.get(f.ring.index);
+      if (!idx) val(at + ".index", "names no field of this decode");
+      if (idx!.ring)
+        val(
+          at + ".index",
+          "names a ring field; the index must be a plain field",
+        );
+      if (!["u8", "u16le", "u32le", "u64le"].includes(idx!.type))
+        val(
+          at + ".index",
+          `names a ${idx!.type} field; the index must be u8, u16le, u32le or u64le`,
+        );
+      if (f.ring.stride < f.size)
+        val(at + ".stride", `is less than the field's ${f.size} bytes`);
+    }
   }
   if (format === "layout" && svm?.dataSlice) {
     const { offset: so, length } = svm.dataSlice;
@@ -1579,7 +1663,12 @@ function checkDecode(
         );
     };
     if (hasDisc) cover(0, 8, "discriminator");
-    for (const f of layoutFields) cover(f.offset, f.size, "field " + f.name);
+    for (const f of [...layoutFields].sort((a, b) => cmpStr(a.name, b.name)))
+      cover(
+        f.offset,
+        f.ring ? (f.ring.len - 1) * f.ring.stride + f.size : f.size,
+        "field " + f.name,
+      );
   }
   return leaves;
 }

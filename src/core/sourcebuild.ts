@@ -173,13 +173,40 @@ export const feltsDecode = (
     { at: Num; view: "felt" | "u256" | "bool" | "shortString" | "i128" }
   >,
 ): Decode => ({ format: "felts", fields });
+/** One slot of a ring buffer: read at `offset + ((index - back) mod len) * stride`. */
+export interface LayoutRing {
+  /** A plain u8, u16le, u32le or u64le field of the same decode. */
+  index: string;
+  back: Num;
+  len: Num;
+  stride: Num;
+}
+
 export const layoutDecode = (
-  fields: Record<string, { offset: Num; type: string }>,
+  fields: Record<string, { offset: Num; type: string; ring?: LayoutRing }>,
   discriminator: string | null = null,
 ): Decode => ({
   format: "layout",
   discriminator,
-  fields,
+  fields: Object.fromEntries(
+    Object.entries(fields).map(([name, f]) => [
+      name,
+      {
+        offset: numStr(f.offset),
+        type: f.type,
+        ...(f.ring
+          ? {
+              ring: {
+                back: numStr(f.ring.back),
+                index: f.ring.index,
+                len: numStr(f.ring.len),
+                stride: numStr(f.ring.stride),
+              },
+            }
+          : {}),
+      },
+    ]),
+  ),
 });
 
 export interface Finality {
@@ -481,7 +508,9 @@ export function sourceDocFor(input: SourceInput): SourceDoc {
           rule: "median",
           maxDeviationBps: numStr(input.aggregation.maxDeviationBps) as string,
           ...(input.aggregation.maxDeviationAbs != null && {
-            maxDeviationAbs: numStr(input.aggregation.maxDeviationAbs) as string,
+            maxDeviationAbs: numStr(
+              input.aggregation.maxDeviationAbs,
+            ) as string,
           }),
           maxAgeMs: numStr(input.aggregation.maxAgeMs) as string,
         }
@@ -508,7 +537,11 @@ export function jsonPriceSource(o: {
   decimals: Num;
   valueIs?: "number" | "string";
   headers?: Record<string, string>;
-  tolerance?: { maxDeviationBps: Num; maxDeviationAbs?: Num | null; maxAgeMs: Num };
+  tolerance?: {
+    maxDeviationBps: Num;
+    maxDeviationAbs?: Num | null;
+    maxAgeMs: Num;
+  };
 }): ParsedSource {
   const value = o.valueIs === "string" ? num(ref("px.value")) : ref("px.value");
   return defineSource({
