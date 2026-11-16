@@ -68,6 +68,16 @@ export const abs = (a: Expr): Expr => op("abs", [a]);
 /** `a / b` to `scale` fractional digits. */
 export const div = (a: Expr, b: Expr, o: { scale: Num; round?: Round }): Expr =>
   op("div", [a, b], { scale: numStr(o.scale), round: o.round ?? "halfEven" });
+/** `base ^ exp` to `scale` fractional digits; `exp` must be a whole number. Each step rounds by `round` (see the source format). */
+export const pow = (
+  base: Expr,
+  exp: Expr,
+  o: { scale: Num; round?: Round },
+): Expr =>
+  op("pow", [base, exp], {
+    scale: numStr(o.scale),
+    round: o.round ?? "halfEven",
+  });
 export const rescale = (a: Expr, o: { scale: Num; round?: Round }): Expr =>
   op("rescale", [a], { scale: numStr(o.scale), round: o.round ?? "halfEven" });
 /** Multiply by 10^n, exactly. */
@@ -269,6 +279,22 @@ export function svmAccount(o: {
       dataSlice: o.dataSlice ?? null,
     },
     decode: o.decode,
+  };
+}
+/** An account's metadata: fields `lamports`, `owner` (32 bytes), `executable` and `space`; a missing account reads as zeros. */
+export function svmAccountInfo(o: {
+  chain: string;
+  address: string;
+  commitment?: "finalized" | "confirmed";
+  maxAgeMs: Num;
+}): Record<string, unknown> {
+  return {
+    kind: "svm",
+    chain: o.chain,
+    commitment: o.commitment ?? "finalized",
+    maxAgeMs: o.maxAgeMs,
+    read: { method: "accountInfo", address: o.address },
+    decode: null,
   };
 }
 export function svmTokenSupply(o: {

@@ -526,6 +526,7 @@ const OPS: Record<string, Ops> = {
   neg: { min: 1, max: 1, params: [] },
   abs: { min: 1, max: 1, params: [] },
   div: { min: 2, max: 2, params: ["round", "scale"] },
+  pow: { min: 2, max: 2, params: ["round", "scale"] },
   rescale: { min: 1, max: 1, params: ["round", "scale"] },
   shift: { min: 1, max: 1, params: ["n"] },
   eq: { min: 2, max: 2, params: [] },
@@ -1272,6 +1273,7 @@ function checkStarknetRead(v: Json, path: string): void {
 
 interface SvmReadInfo {
   tokenSupply: boolean;
+  accountInfo?: boolean;
   dataSlice: { offset: number; length: number } | null;
 }
 
@@ -1297,12 +1299,20 @@ function checkSVMRead(v: Json, path: string): SvmReadInfo {
     );
     return { tokenSupply: false, dataSlice: { offset, length } };
   }
+  if (method === "accountInfo") {
+    const m = exact(v, path, ["address", "method"]);
+    pubkeyField(m.get("address"), path + ".address");
+    return { tokenSupply: false, accountInfo: true, dataSlice: null };
+  }
   if (method === "tokenSupply") {
     const m = exact(v, path, ["method", "mint"]);
     pubkeyField(m.get("mint"), path + ".mint");
     return { tokenSupply: true, dataSlice: null };
   }
-  return val(path + ".method", "must be one of account, tokenSupply");
+  return val(
+    path + ".method",
+    "must be one of account, accountInfo, tokenSupply",
+  );
 }
 
 const FORMATS: Record<string, string[]> = {
@@ -1329,6 +1339,14 @@ function checkDecode(
   kind: string,
   svm: SvmReadInfo | null,
 ): string[] {
+  if (svm?.accountInfo) {
+    if (v !== null)
+      val(
+        path,
+        "must be null for accountInfo: its fields are executable, lamports, owner and space",
+      );
+    return ["executable", "lamports", "owner", "space"];
+  }
   if (svm?.tokenSupply) {
     if (v !== null)
       val(
