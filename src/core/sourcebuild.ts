@@ -78,6 +78,19 @@ export const pow = (
     scale: numStr(o.scale),
     round: o.round ?? "halfEven",
   });
+/**
+ * Piecewise-linear interpolation of `x` over `points` ([x, y] pairs, 2 to 16, xs never decreasing): clamped
+ * to the first and last points, computed exactly and rounded once to `scale` (see the source format).
+ */
+export const interp = (
+  x: Expr,
+  points: [Expr, Expr][],
+  o: { scale: Num; round?: Round },
+): Expr =>
+  op("interp", [x, ...points.flat()], {
+    scale: numStr(o.scale),
+    round: o.round ?? "halfEven",
+  });
 export const rescale = (a: Expr, o: { scale: Num; round?: Round }): Expr =>
   op("rescale", [a], { scale: numStr(o.scale), round: o.round ?? "halfEven" });
 /** Multiply by 10^n, exactly. */
