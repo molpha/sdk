@@ -775,6 +775,7 @@ function checkBracket(inner: string): string | null {
 
 const FILTER_SEP = "' && @.";
 const MAX_FILTER_TERMS = 4;
+const MAX_FILTER_KEY_DEPTH = 4;
 
 /** Checks one "key=='v'" or "key!='v'" filter term (the leading "@." already removed). */
 function checkFilterTerm(body: string): string | null {
@@ -783,7 +784,12 @@ function checkFilterTerm(body: string): string | null {
   if (at <= 0) return "filter needs == or !=";
   const key = body.slice(0, at);
   const rest = body.slice(at + 2);
-  if (![...key].every(isPathNameChar)) return "invalid filter key";
+  // A key may name a nested value: up to MAX_FILTER_KEY_DEPTH names joined by "." (position.coin).
+  const names = key.split(".");
+  if (names.length > MAX_FILTER_KEY_DEPTH)
+    return `filter key has more than ${MAX_FILTER_KEY_DEPTH} names`;
+  if (!names.every((n) => n.length > 0 && [...n].every(isPathNameChar)))
+    return "invalid filter key";
   if (
     rest.length < 2 ||
     rest[0] !== "'" ||
