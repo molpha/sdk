@@ -111,6 +111,13 @@ export const slice = (a: Expr, o: { off: Num; len: Num }): Expr =>
   op("slice", [a], { off: numStr(o.off), len: numStr(o.len) });
 export const lower = (a: Expr): Expr => op("lower", [a]);
 export const upper = (a: Expr): Expr => op("upper", [a]);
+/** True when every argument is (2 to 8); lazy, left to right, so an earlier one can guard a later one. */
+export const and = (...args: Expr[]): Expr => op("and", args);
+/** True when any argument is (2 to 8); lazy, left to right. */
+export const or = (...args: Expr[]): Expr => op("or", args);
+export const not = (a: Expr): Expr => op("not", [a]);
+/** True when `x` equals one of up to 16 literals of one kind (`cst`, `strLit`, `bytesLit`, `boolLit`). */
+export const inList = (x: Expr, ...literals: Expr[]): Expr => op("in", [x, ...literals]);
 
 // ---------------------------------------------------------------------------------------------
 // Decoders and inputs
@@ -376,6 +383,82 @@ export interface SourceInput {
   } | null;
   /** The registry provider whose signer co-signs rounds that ask for provenance. Omit for none. */
   provenance?: { provider: Num } | null;
+  /** A policy (node-client docs/policy.md): candidates, rules, a combinator and when the result is INCONCLUSIVE. Omit for none. */
+  policy?: PolicyInput | null;
+}
+
+export type Combinator = "single" | "median" | "weightedMedian" | "allEqual" | "majority" | "fallback" | "primaryPlusOne";
+
+/** One candidate: an input turned into a value, qualified by its own rules. */
+export interface CandidateInput {
+  /** Default `corroborating`. `primaryPlusOne` needs exactly one `primary`. */
+  role?: "primary" | "corroborating" | "fallback";
+  /** A decimal over this input's fields. Default: the input's field when it has exactly one. */
+  value?: Expr;
+  /** `weightedMedian` only: a decimal at least 0 over this input's fields and `$value`. */
+  weight?: Expr | null;
+  /** Up to 8 bools over this input's fields, `$value`, `$ts` and `$tsMs`; all must hold. */
+  rules?: Expr[];
+  /** What a failed fetch or evaluation does. Default `disqualify`. */
+  onError?: "disqualify" | "refuse";
+}
+
+export interface PolicyInput {
+  candidates: Record<string, CandidateInput>;
+  /**
+   * Default: `single` for one candidate, else `median`. `minQualifying` defaults to the candidate count
+   * where the op takes it; `order` (fallback) to the candidate names in byte order.
+   */
+  combine?: { op?: Combinator; minQualifying?: Num | null; maxSpreadBps?: Num | null; order?: string[] | null };
+  /** Default `distinctHosts` with 2+ candidates, else `none`. */
+  independence?: "none" | "distinctHosts" | "distinctChains";
+  /** Up to 8 bools over `$agg`, `$n` and fields; the first that holds gives INCONCLUSIVE 0x10 + i. */
+  inconclusiveIf?: Expr[];
+  /** `sign`: INCONCLUSIVE is signed under I(S). Default `refuse`. */
+  inconclusive?: "sign" | "refuse";
+}
+
+const MIN_QUALIFYING_OPS = new Set(["median", "weightedMedian", "allEqual", "majority"]);
+
+/** The full policy block a {@link PolicyInput} stands for: every default written out, as the source format requires. */
+export function policyDocFor(p: PolicyInput, inputs: Record<string, Record<string, any>>): Record<string, unknown> {
+  const names = Object.keys(p.candidates).sort();
+  const candidates = Object.fromEntries(
+    names.map((name) => {
+      const c = p.candidates[name]!;
+      let value = c.value;
+      if (value === undefined) {
+        const fields = Object.keys(inputs[name]?.decode?.fields ?? {});
+        if (fields.length !== 1)
+          throw new Error(`policy candidate ${name}: give a value; its input does not have exactly one field`);
+        value = ref(`${name}.${fields[0]}`);
+      }
+      return [name, {
+        role: c.role ?? "corroborating",
+        value: normExpr(value),
+        weight: c.weight ? normExpr(c.weight) : null,
+        rules: (c.rules ?? []).map(normExpr),
+        onError: c.onError ?? "disqualify",
+      }];
+    }),
+  );
+  const op = p.combine?.op ?? (names.length === 1 ? "single" : "median");
+  const minQ = p.combine?.minQualifying !== undefined
+    ? p.combine.minQualifying
+    : MIN_QUALIFYING_OPS.has(op) ? names.length : null;
+  const order = p.combine?.order !== undefined ? p.combine.order : op === "fallback" ? names : null;
+  return {
+    candidates,
+    combine: {
+      op,
+      minQualifying: numStr(minQ) ?? null,
+      maxSpreadBps: numStr(p.combine?.maxSpreadBps) ?? null,
+      order: order ?? null,
+    },
+    independence: p.independence ?? (names.length >= 2 ? "distinctHosts" : "none"),
+    inconclusiveIf: (p.inconclusiveIf ?? []).map(normExpr),
+    inconclusive: p.inconclusive ?? "refuse",
+  };
 }
 
 const isRec = (x: unknown): x is Record<string, any> =>
@@ -518,6 +601,7 @@ export function sourceDocFor(input: SourceInput): SourceDoc {
   };
   if (input.provenance)
     doc.provenance = { provider: numStr(input.provenance.provider) as string };
+  if (input.policy) (doc as any).policy = policyDocFor(input.policy, doc.inputs as Record<string, Record<string, any>>);
   return doc;
 }
 

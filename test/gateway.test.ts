@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { getAddressDecoder } from "@solana/kit";
-import { defineSource, jsonPriceSource } from "../src/core/sourcebuild.js";
+import { defineSource, httpInput, jsonDecode, jsonPriceSource, ref } from "../src/core/sourcebuild.js";
+import { inconclusiveId } from "../src/core/source.js";
 import * as sx from "../src/core/sourcebuild.js";
 import { MOLPHA_PROGRAM_ID } from "../src/core/constants.js";
 import { bytesToHex, hexToBytes } from "../src/core/encoding.js";
@@ -1239,5 +1240,49 @@ describe("MolphaGateway.requestSignedData keccak256 output", () => {
     await expect(
       new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, maxRetries: 1 }),
     ).rejects.toThrow(/output is not keccak256/);
+  });
+});
+
+describe("MolphaGateway policy outcomes", () => {
+  const signing = defineSource({
+    inputs: { px: httpInput({ url: "http://api", decode: jsonDecode({ price: "$.price" }) }) },
+    policy: { candidates: { px: {} }, inconclusive: "sign" },
+    transform: ref("$agg"),
+    output: { type: "int256", decimals: 0 },
+  });
+  const S = signing.idHex.slice(2);
+  const I = Buffer.from(inconclusiveId(S)).toString("hex");
+  const respond = (sourceId: string, value: string, extra: Record<string, unknown>) => () =>
+    jsonResponse({
+      status: "completed",
+      data: {
+        attestation: {
+          payload: { value, sourceId, registryVersion: 4, signaturesRequired: 1, timestamp: 1_700_000_123 },
+          signature: { signature: "aa".repeat(32), commitment: "bb".repeat(20), signersBitmap: "00".repeat(31) + "0e" },
+        },
+        value: "x",
+        fresh: true,
+        ...extra,
+      },
+    });
+
+  it("returns an INCONCLUSIVE attestation under I(S) with its reason", async () => {
+    globalThis.fetch = mockFetch({ execute: respond(I, "00".repeat(31) + "01", { outcome: "inconclusive", reason: "0x01", sourceId: S }) }) as unknown as typeof fetch;
+    const result = await new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, source: signing });
+    expect(result.payload.sourceId).toBe(I);
+    expect(result.outcome).toBe("inconclusive");
+    expect(result.reason).toBe("0x01");
+    expect(result.roundSourceId).toBe(S);
+    expect(result.value).toBe("inconclusive 0x01");
+  });
+
+  it("refuses I(S) for a source that does not sign INCONCLUSIVE results", async () => {
+    globalThis.fetch = mockFetch({ execute: respond(Buffer.from(inconclusiveId(SOURCE_ID)).toString("hex"), "00".repeat(31) + "01", {}) }) as unknown as typeof fetch;
+    await expect(new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, maxRetries: 1 })).rejects.toThrow(/sourceId/);
+  });
+
+  it("refuses an I(S) value that is not a reason", async () => {
+    globalThis.fetch = mockFetch({ execute: respond(I, "ff".repeat(32), { outcome: "inconclusive" }) }) as unknown as typeof fetch;
+    await expect(new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, source: signing, maxRetries: 1 })).rejects.toThrow(/reason/);
   });
 });
