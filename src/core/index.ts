@@ -16,6 +16,7 @@ export {
   defineSource,
   jsonPriceSource,
   sourceDocFor,
+  policyDocFor,
   asParsedSource,
   formatValue,
   verifyPreimage,
@@ -30,6 +31,9 @@ export type {
   Round,
   Decode,
   Finality,
+  PolicyInput,
+  CandidateInput,
+  Combinator,
 } from "./sourcebuild.js";
 /** Builders for the pieces of a source: expressions (`sx.rescale`, `sx.num`, ...), inputs and decoders. */
 export * as sx from "./sourcebuild.js";

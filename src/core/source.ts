@@ -51,6 +51,8 @@ export const MAX_CANONICAL_BYTES = 8 * 1024;
 export const MAX_PRIVATE_BYTES = 16 * 1024;
 export const MAX_INPUTS = 4;
 export const MAX_EXPR_NODES = 64;
+/** The node budget of a source with a policy, shared by every tree of the source. */
+export const MAX_POLICY_EXPR_NODES = 128;
 export const MAX_EXPR_DEPTH = 12;
 export const MAX_ASSERTS = 8;
 export const MAX_FIELDS = 16;
@@ -550,13 +552,25 @@ const OPS: Record<string, Ops> = {
   slice: { min: 1, max: 1, params: ["len", "off"] },
   lower: { min: 1, max: 1, params: [] },
   upper: { min: 1, max: 1, params: [] },
+  // Boolean operators (docs/policy.md in the node client). and and or are lazy, left to right; in
+  // compares its first argument with up to MAX_IN_CONSTANTS literals of one kind.
+  and: { min: 2, max: 8, params: [] },
+  or: { min: 2, max: 8, params: [] },
+  not: { min: 1, max: 1, params: [] },
+  in: { min: 2, max: 1 + 16, params: [] },
 };
 
 interface ExprCtx {
   leaves: Set<string>;
   allowOut: boolean;
   allowBlock: boolean;
+  /** $value: a policy candidate's own value, in its rules and weight. */
+  allowValue: boolean;
+  /** $agg and $n: after a policy's combine step. */
+  allowAgg: boolean;
   nodes: { n: number };
+  /** MAX_EXPR_NODES, or MAX_POLICY_EXPR_NODES when the source has a policy. */
+  maxNodes: number;
 }
 
 function checkOpParam(name: string, s: string): string | null {
@@ -587,12 +601,32 @@ function checkOpParam(name: string, s: string): string | null {
   return null;
 }
 
+/** in compares with literals only, all of one kind, so the list is a fixed set of one type. */
+function checkInList(list: Json[], path: string): void {
+  let kind = "";
+  list.forEach((v, i) => {
+    let k = "";
+    if (isObj(v) && v.size === 1) {
+      const key = [...v.keys()][0]!;
+      if (["const", "str", "bytes", "bool"].includes(key)) k = key;
+    }
+    if (k === "")
+      val(
+        `${path}[${i + 1}]`,
+        "in compares with literals only: {const}, {str}, {bytes} or {bool}",
+      );
+    if (kind !== "" && k !== kind)
+      val(`${path}[${i + 1}]`, `in takes literals of one kind, got ${kind} and ${k}`);
+    kind = k;
+  });
+}
+
 function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
-  if (++ctx.nodes.n > MAX_EXPR_NODES)
+  if (++ctx.nodes.n > ctx.maxNodes)
     throw new SourceError(
       path,
       "limit",
-      `more than ${MAX_EXPR_NODES} expression nodes in the transform and assertions together`,
+      `more than ${ctx.maxNodes} expression nodes in the source's expressions together`,
     );
   if (depth > MAX_EXPR_DEPTH)
     throw new SourceError(
@@ -635,6 +669,7 @@ function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
         `interp takes x and then x, y pairs: an odd number of arguments, got ${args.length}`,
       );
     }
+    if (op === "in") checkInList(args.slice(1), path + ".args");
     args.forEach((a, i) => checkExpr(a, `${path}.args[${i}]`, ctx, depth + 1));
     for (const p of spec.params) {
       const s = str(m.get(p), `${path}.${p}`);
@@ -653,7 +688,25 @@ function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
   switch (key) {
     case "ref": {
       const s = str(x, p);
-      if (s === "$ts") return;
+      if (s === "$ts" || s === "$tsMs") return;
+      if (s === "$value") {
+        if (!ctx.allowValue)
+          throw new SourceError(
+            p,
+            "reference",
+            "$value is only available in a policy candidate's rules and weight",
+          );
+        return;
+      }
+      if (s === "$agg" || s === "$n") {
+        if (!ctx.allowAgg)
+          throw new SourceError(
+            p,
+            "reference",
+            `${s} is only available after a policy's combine step: in inconclusiveIf, the transform and the assertions`,
+          );
+        return;
+      }
       if (s === "$block") {
         if (!ctx.allowBlock)
           throw new SourceError(
@@ -676,7 +729,7 @@ function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
         throw new SourceError(
           p,
           "reference",
-          `${JSON.stringify(s)} is not a field of any input`,
+          `${JSON.stringify(s)} is not a field this expression may read`,
         );
       return;
     }
@@ -2355,6 +2408,336 @@ export interface ParsedSource {
   tolerance: boolean;
   /** The provider named by the source, or null when the source has no provenance block. */
   provenance: { providerId: number } | null;
+  /** The policy block (node-client docs/policy.md), or null when the source has none. */
+  policy: ParsedPolicy | null;
+  /** Whether the source's INCONCLUSIVE results are signed, under {@link inconclusiveId}. */
+  signsInconclusive: boolean;
+}
+
+/** What the SDK reads off a source's policy block. */
+export interface ParsedPolicy {
+  /** Candidate input names in byte order. */
+  candidates: string[];
+  combine: string;
+  independence: string;
+  inconclusive: "sign" | "refuse";
+}
+
+// ---------------------------------------------------------------------------------------------
+// Policy (node-client docs/policy.md): the same checks, in the same order, as new/source/policy.go
+// ---------------------------------------------------------------------------------------------
+
+const MAX_CANDIDATES = MAX_INPUTS;
+const MAX_RULES = 8;
+const MAX_INCONCLUSIVE_IF = 8;
+const MAX_SPREAD_BPS = 10_000;
+
+/** What each combinator takes: its minimum candidate count, and minQualifying, maxSpreadBps, order and weight: r required, o optional, - null. */
+const COMBINE_RULES: Record<string, { minCands: number; minQ: string; spread: string; order: string; weight: string }> = {
+  single: { minCands: 1, minQ: "-", spread: "-", order: "-", weight: "-" },
+  median: { minCands: 2, minQ: "r", spread: "o", order: "-", weight: "-" },
+  weightedMedian: { minCands: 2, minQ: "r", spread: "o", order: "-", weight: "r" },
+  allEqual: { minCands: 2, minQ: "r", spread: "-", order: "-", weight: "-" },
+  majority: { minCands: 2, minQ: "r", spread: "-", order: "-", weight: "-" },
+  fallback: { minCands: 2, minQ: "-", spread: "-", order: "r", weight: "-" },
+  primaryPlusOne: { minCands: 2, minQ: "-", spread: "r", order: "-", weight: "-" },
+};
+
+function leavesOf(name: string, all: Set<string>): Set<string> {
+  const own = new Set<string>();
+  for (const l of all) if (l.startsWith(name + ".")) own.add(l);
+  return own;
+}
+
+function checkPolicy(v: Json, inputs: JObj, base: ExprCtx): ParsedPolicy {
+  if (v === null) val("policy", "omit policy instead of writing null");
+  const m = exact(v, "policy", ["candidates", "combine", "inconclusive", "inconclusiveIf", "independence"]);
+  const cv = m.get("candidates")!;
+  if (!isObj(cv))
+    throw new SourceError("policy.candidates", "type", `expected object, got ${kindName(cv)}`);
+  if (cv.size === 0) val("policy.candidates", `a policy has 1 to ${MAX_CANDIDATES} candidates`);
+  const cands = new Map<string, { role: string; weighted: boolean }>();
+  for (const [name, c] of cv) {
+    const path = "policy.candidates." + name;
+    if (!inputs.has(name)) throw new SourceError(path, "reference", `${JSON.stringify(name)} is not an input`);
+    cands.set(name, checkCandidate(name, c, path, base));
+  }
+  const names = [...cands.keys()].sort();
+  const combine = checkCombine(m.get("combine")!, names, cands);
+
+  const independence = str(m.get("independence"), "policy.independence");
+  oneOf("policy.independence", independence, ["none", "distinctHosts", "distinctChains"]);
+  checkIndependence(independence, names, inputs);
+
+  const iv = m.get("inconclusiveIf")!;
+  if (!Array.isArray(iv))
+    throw new SourceError("policy.inconclusiveIf", "type", `expected array, got ${kindName(iv)}`);
+  if (iv.length > MAX_INCONCLUSIVE_IF)
+    throw new SourceError("policy.inconclusiveIf", "limit", `at most ${MAX_INCONCLUSIVE_IF} inconclusiveIf entries`);
+  const after: ExprCtx = { ...base, allowAgg: true };
+  iv.forEach((e, i) => checkExpr(e, `policy.inconclusiveIf[${i}]`, after, 1));
+
+  const inconclusive = str(m.get("inconclusive"), "policy.inconclusive");
+  oneOf("policy.inconclusive", inconclusive, ["sign", "refuse"]);
+  return { candidates: names, combine, independence, inconclusive: inconclusive as "sign" | "refuse" };
+}
+
+function checkCandidate(name: string, v: Json, path: string, base: ExprCtx): { role: string; weighted: boolean } {
+  const m = exact(v, path, ["onError", "role", "rules", "value", "weight"]);
+  const role = str(m.get("role"), path + ".role");
+  oneOf(path + ".role", role, ["primary", "corroborating", "fallback"]);
+  oneOf(path + ".onError", str(m.get("onError"), path + ".onError"), ["disqualify", "refuse"]);
+  // A candidate reads only its own input, so whether it qualifies never depends on another.
+  const own: ExprCtx = { ...base, leaves: leavesOf(name, base.leaves) };
+  checkExpr(m.get("value")!, path + ".value", own, 1);
+  const withValue: ExprCtx = { ...own, allowValue: true };
+  const wv = m.get("weight")!;
+  if (wv !== null) checkExpr(wv, path + ".weight", withValue, 1);
+  const rv = m.get("rules")!;
+  if (!Array.isArray(rv)) throw new SourceError(path + ".rules", "type", `expected array, got ${kindName(rv)}`);
+  if (rv.length > MAX_RULES) throw new SourceError(path + ".rules", "limit", `at most ${MAX_RULES} rules per candidate`);
+  rv.forEach((r, i) => checkExpr(r, `${path}.rules[${i}]`, withValue, 1));
+  return { role, weighted: wv !== null };
+}
+
+function checkCombine(v: Json, names: string[], cands: Map<string, { role: string; weighted: boolean }>): string {
+  const path = "policy.combine";
+  const m = exact(v, path, ["maxSpreadBps", "minQualifying", "op", "order"]);
+  const op = str(m.get("op"), path + ".op");
+  const rule = Object.prototype.hasOwnProperty.call(COMBINE_RULES, op) ? COMBINE_RULES[op] : undefined;
+  if (!rule) val(path + ".op", "must be one of single, median, weightedMedian, allEqual, majority, fallback, primaryPlusOne");
+  const n = names.length;
+  if (op === "single" && n !== 1) val(path + ".op", `single takes exactly one candidate, got ${n}`);
+  if (n < rule.minCands) val(path + ".op", `${op} takes ${rule.minCands} to ${MAX_CANDIDATES} candidates, got ${n}; use single for one`);
+  const present = (key: string, want: string): Json | undefined => {
+    const x = m.get(key)!;
+    if (want === "r" && x === null) val(`${path}.${key}`, `${op} requires ${key}`);
+    if (want === "-" && x !== null) val(`${path}.${key}`, `must be null for ${op}`);
+    return x === null ? undefined : x;
+  };
+  const mq = present("minQualifying", rule.minQ);
+  if (mq !== undefined) uintField(mq, path + ".minQualifying", 1, n);
+  const sp = present("maxSpreadBps", rule.spread);
+  if (sp !== undefined) uintField(sp, path + ".maxSpreadBps", 0, MAX_SPREAD_BPS);
+  const ov = present("order", rule.order);
+  if (ov !== undefined) {
+    if (!Array.isArray(ov)) throw new SourceError(path + ".order", "type", `expected array, got ${kindName(ov)}`);
+    const seen = new Set<string>();
+    ov.forEach((e, i) => {
+      const name = str(e, `${path}.order[${i}]`);
+      if (!cands.has(name)) throw new SourceError(`${path}.order[${i}]`, "reference", `${JSON.stringify(name)} is not a candidate`);
+      if (seen.has(name)) val(`${path}.order[${i}]`, `${JSON.stringify(name)} is listed twice`);
+      seen.add(name);
+    });
+    if (seen.size !== n) val(path + ".order", "order must name every candidate exactly once");
+  }
+  for (const name of names) {
+    const weighted = cands.get(name)!.weighted;
+    if (rule.weight === "r" && !weighted)
+      val(`policy.candidates.${name}.weight`, "weightedMedian needs a weight on every candidate");
+    if (rule.weight === "-" && weighted) val(`policy.candidates.${name}.weight`, `must be null for ${op}`);
+  }
+  if (op === "primaryPlusOne") {
+    const roles = names.map((x) => cands.get(x)!.role);
+    const primaries = roles.filter((r) => r === "primary").length;
+    const corroborating = roles.filter((r) => r === "corroborating").length;
+    if (primaries !== 1 || corroborating === 0)
+      val(path + ".op", `primaryPlusOne needs exactly one primary and at least one corroborating candidate, got ${primaries} and ${corroborating}`);
+  }
+  return op;
+}
+
+/** distinctHosts compares the http candidates' host names (without the port); distinctChains needs every candidate on its own chain. */
+function checkIndependence(mode: string, names: string[], inputs: JObj): void {
+  const path = "policy.independence";
+  const seen = new Map<string, string>();
+  for (const name of names) {
+    const input = inputs.get(name) as JObj;
+    const kind = input.get("kind") as string;
+    if (mode === "distinctHosts") {
+      if (kind !== "http") continue;
+      const host = splitURL((input.get("read") as JObj).get("url") as string).host;
+      const other = seen.get(host);
+      if (other !== undefined) val(path, `distinctHosts: candidates ${other} and ${name} both read ${host}`);
+      seen.set(host, name);
+    } else if (mode === "distinctChains") {
+      if (kind === "http") val(path, `distinctChains: candidate ${name} is not a chain input`);
+      const chain = input.get("chain") as string;
+      const other = seen.get(chain);
+      if (other !== undefined) val(path, `distinctChains: candidates ${other} and ${name} both read ${chain}`);
+      seen.set(chain, name);
+    }
+  }
+}
+
+const INCONCLUSIVE_TAG = enc.encode("MOLPHA_INCONCLUSIVE_V1");
+
+/**
+ * `I(S) = keccak256("MOLPHA_INCONCLUSIVE_V1" || S)`: the source ID a policy's INCONCLUSIVE result is
+ * signed under. A consumer accepts its source `S` and `I(S)`, nothing else.
+ */
+export function inconclusiveId(sourceId: Uint8Array | string): Uint8Array {
+  const s = typeof sourceId === "string" ? fromHex32(sourceId) : sourceId;
+  if (s.length !== 32) throw new Error("a source ID is 32 bytes");
+  const b = new Uint8Array(INCONCLUSIVE_TAG.length + 32);
+  b.set(INCONCLUSIVE_TAG);
+  b.set(s, INCONCLUSIVE_TAG.length);
+  return keccak_256(b);
+}
+
+/** {@link inconclusiveId} as `0x`-prefixed hex. */
+export function inconclusiveIdHex(sourceId: Uint8Array | string): string {
+  return "0x" + toHex(inconclusiveId(sourceId));
+}
+
+function fromHex32(h: string): Uint8Array {
+  const x = h.startsWith("0x") ? h.slice(2) : h;
+  if (!/^[0-9a-fA-F]{64}$/.test(x)) throw new Error("a source ID is 32 bytes of hex");
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) out[i] = parseInt(x.slice(2 * i, 2 * i + 2), 16);
+  return out;
+}
+
+/** What a verified attestation says about a source `S` (node-client docs/policy.md). */
+export type Outcome =
+  | { kind: "conclusive"; value: string }
+  | { kind: "inconclusive"; reason: number };
+
+/**
+ * Read a verified attestation as a result of `sourceId`: signed under `S` it is the result, under
+ * `inconclusiveId(S)` it is INCONCLUSIVE with its reason (`payload.value` a uint256 from 1 to 255).
+ * Anything else is not this source's attestation: `null`, reject it.
+ */
+export function readOutcome(
+  payload: { sourceId: string; value: string },
+  sourceId: Uint8Array | string,
+): Outcome | null {
+  const s = typeof sourceId === "string" ? fromHex32(sourceId) : sourceId;
+  const signed = fromHex32(payload.sourceId);
+  const eq = (a: Uint8Array, b: Uint8Array) => a.every((x, i) => x === b[i]);
+  if (eq(signed, s)) return { kind: "conclusive", value: payload.value };
+  if (eq(signed, inconclusiveId(s))) {
+    const v = fromHex32(payload.value);
+    if (v.slice(0, 31).every((x) => x === 0) && v[31] !== 0) return { kind: "inconclusive", reason: v[31]! };
+  }
+  return null;
+}
+
+/** Static analysis of a parsed source (node-client docs/policy.md, Analysis): the same facts as Go's source.Analyze. */
+export interface SourceAnalysis {
+  sourceId: string;
+  inconclusiveId: string | null;
+  inputs: { name: string; kind: string; chain: string | null; host: string | null; candidate: boolean }[];
+  policy: {
+    candidates: { name: string; role: string; rules: number }[];
+    combine: { maxSpreadBps: string | null; minQualifying: string | null; op: string; order: string[] | null };
+    independence: string;
+    inconclusiveIf: number;
+    inconclusive: string;
+  } | null;
+  output: { decimals: string | null; type: string };
+  aggregation: "exact" | "tolerance";
+  exprNodes: number;
+  exprDepth: number;
+  fetchesPerNode: number;
+  capabilities: string[];
+  warnings: { code: string; path: string }[];
+}
+
+type PlainExpr = { op?: string; args?: PlainExpr[]; ref?: string };
+
+function exprSize(e: PlainExpr, depth: number): [number, number] {
+  let nodes = 1;
+  let max = depth;
+  for (const a of e.args ?? []) {
+    const [n, d] = exprSize(a, depth + 1);
+    nodes += n;
+    if (d > max) max = d;
+  }
+  return [nodes, max];
+}
+
+function readsAny(e: PlainExpr, pred: (ref: string) => boolean): boolean {
+  if (typeof e.ref === "string") return pred(e.ref);
+  return (e.args ?? []).some((a) => readsAny(a, pred));
+}
+
+/** Describe a parsed source without fetching or evaluating it. */
+export function analyzeSource(src: ParsedSource): SourceAnalysis {
+  const doc = src.doc as unknown as Record<string, any>;
+  const out: SourceAnalysis = {
+    sourceId: src.idHex,
+    inconclusiveId: src.signsInconclusive ? inconclusiveIdHex(src.id) : null,
+    inputs: [],
+    policy: null,
+    output: {
+      type: src.output.type,
+      decimals: src.output.type === "int256" || src.output.type === "uint256" ? String(src.output.decimals) : null,
+    },
+    aggregation: src.tolerance ? "tolerance" : "exact",
+    exprNodes: 0,
+    exprDepth: 0,
+    fetchesPerNode: src.inputNames.length,
+    capabilities: [],
+    warnings: [],
+  };
+  const pol = doc.policy as Record<string, any> | undefined;
+  const cands = (pol?.candidates ?? {}) as Record<string, any>;
+  for (const name of src.inputNames) {
+    const input = doc.inputs[name];
+    const chain = input.kind === "http" ? null : (input.chain as string);
+    const host = input.kind === "http" ? splitURL(input.read.url).host : null;
+    out.inputs.push({ name, kind: input.kind, chain, host, candidate: pol !== undefined && name in cands });
+  }
+  const trees: PlainExpr[] = [doc.transform, ...doc.assert];
+  if (pol !== undefined) {
+    const names = Object.keys(cands).sort();
+    out.policy = {
+      candidates: names.map((n) => ({ name: n, role: cands[n].role, rules: cands[n].rules.length })),
+      combine: {
+        maxSpreadBps: pol.combine.maxSpreadBps,
+        minQualifying: pol.combine.minQualifying,
+        op: pol.combine.op,
+        order: pol.combine.order,
+      },
+      independence: pol.independence,
+      inconclusiveIf: pol.inconclusiveIf.length,
+      inconclusive: pol.inconclusive,
+    };
+    for (const n of names) {
+      trees.push(cands[n].value);
+      if (cands[n].weight !== null) trees.push(cands[n].weight);
+      trees.push(...cands[n].rules);
+    }
+    trees.push(...pol.inconclusiveIf);
+    out.capabilities.push("policy/1");
+    if (pol.inconclusive === "sign") {
+      out.capabilities.push("inconclusive/1");
+      if (src.tolerance) out.capabilities.push("round1/2");
+    }
+    if (names.length >= 2 && !src.tolerance) out.warnings.push({ code: "exactComposite", path: "policy" });
+    if (names.length >= 2 && pol.independence === "none")
+      out.warnings.push({ code: "independenceNone", path: "policy.independence" });
+    const readsCandidate = (ref: string) => {
+      const dot = ref.indexOf(".");
+      return dot > 0 && Object.prototype.hasOwnProperty.call(cands, ref.slice(0, dot));
+    };
+    const later: [string, PlainExpr][] = [
+      ...(pol.inconclusiveIf as PlainExpr[]).map((e, i): [string, PlainExpr] => [`policy.inconclusiveIf[${i}]`, e]),
+      ["transform", doc.transform],
+      ...(doc.assert as PlainExpr[]).map((e, i): [string, PlainExpr] => [`assert[${i}]`, e]),
+    ];
+    for (const [path, e] of later)
+      if (readsAny(e, readsCandidate)) out.warnings.push({ code: "readsCandidateField", path });
+  }
+  for (const t of trees) {
+    const [n, d] = exprSize(t, 1);
+    out.exprNodes += n;
+    if (d > out.exprDepth) out.exprDepth = d;
+    if (readsAny(t, (r) => r === "$tsMs") && !out.capabilities.includes("tsMs/1")) out.capabilities.push("tsMs/1");
+  }
+  out.capabilities.sort();
+  return out;
 }
 
 /** The optional provenance block: the registry provider whose signer may co-sign the source's rounds. */
@@ -2376,7 +2759,7 @@ function build(v: Json, maxCanonical: number): ParsedSource {
     v,
     "",
     ["aggregation", "assert", "inputs", "output", "transform", "v"],
-    ["provenance"],
+    ["policy", "provenance"],
   );
   const ver = str(m.get("v"), "v");
   if (ver !== SOURCE_VERSION)
@@ -2426,8 +2809,20 @@ function build(v: Json, maxCanonical: number): ParsedSource {
     leaves,
     allowOut: false,
     allowBlock: chainInputs === 1,
+    allowValue: false,
+    allowAgg: false,
     nodes: { n: 0 },
+    maxNodes: MAX_EXPR_NODES,
   };
+  // The policy is checked first: its trees count against the same budget, and it decides whether the
+  // transform and the assertions may read $agg and $n. Omitted when unused, never null.
+  let policy: ParsedPolicy | null = null;
+  const polv = m.get("policy");
+  if (polv !== undefined) {
+    ctx.maxNodes = MAX_POLICY_EXPR_NODES;
+    policy = checkPolicy(polv, iv, ctx);
+    ctx.allowAgg = true;
+  }
   checkExpr(m.get("transform")!, "transform", ctx, 1);
   const av = m.get("assert")!;
   if (!Array.isArray(av))
@@ -2464,6 +2859,8 @@ function build(v: Json, maxCanonical: number): ParsedSource {
     output,
     tolerance,
     provenance,
+    policy,
+    signsInconclusive: policy?.inconclusive === "sign",
   };
 }
 

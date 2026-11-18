@@ -121,6 +121,17 @@ export interface Attestation {
    * it as the raw value (at most 256 bytes) so the feed stores the preimage's hash with its kind.
    */
   valuePreimage?: string;
+  /**
+   * For a source with a policy (node-client docs/policy.md): `conclusive`, the attestation is the
+   * source's result; or `inconclusive`, the attestation is signed under `inconclusiveId(sourceId)` and
+   * `payload.value` is {@link reason} as a uint256. Decide by `payload.sourceId` ({@link readOutcome}),
+   * not by this label.
+   */
+  outcome?: "conclusive" | "inconclusive";
+  /** The INCONCLUSIVE reason code, `0x01`. */
+  reason?: string;
+  /** The requested source's ID, with `outcome`; `payload.sourceId` differs from it for an inconclusive result. */
+  roundSourceId?: string;
 }
 
 /**
