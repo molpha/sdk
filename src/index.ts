@@ -31,6 +31,7 @@ export * from "./bulk.js";
 export { MOLPHA_IDL, MOLPHA_PROGRAM_ADDRESS } from "../idl/index.js";
 export {
   gatewaySignerFromWallet,
+  KeypairWallet,
   signerFromKeypair,
   type MolphaWallet,
 } from "./wallet.js";
