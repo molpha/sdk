@@ -17,4 +17,8 @@ Source policies (node-client docs/policy.md).
 - Builders: `sx.and`, `sx.or`, `sx.not`, `sx.inList`, and `SourceInput.policy` with every default written out
   (`policyDocFor`).
 - `MolphaGateway.requestSignedData` adds `outcome` (`conclusive` or `fallback`) and `reason` for a source with
-  a policy, and refuses a `fallback` label on a value the source does not declare as its fallback.
+  a policy. The outcome is read from the signed value as `readOutcome` reads it, never from the gateway's
+  unsigned label; the label only supplies the reason, when it agrees.
+- A fallback is type-checked (`if` conditions and `and`/`or`/`not` arguments are tests, comparisons are of one
+  kind). The analysis rounds a literal transform result to the output's decimals, as nodes encode it, and
+  compares encoded words in assertions (`bytes32`/`string32` padding, `keccak256` of a string and its bytes).

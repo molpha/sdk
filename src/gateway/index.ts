@@ -1257,14 +1257,11 @@ function toResult(
       throw new GatewayError(`Gateway response is missing ${name}`);
     }
   }
-  // A policy's fallback is an ordinary value under S (node-client docs/policy.md). The gateway's label is
-  // the nodes' word: accept it only on a value the source declares as its fallback.
-  const fallback = data.outcome === "fallback";
-  if (fallback && !fallbackWords(ctx.source).includes("0x" + normalizeHex(fields.value!))) {
-    throw new GatewayError(
-      `Gateway response is labelled a fallback, but ${fields.value} is not one of the source's fallback values`,
-    );
-  }
+  // A policy's fallback is an ordinary value under S (node-client docs/policy.md). The outcome is read from
+  // the signed value, as readOutcome reads it, never from the gateway's label, which is not signed: a value
+  // among the source's fallback words is its fallback, anything else is the result. The label only
+  // supplies the reason, and only when it agrees.
+  const fallback = fallbackWords(ctx.source).includes("0x" + normalizeHex(fields.value!));
   let value: string;
   try {
     value = formatValue(fields.value!, ctx.source.output);
@@ -1306,7 +1303,7 @@ function toResult(
     ...(ctx.source.policy
       ? {
           outcome: fallback ? ("fallback" as const) : ("conclusive" as const),
-          ...(fallback && data.reason ? { reason: data.reason } : {}),
+          ...(fallback && data.outcome === "fallback" && data.reason ? { reason: data.reason } : {}),
         }
       : {}),
   };

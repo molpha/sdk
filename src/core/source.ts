@@ -2506,6 +2506,7 @@ function checkPolicy(v: Json, inputs: JObj, base: ExprCtx, output: Output): Pars
   if (fv !== null) {
     checkExpr(fv, "policy.inconclusive.fallback", { ...base, leaves: new Set(), fallback: true }, 1);
     policy.fallback = toPlain(fv) as PlainExpr;
+    fallbackKind(policy.fallback, "policy.inconclusive.fallback");
     for (const l of fallbackLits(policy.fallback, policy)) {
       try {
         encodeLit(l, output);
@@ -2670,6 +2671,47 @@ export function fallbackReasons(p: ParsedPolicy): number[] {
   return rs;
 }
 
+const LIT_KIND_NAME: Record<Lit["kind"], string> = { d: "a decimal", s: "a string", y: "bytes", b: "a bool" };
+
+/**
+ * Type-check a fallback tree as the evaluator would run it and return the kind of value it yields: an if's
+ * condition and every and/or/not argument is a test, lt/lte/gt/gte compare decimals, eq/ne/in compare values
+ * of one kind, and an if's branches are of one kind. A fallback that passes cannot fail at evaluation.
+ */
+function fallbackKind(e: PlainExpr, path: string): Lit["kind"] {
+  if (typeof e.ref === "string") return "d"; // $reason or $n
+  if (typeof e.op !== "string") return exprLit(e)!.kind;
+  const args = e.args!;
+  const kinds = args.map((a, i) => fallbackKind(a, `${path}.args[${i}]`));
+  const need = (i: number, want: Lit["kind"], what: string) => {
+    if (kinds[i] !== want)
+      throw new SourceError(`${path}.args[${i}]`, "type", `${e.op} needs ${what}, got ${LIT_KIND_NAME[kinds[i]!]}`);
+  };
+  const same = (from: number) => {
+    for (let i = from + 1; i < kinds.length; i++) need(i, kinds[from]!, `${LIT_KIND_NAME[kinds[from]!]} like its other operands`);
+  };
+  switch (e.op) {
+    case "if":
+      need(0, "b", "a test as its condition");
+      same(1);
+      return kinds[1]!;
+    case "and":
+    case "or":
+    case "not":
+      kinds.forEach((_, i) => need(i, "b", "tests"));
+      break;
+    case "lt":
+    case "lte":
+    case "gt":
+    case "gte":
+      kinds.forEach((_, i) => need(i, "d", "decimals"));
+      break;
+    default: // eq, ne, in
+      same(0);
+  }
+  return "b";
+}
+
 /** The values a fallback can take, a superset when a condition can never hold. */
 function fallbackLits(e: PlainExpr, p: ParsedPolicy): Lit[] {
   if (typeof e.ref === "string") {
@@ -2727,6 +2769,26 @@ function encodeLit(l: Lit, out: Output): Uint8Array {
       throw new Error(`keccak256 needs a string or bytes, got ${litText(l)}`);
   }
   throw new Error(`unknown output type ${JSON.stringify(out.type)}`);
+}
+
+/** Divide m by 10^k, rounding half to even. */
+function roundHalfEven(m: bigint, k: number): bigint {
+  const div = 10n ** BigInt(k);
+  const a = m < 0n ? -m : m;
+  let q = a / div;
+  const r2 = (a % div) * 2n;
+  if (r2 > div || (r2 === div && (q & 1n) === 1n)) q += 1n;
+  return m < 0n ? -q : q;
+}
+
+/**
+ * Encode a literal CONCLUSIVE result as the node's output encoder does: a decimal is rounded half-even to
+ * the output's decimals, where a fallback must be exact ({@link encodeLit}).
+ */
+function encodeResult(l: Lit, out: Output): Uint8Array {
+  if (l.kind === "d" && (out.type === "int256" || out.type === "uint256") && l.s > out.decimals)
+    return encodeLit({ kind: "d", m: roundHalfEven(l.m, l.s - out.decimals), s: out.decimals }, out);
+  return encodeLit(l, out);
 }
 
 /**
@@ -2805,8 +2867,18 @@ function assertExcludes(a: PlainExpr, l: Lit, out: Output): boolean {
     }
     return false;
   }
-  const same = litEqual(l, c);
-  return op === "eq" ? !same : op === "ne" ? same : false;
+  // Different values can encode to one word (bytes32 pads on the left, string32 on the right, keccak256
+  // hashes a string and the same bytes alike), so compare words, not literals. eq passes only for $out equal
+  // to c, so it excludes l unless c signs l's word. ne fails only for $out equal to c, so it excludes l only
+  // when c is the one value that signs l's word: a bool.
+  if (op === "eq") {
+    try {
+      return toHex(encodeResult(c, out)) !== toHex(encodeLit(l, out));
+    } catch {
+      return true; // $out equal to c is never signed
+    }
+  }
+  return op === "ne" && out.type === "bool" && litEqual(l, c);
 }
 
 /** Whether no CONCLUSIVE result can sign the same word as the fallback value `l` (docs/policy.md). */
@@ -2816,9 +2888,9 @@ function fallbackUnreachable(doc: Record<string, any>, l: Lit, out: Output): boo
   if (results) {
     for (const r of results) {
       try {
-        if (toHex(encodeLit(r, out)) === word) return false;
+        if (toHex(encodeResult(r, out)) === word) return false;
       } catch {
-        // a result that does not encode is a refusal, never a signed word
+        // a result the output encoder refuses is a refusal, never a signed word
       }
     }
     return true;
