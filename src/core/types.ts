@@ -124,11 +124,12 @@ export interface Attestation {
   /**
    * For a source with a policy (node-client docs/policy.md): `conclusive`, the value is the source's
    * result; or `fallback`, the policy concluded INCONCLUSIVE and the value is its declared fallback.
-   * Both are signed under the source's ID. The label is the nodes' word: rely on the signed value
-   * compared with the source's fallback values (`fallbackWords`, `readOutcome`).
+   * Both are signed under the source's ID. Read from the signed value, as `readOutcome` reads it: a
+   * value among the source's `fallbackWords` is `fallback`, whatever the gateway's (unsigned) label says.
+   * With a reachable fallback (see the analysis) a result can equal the fallback and reads as one.
    */
   outcome?: "conclusive" | "fallback";
-  /** The INCONCLUSIVE reason code of a fallback, `0x01`. */
+  /** The INCONCLUSIVE reason code of a fallback, `0x01`, when the gateway's label agrees with the value. Not signed. */
   reason?: string;
 }
 

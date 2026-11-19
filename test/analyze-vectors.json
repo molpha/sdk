@@ -1395,6 +1395,442 @@
       }
     },
     {
+      "name": "fallback-rounded-literal-reachable",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"uint256\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"2\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"args\":[{\"args\":[{\"ref\":\"$agg\"},{\"ref\":\"supply.total\"}],\"op\":\"gte\"},{\"const\":\"1.5\"},{\"const\":\"0\"}],\"op\":\"if\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x4ba78f2199cb9131b1de1c97287c09a9761f2d527bbf9501bb81e0a361b33bed",
+        "inputs": [
+          {
+            "name": "custodian",
+            "kind": "http",
+            "chain": null,
+            "host": "custody.example.com",
+            "candidate": true
+          },
+          {
+            "name": "supply",
+            "kind": "http",
+            "chain": null,
+            "host": "issuer.example.com",
+            "candidate": false
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "custodian",
+              "role": "primary",
+              "rules": 0
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": null,
+            "minQualifying": null,
+            "op": "single",
+            "order": null
+          },
+          "independence": "none",
+          "inconclusiveIf": 2,
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000002"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": "0",
+          "type": "uint256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 16,
+        "exprDepth": 3,
+        "fetchesPerNode": 2,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[0]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[1]"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-rounded-literal-unreachable",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"uint256\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"2\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"args\":[{\"args\":[{\"ref\":\"$agg\"},{\"ref\":\"supply.total\"}],\"op\":\"gte\"},{\"const\":\"1.4\"},{\"const\":\"0.5\"}],\"op\":\"if\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x32757dae7153ca0888ff6806e8056c3f9e3d2b62cb208306e90321c2d1c07815",
+        "inputs": [
+          {
+            "name": "custodian",
+            "kind": "http",
+            "chain": null,
+            "host": "custody.example.com",
+            "candidate": true
+          },
+          {
+            "name": "supply",
+            "kind": "http",
+            "chain": null,
+            "host": "issuer.example.com",
+            "candidate": false
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "custodian",
+              "role": "primary",
+              "rules": 0
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": null,
+            "minQualifying": null,
+            "op": "single",
+            "order": null
+          },
+          "independence": "none",
+          "inconclusiveIf": 2,
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000002"
+            ],
+            "reachable": false
+          }
+        },
+        "output": {
+          "decimals": "0",
+          "type": "uint256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 16,
+        "exprDepth": 3,
+        "fetchesPerNode": 2,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[0]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[1]"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-rounded-half-even",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"uint256\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"2\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"args\":[{\"args\":[{\"ref\":\"$agg\"},{\"ref\":\"supply.total\"}],\"op\":\"gte\"},{\"const\":\"2.5\"},{\"const\":\"0\"}],\"op\":\"if\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x058bf9c938d0d7aca5fb6d96c968d54d189339173ebea2c258decf576041cb86",
+        "inputs": [
+          {
+            "name": "custodian",
+            "kind": "http",
+            "chain": null,
+            "host": "custody.example.com",
+            "candidate": true
+          },
+          {
+            "name": "supply",
+            "kind": "http",
+            "chain": null,
+            "host": "issuer.example.com",
+            "candidate": false
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "custodian",
+              "role": "primary",
+              "rules": 0
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": null,
+            "minQualifying": null,
+            "op": "single",
+            "order": null
+          },
+          "independence": "none",
+          "inconclusiveIf": 2,
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000002"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": "0",
+          "type": "uint256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 16,
+        "exprDepth": 3,
+        "fetchesPerNode": 2,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[0]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[1]"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-string-ne-alias",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"str\":\"x\"}],\"op\":\"ne\"}],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":null,\"type\":\"string32\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"str\":\"x\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"ref\":\"custodian.state\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0xeb35ac573786ea31fdc673334b40ee78c0adf9464268cdf72a3aa27a8f201651",
+        "inputs": [
+          {
+            "name": "custodian",
+            "kind": "http",
+            "chain": null,
+            "host": "custody.example.com",
+            "candidate": true
+          },
+          {
+            "name": "supply",
+            "kind": "http",
+            "chain": null,
+            "host": "issuer.example.com",
+            "candidate": false
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "custodian",
+              "role": "primary",
+              "rules": 0
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": null,
+            "minQualifying": null,
+            "op": "single",
+            "order": null
+          },
+          "independence": "none",
+          "inconclusiveIf": 2,
+          "fallback": {
+            "values": [
+              "0x7800000000000000000000000000000000000000000000000000000000000000"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": null,
+          "type": "string32"
+        },
+        "aggregation": "exact",
+        "exprNodes": 14,
+        "exprDepth": 3,
+        "fetchesPerNode": 2,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[0]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[1]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "transform"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-string-eq-alias",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"str\":\"x\\u0000\"}],\"op\":\"eq\"}],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":null,\"type\":\"string32\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"str\":\"x\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"ref\":\"custodian.state\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x067a82633eba079f0233a5a30881d66301e4fdc3c4f07238fca39e5a59301655",
+        "inputs": [
+          {
+            "name": "custodian",
+            "kind": "http",
+            "chain": null,
+            "host": "custody.example.com",
+            "candidate": true
+          },
+          {
+            "name": "supply",
+            "kind": "http",
+            "chain": null,
+            "host": "issuer.example.com",
+            "candidate": false
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "custodian",
+              "role": "primary",
+              "rules": 0
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": null,
+            "minQualifying": null,
+            "op": "single",
+            "order": null
+          },
+          "independence": "none",
+          "inconclusiveIf": 2,
+          "fallback": {
+            "values": [
+              "0x7800000000000000000000000000000000000000000000000000000000000000"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": null,
+          "type": "string32"
+        },
+        "aggregation": "exact",
+        "exprNodes": 14,
+        "exprDepth": 3,
+        "fetchesPerNode": 2,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[0]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[1]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "transform"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-string-excluded-by-eq",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"str\":\"ok\"}],\"op\":\"eq\"}],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":null,\"type\":\"string32\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"str\":\"x\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"ref\":\"custodian.state\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0xec23b628bf6d3f3fecfc681dc507aa60f06e1fa27c3770795d88f8b48179b4f6",
+        "inputs": [
+          {
+            "name": "custodian",
+            "kind": "http",
+            "chain": null,
+            "host": "custody.example.com",
+            "candidate": true
+          },
+          {
+            "name": "supply",
+            "kind": "http",
+            "chain": null,
+            "host": "issuer.example.com",
+            "candidate": false
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "custodian",
+              "role": "primary",
+              "rules": 0
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": null,
+            "minQualifying": null,
+            "op": "single",
+            "order": null
+          },
+          "independence": "none",
+          "inconclusiveIf": 2,
+          "fallback": {
+            "values": [
+              "0x7800000000000000000000000000000000000000000000000000000000000000"
+            ],
+            "reachable": false
+          }
+        },
+        "output": {
+          "decimals": null,
+          "type": "string32"
+        },
+        "aggregation": "exact",
+        "exprNodes": 14,
+        "exprDepth": 3,
+        "fetchesPerNode": 2,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[0]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[1]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "transform"
+          }
+        ]
+      }
+    },
+    {
       "name": "tsms-without-policy",
       "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"int256\"},\"transform\":{\"args\":[{\"ref\":\"$tsMs\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},\"v\":\"1\"}",
       "analysis": {

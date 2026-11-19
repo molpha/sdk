@@ -1282,10 +1282,17 @@ describe("MolphaGateway policy outcomes", () => {
     expect(result.value).toBe("42");
   });
 
-  it("refuses a fallback label on a value the source does not declare", async () => {
+  it("reads the outcome from the signed value, not the gateway's label", async () => {
+    // A fallback label on a value the source does not declare: the result, with no reason.
     globalThis.fetch = mockFetch({ execute: respond("00".repeat(31) + "05", { outcome: "fallback", reason: "0x01" }) }) as unknown as typeof fetch;
-    await expect(
-      new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, source: withFallback, maxRetries: 1 }),
-    ).rejects.toThrow(/fallback/);
+    let result = await new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, source: withFallback });
+    expect(result.outcome).toBe("conclusive");
+    expect(result.reason).toBeUndefined();
+    expect(result.value).toBe("5");
+    // A fallback word labelled conclusive: the fallback, with no reason (the label gave none).
+    globalThis.fetch = mockFetch({ execute: respond("ff".repeat(32), { outcome: "conclusive" }) }) as unknown as typeof fetch;
+    result = await new MolphaGateway("http://gw1", registry).requestSignedData({ ...baseRequest, source: withFallback });
+    expect(result.outcome).toBe("fallback");
+    expect(result.reason).toBeUndefined();
   });
 });
