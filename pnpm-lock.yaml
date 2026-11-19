@@ -31,8 +31,8 @@ importers:
         version: 5.1.0
     devDependencies:
       '@anchor-lang/core':
-        specifier: ^1.2.1
-        version: 1.2.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+        specifier: ^1.2.2
+        version: 1.2.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       '@changesets/cli':
         specifier: ^3.0.3
         version: 3.0.3
@@ -81,18 +81,18 @@ packages:
   '@adraffy/ens-normalize@1.11.1':
     resolution: {integrity: sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ==}
 
-  '@anchor-lang/borsh@1.2.1':
-    resolution: {integrity: sha512-HEquDEKamy69yc+gjhYlPnqrwzKfg/J6618o1fnpZD8p3ifiWVzi+Exv5S8jdmBaEMDgHEJ+qGjpTx+kivyqHQ==}
+  '@anchor-lang/borsh@1.2.2':
+    resolution: {integrity: sha512-gsmI5Aj1gNbeVvEB360exWtsxjArulA2elVAD2vJJI5NIZN7rcB2JPE/88fozNfUQvMmBCBQPvd4oVxCTsVkaQ==}
     engines: {node: '>=10'}
     peerDependencies:
       '@solana/web3.js': ^1.69.1
 
-  '@anchor-lang/core@1.2.1':
-    resolution: {integrity: sha512-hpaczf9elfPkJ8Nw14HLG58VbuBqZtVEXBPKqn6RA/0d3WJxHlFWMzfYHoI0hTEacd/Tfi5fl94A6q3Ugnvtyg==}
+  '@anchor-lang/core@1.2.2':
+    resolution: {integrity: sha512-tOYGn2syuXNJyo/UtHydvGKQAwA0eZlO09rJeB7LkMQrMhA7saoqUCZj0vd44yDxxSkIpJ4F1WZQagL1oxhQMA==}
     engines: {node: '>=20.18'}
 
-  '@anchor-lang/errors@1.2.1':
-    resolution: {integrity: sha512-HrVenxlSzosMaSxJo3DSPi3M8KnBpcvB8eWHkLLe1CkBF7Q8HQdkyCkkM6XZvryJGO+98XAX7IRTd9V1wohW+w==}
+  '@anchor-lang/errors@1.2.2':
+    resolution: {integrity: sha512-HDjFaqevcAaDxKRBDSmLMi/VbMRRgVBfFYxRWOOHSzUTiWUyMcnJcU40POZP/AKzA2j3P4UuhhHr+BzBWdkMIA==}
     engines: {node: '>=10'}
 
   '@babel/runtime@7.29.7':
@@ -1970,16 +1970,16 @@ snapshots:
 
   '@adraffy/ens-normalize@1.11.1': {}
 
-  '@anchor-lang/borsh@1.2.1(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))':
+  '@anchor-lang/borsh@1.2.2(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))':
     dependencies:
       '@solana/web3.js': 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       bn.js: 5.2.3
       buffer-layout: 1.2.2
 
-  '@anchor-lang/core@1.2.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)':
+  '@anchor-lang/core@1.2.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)':
     dependencies:
-      '@anchor-lang/borsh': 1.2.1(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))
-      '@anchor-lang/errors': 1.2.1
+      '@anchor-lang/borsh': 1.2.2(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))
+      '@anchor-lang/errors': 1.2.2
       '@noble/hashes': 1.8.0
       '@solana/web3.js': 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       bn.js: 5.2.3
@@ -1995,7 +1995,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@anchor-lang/errors@1.2.1': {}
+  '@anchor-lang/errors@1.2.2': {}
 
   '@babel/runtime@7.29.7': {}
 

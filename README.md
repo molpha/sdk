@@ -92,7 +92,7 @@ Inspect the active profile via `MOLPHA_SDK_PROFILE` and `MOLPHA_DEV_VERIFIERS_PR
 | Import | Use |
 |---|---|
 | `@molpha/sdk` | Facade (`MolphaSDK`), `MolphaGateway`, `MolphaSolanaClient`, core hashing (`deriveSourceId`, `attestationMessageHash`, `hashRequestAuth`, `timestampSeconds`), EVM/Starknet helpers. Browser-safe; no `fs` in the main entry. |
-| `@molpha/sdk/utils` | `walletFromKeypairFile`, `loadKeypair` — load a Solana CLI keypair as an Anchor `Wallet`. Node.js only. |
+| `@molpha/sdk/utils` | `walletFromKeypairFile`, `loadKeypair`, `KeypairWallet`, `Wallet` — load a Solana CLI keypair as an Anchor-compatible wallet (the SDK's own implementation, works with `@anchor-lang/core` 1.2.1 and 1.2.2). Node.js only. |
 
 The package is ESM with `"sideEffects": false`, so gateway-only or read-only apps can tree-shake unused paths.
 
