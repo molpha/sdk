@@ -6,7 +6,6 @@
       "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"transform\":{\"ref\":\"venueA.px\"},\"v\":\"1\"}",
       "analysis": {
         "sourceId": "0xc4dcdb3f2dc655312af0ee2dfb1a9a83c650d8d7bf23536e843fce04c96c5c14",
-        "inconclusiveId": null,
         "inputs": [
           {
             "name": "venueA",
@@ -30,11 +29,10 @@
       }
     },
     {
-      "name": "venue-median-sign-exact",
-      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":\"sign\",\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "name": "venue-median-fallback-exact",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
       "analysis": {
-        "sourceId": "0xe371e37c37d592464b293ce89100c4c87ddcb667b901739c60827789b200b8af",
-        "inconclusiveId": "0xf0f8a58c104feffc9dc7dbb32452ec9829d7d63ee8bcc1a41ba2c5784a29a9ce",
+        "sourceId": "0xa3915b7e6af04bc182b0143d71db080744033eb3fb66acbf7524335ba2291f35",
         "inputs": [
           {
             "name": "venueA",
@@ -84,21 +82,30 @@
           },
           "independence": "distinctHosts",
           "inconclusiveIf": 0,
-          "inconclusive": "sign"
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": true
+          }
         },
         "output": {
           "decimals": "8",
           "type": "int256"
         },
         "aggregation": "exact",
-        "exprNodes": 28,
+        "exprNodes": 29,
         "exprDepth": 3,
         "fetchesPerNode": 3,
         "capabilities": [
-          "inconclusive/1",
+          "fallback/1",
           "policy/1"
         ],
         "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
           {
             "code": "exactComposite",
             "path": "policy"
@@ -108,10 +115,9 @@
     },
     {
       "name": "venue-median-refuse-tolerance",
-      "source": "{\"aggregation\":{\"maxAgeMs\":\"2000\",\"maxDeviationBps\":\"50\",\"mode\":\"tolerance\",\"rule\":\"median\"},\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":\"refuse\",\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "source": "{\"aggregation\":{\"maxAgeMs\":\"2000\",\"maxDeviationBps\":\"50\",\"mode\":\"tolerance\",\"rule\":\"median\"},\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":null},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
       "analysis": {
-        "sourceId": "0x11c0b619025db06fa6f0b9239552562336d63eeac15de98e009abd71ace07891",
-        "inconclusiveId": null,
+        "sourceId": "0x96b1712af0c93baca2cfd771a9f3243ec76c27d7db4f856dee9fa0fb7fee52d4",
         "inputs": [
           {
             "name": "venueA",
@@ -161,7 +167,7 @@
           },
           "independence": "distinctHosts",
           "inconclusiveIf": 0,
-          "inconclusive": "refuse"
+          "fallback": null
         },
         "output": {
           "decimals": "8",
@@ -178,11 +184,10 @@
       }
     },
     {
-      "name": "venue-median-sign-tolerance",
-      "source": "{\"aggregation\":{\"maxAgeMs\":\"2000\",\"maxDeviationBps\":\"50\",\"mode\":\"tolerance\",\"rule\":\"median\"},\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":\"sign\",\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "name": "venue-median-fallback-tolerance",
+      "source": "{\"aggregation\":{\"maxAgeMs\":\"2000\",\"maxDeviationBps\":\"50\",\"mode\":\"tolerance\",\"rule\":\"median\"},\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
       "analysis": {
-        "sourceId": "0x6ce97769cff4439b40b0b5b878999908a7f854df6ee9895b6d2b7f83d8daef75",
-        "inconclusiveId": "0xf0be6288b172acd449c890d4aaccc881bc6598af6b57e47cfcc97de9e18547cf",
+        "sourceId": "0x2e1a115cb5f4f6a867cbae317150bd3b539a2ba804299f515c758e3a00b73e90",
         "inputs": [
           {
             "name": "venueA",
@@ -232,30 +237,43 @@
           },
           "independence": "distinctHosts",
           "inconclusiveIf": 0,
-          "inconclusive": "sign"
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": true
+          }
         },
         "output": {
           "decimals": "8",
           "type": "int256"
         },
         "aggregation": "tolerance",
-        "exprNodes": 28,
+        "exprNodes": 29,
         "exprDepth": 3,
         "fetchesPerNode": 3,
         "capabilities": [
-          "inconclusive/1",
+          "fallback/1",
           "policy/1",
           "round1/2"
         ],
-        "warnings": []
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "fallbackTolerance",
+            "path": "policy.inconclusive.fallback"
+          }
+        ]
       }
     },
     {
       "name": "independence-none",
-      "source": "{\"aggregation\":{\"maxAgeMs\":\"2000\",\"maxDeviationBps\":\"50\",\"mode\":\"tolerance\",\"rule\":\"median\"},\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":\"refuse\",\"inconclusiveIf\":[],\"independence\":\"none\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "source": "{\"aggregation\":{\"maxAgeMs\":\"2000\",\"maxDeviationBps\":\"50\",\"mode\":\"tolerance\",\"rule\":\"median\"},\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":null},\"inconclusiveIf\":[],\"independence\":\"none\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
       "analysis": {
-        "sourceId": "0x250838f4609cd075996c25b9882005f4035e865de2496640bc561b4fa750dc83",
-        "inconclusiveId": null,
+        "sourceId": "0xbfeffd420e71f77034a3c4f336ffaf20794954d7105631c0aa123df016aca23d",
         "inputs": [
           {
             "name": "venueA",
@@ -305,7 +323,7 @@
           },
           "independence": "none",
           "inconclusiveIf": 0,
-          "inconclusive": "refuse"
+          "fallback": null
         },
         "output": {
           "decimals": "8",
@@ -328,10 +346,9 @@
     },
     {
       "name": "reserve-verdict",
-      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":null,\"type\":\"bool\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":\"sign\",\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"args\":[{\"ref\":\"$agg\"},{\"ref\":\"supply.total\"}],\"op\":\"gte\"},\"v\":\"1\"}",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"uint256\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"2\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"args\":[{\"args\":[{\"ref\":\"$agg\"},{\"ref\":\"supply.total\"}],\"op\":\"gte\"},{\"const\":\"1\"},{\"const\":\"0\"}],\"op\":\"if\"},\"v\":\"1\"}",
       "analysis": {
-        "sourceId": "0xd09bb3cc7c7f62b146df8c28b8408364102e78c1c2de73b02fb664019505c536",
-        "inconclusiveId": "0x8952b09fe2aa9346180c83243535876947d5127b603d263e1c97b7f6b7c6a160",
+        "sourceId": "0xecc843466e4b845adc2fe3625a06e8c043bb68ed06d962588c064b04cb3025d3",
         "inputs": [
           {
             "name": "custodian",
@@ -364,18 +381,23 @@
           },
           "independence": "none",
           "inconclusiveIf": 2,
-          "inconclusive": "sign"
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000002"
+            ],
+            "reachable": false
+          }
         },
         "output": {
-          "decimals": null,
-          "type": "bool"
+          "decimals": "0",
+          "type": "uint256"
         },
         "aggregation": "exact",
-        "exprNodes": 12,
+        "exprNodes": 16,
         "exprDepth": 3,
         "fetchesPerNode": 2,
         "capabilities": [
-          "inconclusive/1",
+          "fallback/1",
           "policy/1"
         ],
         "warnings": [
@@ -391,11 +413,992 @@
       }
     },
     {
+      "name": "fallback-by-reason",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"uint256\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"args\":[{\"args\":[{\"ref\":\"$reason\"},{\"const\":\"16\"}],\"op\":\"eq\"},{\"const\":\"3\"},{\"const\":\"2\"}],\"op\":\"if\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"args\":[{\"args\":[{\"ref\":\"$agg\"},{\"ref\":\"supply.total\"}],\"op\":\"gte\"},{\"const\":\"1\"},{\"const\":\"0\"}],\"op\":\"if\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x24f55d404af9ce7cdb2561fe2f4ad9c15cf55f23e3a212433dc596d9c1ced69d",
+        "inputs": [
+          {
+            "name": "custodian",
+            "kind": "http",
+            "chain": null,
+            "host": "custody.example.com",
+            "candidate": true
+          },
+          {
+            "name": "supply",
+            "kind": "http",
+            "chain": null,
+            "host": "issuer.example.com",
+            "candidate": false
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "custodian",
+              "role": "primary",
+              "rules": 0
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": null,
+            "minQualifying": null,
+            "op": "single",
+            "order": null
+          },
+          "independence": "none",
+          "inconclusiveIf": 2,
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000002",
+              "0x0000000000000000000000000000000000000000000000000000000000000003"
+            ],
+            "reachable": false
+          }
+        },
+        "output": {
+          "decimals": "0",
+          "type": "uint256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 21,
+        "exprDepth": 3,
+        "fetchesPerNode": 2,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[0]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[1]"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-reason-reachable",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"custodian\":{\"decode\":{\"fields\":{\"asOf\":{\"path\":\"$.asOf\"},\"balance\":{\"path\":\"$.balance\"},\"state\":{\"path\":\"$.state\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://custody.example.com/v1/ticker\"}},\"supply\":{\"decode\":{\"fields\":{\"total\":{\"path\":\"$.total\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://issuer.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"uint256\"},\"policy\":{\"candidates\":{\"custodian\":{\"onError\":\"disqualify\",\"role\":\"primary\",\"rules\":[],\"value\":{\"ref\":\"custodian.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":null,\"op\":\"single\",\"order\":null},\"inconclusive\":{\"fallback\":{\"ref\":\"$reason\"}},\"inconclusiveIf\":[{\"args\":[{\"ref\":\"custodian.state\"},{\"str\":\"pending\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"custodian.asOf\"}],\"op\":\"sub\"},{\"const\":\"86400\"}],\"op\":\"gt\"}],\"independence\":\"none\"},\"transform\":{\"args\":[{\"args\":[{\"ref\":\"$agg\"},{\"ref\":\"supply.total\"}],\"op\":\"gte\"},{\"const\":\"1\"},{\"const\":\"0\"}],\"op\":\"if\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x6ead14ca3bf0d5bcd79368600ffd2482b8ab39871cf3f1c9e3ebf039a4d37972",
+        "inputs": [
+          {
+            "name": "custodian",
+            "kind": "http",
+            "chain": null,
+            "host": "custody.example.com",
+            "candidate": true
+          },
+          {
+            "name": "supply",
+            "kind": "http",
+            "chain": null,
+            "host": "issuer.example.com",
+            "candidate": false
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "custodian",
+              "role": "primary",
+              "rules": 0
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": null,
+            "minQualifying": null,
+            "op": "single",
+            "order": null
+          },
+          "independence": "none",
+          "inconclusiveIf": 2,
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000001",
+              "0x0000000000000000000000000000000000000000000000000000000000000010",
+              "0x0000000000000000000000000000000000000000000000000000000000000011"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": "0",
+          "type": "uint256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 16,
+        "exprDepth": 3,
+        "fetchesPerNode": 2,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[0]"
+          },
+          {
+            "code": "readsCandidateField",
+            "path": "policy.inconclusiveIf[1]"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-reads-n",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"ref\":\"$n\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0xfb533797ced37832fee6fa9c6882bbf6e262b79256c26fa022602ee98f23a6bf",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "0x0000000000000000000000000000000000000000000000000000000005f5e100",
+              "0x000000000000000000000000000000000000000000000000000000000bebc200",
+              "0x0000000000000000000000000000000000000000000000000000000011e1a300"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 29,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-excluded-by-assert",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"0\"}],\"op\":\"gte\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x8b51b1aa4b1cb8041223ad9ebfd756c63727d94c248b3244cfd3c46e8b0c6893",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": false
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-rounding-edge",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"-1\"}],\"op\":\"gt\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x13f18c678cee43bc4086dde54598edcb38c7acb68017dd488f55c4fb42452552",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-excluded-at-one-unit",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"const\":\"-0.99999999\"},{\"ref\":\"$out\"}],\"op\":\"lte\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0xb4d469f7d4e399b3a22cd72c3e0295c7f0b23dd23d1f37beeb3e61acdb8bdb55",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": false
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-boundary-inclusive",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"-0.999999995\"}],\"op\":\"gte\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x35834b5e36abe2e5aa1338a3cf12935cef543128e937c606bcac38a45209b425",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-boundary-strict",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"-0.999999995\"}],\"op\":\"gt\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0xbf2cee1819622f465dc3de3df993f776d47ef38515729ea3af71aaadaf5010ca",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": false
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-excluded-by-eq",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"100\"}],\"op\":\"eq\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"ref\":\"$n\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0xdb06456e1d15ce4e9009f08b91eb2fd7def189a62ebdbeae534f742c44d00bf7",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "0x0000000000000000000000000000000000000000000000000000000005f5e100",
+              "0x000000000000000000000000000000000000000000000000000000000bebc200",
+              "0x0000000000000000000000000000000000000000000000000000000011e1a300"
+            ],
+            "reachable": false
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-reachable-by-eq",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"2\"}],\"op\":\"eq\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"ref\":\"$n\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0xc4021c41034af528980aa14422aa8979e4221e3e8de61eced5aeec291fc21f20",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "0x0000000000000000000000000000000000000000000000000000000005f5e100",
+              "0x000000000000000000000000000000000000000000000000000000000bebc200",
+              "0x0000000000000000000000000000000000000000000000000000000011e1a300"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-boundary-below-inclusive",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"-1.000000005\"}],\"op\":\"lte\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0x67374a92560ebe146f16536cda752c1b7cb5e6778ee29cd546a997437cc9d29f",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": true
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "fallbackReachable",
+            "path": "policy.inconclusive.fallback"
+          },
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fallback-boundary-below-strict",
+      "source": "{\"aggregation\":null,\"assert\":[{\"args\":[{\"ref\":\"$out\"},{\"const\":\"-1.000000005\"}],\"op\":\"lt\"}],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}},\"venueB\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://b.example.com/v1/ticker\"}},\"venueC\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://c.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"8\",\"type\":\"int256\"},\"policy\":{\"candidates\":{\"venueA\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueA.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueA.px\"},\"weight\":null},\"venueB\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueB.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueB.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueB.px\"},\"weight\":null},\"venueC\":{\"onError\":\"disqualify\",\"role\":\"corroborating\",\"rules\":[{\"args\":[{\"ref\":\"venueC.status\"},{\"str\":\"open\"}],\"op\":\"eq\"},{\"args\":[{\"args\":[{\"ref\":\"$ts\"},{\"ref\":\"venueC.ts\"}],\"op\":\"sub\"},{\"const\":\"5\"}],\"op\":\"lte\"}],\"value\":{\"ref\":\"venueC.px\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":\"100\",\"minQualifying\":\"2\",\"op\":\"median\",\"order\":null},\"inconclusive\":{\"fallback\":{\"const\":\"-1\"}},\"inconclusiveIf\":[],\"independence\":\"distinctHosts\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "analysis": {
+        "sourceId": "0xa060a43883389fabd8c0d251905ba56d17d64376b864e7fab8d7b965b208a592",
+        "inputs": [
+          {
+            "name": "venueA",
+            "kind": "http",
+            "chain": null,
+            "host": "a.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueB",
+            "kind": "http",
+            "chain": null,
+            "host": "b.example.com",
+            "candidate": true
+          },
+          {
+            "name": "venueC",
+            "kind": "http",
+            "chain": null,
+            "host": "c.example.com",
+            "candidate": true
+          }
+        ],
+        "policy": {
+          "candidates": [
+            {
+              "name": "venueA",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueB",
+              "role": "corroborating",
+              "rules": 2
+            },
+            {
+              "name": "venueC",
+              "role": "corroborating",
+              "rules": 2
+            }
+          ],
+          "combine": {
+            "maxSpreadBps": "100",
+            "minQualifying": "2",
+            "op": "median",
+            "order": null
+          },
+          "independence": "distinctHosts",
+          "inconclusiveIf": 0,
+          "fallback": {
+            "values": [
+              "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+            ],
+            "reachable": false
+          }
+        },
+        "output": {
+          "decimals": "8",
+          "type": "int256"
+        },
+        "aggregation": "exact",
+        "exprNodes": 32,
+        "exprDepth": 3,
+        "fetchesPerNode": 3,
+        "capabilities": [
+          "fallback/1",
+          "policy/1"
+        ],
+        "warnings": [
+          {
+            "code": "exactComposite",
+            "path": "policy"
+          }
+        ]
+      }
+    },
+    {
       "name": "tsms-without-policy",
       "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"venueA\":{\"decode\":{\"fields\":{\"px\":{\"path\":\"$.px\"},\"status\":{\"path\":\"$.status\"},\"ts\":{\"path\":\"$.ts\"},\"vol\":{\"path\":\"$.vol\"}},\"format\":\"json\"},\"kind\":\"http\",\"read\":{\"body\":null,\"headers\":{},\"method\":\"GET\",\"url\":\"https://a.example.com/v1/ticker\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"int256\"},\"transform\":{\"args\":[{\"ref\":\"$tsMs\"},{\"ref\":\"venueA.ts\"}],\"op\":\"sub\"},\"v\":\"1\"}",
       "analysis": {
         "sourceId": "0x6aa9f3aea97f727c2eb11fb1b22bcfec698e5082f064a16af41767802b7b2b16",
-        "inconclusiveId": null,
         "inputs": [
           {
             "name": "venueA",
@@ -422,10 +1425,9 @@
     },
     {
       "name": "distinct-chains",
-      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"base\":{\"chain\":\"eip155:8453\",\"decode\":{\"fields\":{\"balance\":{\"pick\":\"0\"}},\"format\":\"abi\",\"types\":[\"uint256\"]},\"finality\":{\"lagMs\":\"60000\",\"mode\":\"confirmations\",\"n\":\"3\"},\"kind\":\"evm\",\"read\":{\"address\":\"0x00000000219ab540356cbb839cbe05303d7705fa\",\"method\":\"balance\"}},\"eth\":{\"chain\":\"eip155:1\",\"decode\":{\"fields\":{\"balance\":{\"pick\":\"0\"}},\"format\":\"abi\",\"types\":[\"uint256\"]},\"finality\":{\"lagMs\":\"60000\",\"mode\":\"confirmations\",\"n\":\"3\"},\"kind\":\"evm\",\"read\":{\"address\":\"0x00000000219ab540356cbb839cbe05303d7705fa\",\"method\":\"balance\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"uint256\"},\"policy\":{\"candidates\":{\"base\":{\"onError\":\"refuse\",\"role\":\"corroborating\",\"rules\":[],\"value\":{\"ref\":\"base.balance\"},\"weight\":null},\"eth\":{\"onError\":\"refuse\",\"role\":\"corroborating\",\"rules\":[],\"value\":{\"ref\":\"eth.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":\"2\",\"op\":\"allEqual\",\"order\":null},\"inconclusive\":\"refuse\",\"inconclusiveIf\":[],\"independence\":\"distinctChains\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
+      "source": "{\"aggregation\":null,\"assert\":[],\"inputs\":{\"base\":{\"chain\":\"eip155:8453\",\"decode\":{\"fields\":{\"balance\":{\"pick\":\"0\"}},\"format\":\"abi\",\"types\":[\"uint256\"]},\"finality\":{\"lagMs\":\"60000\",\"mode\":\"confirmations\",\"n\":\"3\"},\"kind\":\"evm\",\"read\":{\"address\":\"0x00000000219ab540356cbb839cbe05303d7705fa\",\"method\":\"balance\"}},\"eth\":{\"chain\":\"eip155:1\",\"decode\":{\"fields\":{\"balance\":{\"pick\":\"0\"}},\"format\":\"abi\",\"types\":[\"uint256\"]},\"finality\":{\"lagMs\":\"60000\",\"mode\":\"confirmations\",\"n\":\"3\"},\"kind\":\"evm\",\"read\":{\"address\":\"0x00000000219ab540356cbb839cbe05303d7705fa\",\"method\":\"balance\"}}},\"output\":{\"decimals\":\"0\",\"type\":\"uint256\"},\"policy\":{\"candidates\":{\"base\":{\"onError\":\"refuse\",\"role\":\"corroborating\",\"rules\":[],\"value\":{\"ref\":\"base.balance\"},\"weight\":null},\"eth\":{\"onError\":\"refuse\",\"role\":\"corroborating\",\"rules\":[],\"value\":{\"ref\":\"eth.balance\"},\"weight\":null}},\"combine\":{\"maxSpreadBps\":null,\"minQualifying\":\"2\",\"op\":\"allEqual\",\"order\":null},\"inconclusive\":{\"fallback\":null},\"inconclusiveIf\":[],\"independence\":\"distinctChains\"},\"transform\":{\"ref\":\"$agg\"},\"v\":\"1\"}",
       "analysis": {
-        "sourceId": "0x69d2c7ca8013e5f111071ccc167d2aae82ed3ae290c2b5f2beeac969d06065f5",
-        "inconclusiveId": null,
+        "sourceId": "0x2e07ea88bd411e6e3924ebce0c76cd7e08527ef73cde132c3f202095be2ad4e2",
         "inputs": [
           {
             "name": "base",
@@ -463,7 +1465,7 @@
           },
           "independence": "distinctChains",
           "inconclusiveIf": 0,
-          "inconclusive": "refuse"
+          "fallback": null
         },
         "output": {
           "decimals": "0",

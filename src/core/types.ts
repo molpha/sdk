@@ -122,16 +122,14 @@ export interface Attestation {
    */
   valuePreimage?: string;
   /**
-   * For a source with a policy (node-client docs/policy.md): `conclusive`, the attestation is the
-   * source's result; or `inconclusive`, the attestation is signed under `inconclusiveId(sourceId)` and
-   * `payload.value` is {@link reason} as a uint256. Decide by `payload.sourceId` ({@link readOutcome}),
-   * not by this label.
+   * For a source with a policy (node-client docs/policy.md): `conclusive`, the value is the source's
+   * result; or `fallback`, the policy concluded INCONCLUSIVE and the value is its declared fallback.
+   * Both are signed under the source's ID. The label is the nodes' word: rely on the signed value
+   * compared with the source's fallback values (`fallbackWords`, `readOutcome`).
    */
-  outcome?: "conclusive" | "inconclusive";
-  /** The INCONCLUSIVE reason code, `0x01`. */
+  outcome?: "conclusive" | "fallback";
+  /** The INCONCLUSIVE reason code of a fallback, `0x01`. */
   reason?: string;
-  /** The requested source's ID, with `outcome`; `payload.sourceId` differs from it for an inconclusive result. */
-  roundSourceId?: string;
 }
 
 /**

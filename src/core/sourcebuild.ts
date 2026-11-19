@@ -414,8 +414,12 @@ export interface PolicyInput {
   independence?: "none" | "distinctHosts" | "distinctChains";
   /** Up to 8 bools over `$agg`, `$n` and fields; the first that holds gives INCONCLUSIVE 0x10 + i. */
   inconclusiveIf?: Expr[];
-  /** `sign`: INCONCLUSIVE is signed under I(S). Default `refuse`. */
-  inconclusive?: "sign" | "refuse";
+  /**
+   * The value signed, under the source's own ID, when the policy concludes INCONCLUSIVE: literals, `$reason`
+   * and `$n`, chosen with `iff` and tests. Make it a value no result can be (pair it with an assertion that
+   * excludes it). Default `null`: nodes refuse an INCONCLUSIVE result.
+   */
+  fallback?: Expr | null;
 }
 
 const MIN_QUALIFYING_OPS = new Set(["median", "weightedMedian", "allEqual", "majority"]);
@@ -457,7 +461,7 @@ export function policyDocFor(p: PolicyInput, inputs: Record<string, Record<strin
     },
     independence: p.independence ?? (names.length >= 2 ? "distinctHosts" : "none"),
     inconclusiveIf: (p.inconclusiveIf ?? []).map(normExpr),
-    inconclusive: p.inconclusive ?? "refuse",
+    inconclusive: { fallback: p.fallback ? normExpr(p.fallback) : null },
   };
 }
 
