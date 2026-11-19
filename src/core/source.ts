@@ -568,6 +568,8 @@ interface ExprCtx {
   allowValue: boolean;
   /** $agg and $n: after a policy's combine step. */
   allowAgg: boolean;
+  /** A policy's fallback: literals, $reason and $n only, and FALLBACK_OPS only. */
+  fallback?: boolean;
   nodes: { n: number };
   /** MAX_EXPR_NODES, or MAX_POLICY_EXPR_NODES when the source has a policy. */
   maxNodes: number;
@@ -651,6 +653,8 @@ function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
         "value",
         `unknown operator ${JSON.stringify(op)}`,
       );
+    if (ctx.fallback && !FALLBACK_OPS.has(op))
+      val(path + ".op", `a fallback uses only if, eq, ne, lt, lte, gt, gte, in, and, or and not, not ${op}`);
     const m = exact(v, path, ["args", "op", ...spec.params]);
     const args = m.get("args")!;
     if (!Array.isArray(args))
@@ -688,6 +692,22 @@ function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
   switch (key) {
     case "ref": {
       const s = str(x, p);
+      if (ctx.fallback && s !== "$reason" && s !== "$n")
+        throw new SourceError(p, "reference", `a fallback reads only literals, $reason and $n, not ${JSON.stringify(s)}`);
+      if (s === "$reason") {
+        if (!ctx.fallback)
+          throw new SourceError(p, "reference", "$reason is only available in a policy's fallback");
+        return;
+      }
+      if (s === "$n") {
+        if (!ctx.allowAgg && !ctx.fallback)
+          throw new SourceError(
+            p,
+            "reference",
+            "$n is only available after a policy's combine step: in inconclusiveIf, the fallback, the transform and the assertions",
+          );
+        return;
+      }
       if (s === "$ts" || s === "$tsMs") return;
       if (s === "$value") {
         if (!ctx.allowValue)
@@ -698,12 +718,12 @@ function checkExpr(v: Json, path: string, ctx: ExprCtx, depth: number): void {
           );
         return;
       }
-      if (s === "$agg" || s === "$n") {
+      if (s === "$agg") {
         if (!ctx.allowAgg)
           throw new SourceError(
             p,
             "reference",
-            `${s} is only available after a policy's combine step: in inconclusiveIf, the transform and the assertions`,
+            "$agg is only available after a policy's combine step: in inconclusiveIf, the transform and the assertions",
           );
         return;
       }
@@ -2410,8 +2430,8 @@ export interface ParsedSource {
   provenance: { providerId: number } | null;
   /** The policy block (node-client docs/policy.md), or null when the source has none. */
   policy: ParsedPolicy | null;
-  /** Whether the source's INCONCLUSIVE results are signed, under {@link inconclusiveId}. */
-  signsInconclusive: boolean;
+  /** Whether the source's policy declares a fallback: whether an INCONCLUSIVE result is signed at all. */
+  hasFallback: boolean;
 }
 
 /** What the SDK reads off a source's policy block. */
@@ -2420,7 +2440,10 @@ export interface ParsedPolicy {
   candidates: string[];
   combine: string;
   independence: string;
-  inconclusive: "sign" | "refuse";
+  /** The number of inconclusiveIf entries. */
+  inconclusiveIf: number;
+  /** The fallback tree signed for an INCONCLUSIVE result, or null when the policy declares none. */
+  fallback: PlainExpr | null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2449,7 +2472,7 @@ function leavesOf(name: string, all: Set<string>): Set<string> {
   return own;
 }
 
-function checkPolicy(v: Json, inputs: JObj, base: ExprCtx): ParsedPolicy {
+function checkPolicy(v: Json, inputs: JObj, base: ExprCtx, output: Output): ParsedPolicy {
   if (v === null) val("policy", "omit policy instead of writing null");
   const m = exact(v, "policy", ["candidates", "combine", "inconclusive", "inconclusiveIf", "independence"]);
   const cv = m.get("candidates")!;
@@ -2477,9 +2500,21 @@ function checkPolicy(v: Json, inputs: JObj, base: ExprCtx): ParsedPolicy {
   const after: ExprCtx = { ...base, allowAgg: true };
   iv.forEach((e, i) => checkExpr(e, `policy.inconclusiveIf[${i}]`, after, 1));
 
-  const inconclusive = str(m.get("inconclusive"), "policy.inconclusive");
-  oneOf("policy.inconclusive", inconclusive, ["sign", "refuse"]);
-  return { candidates: names, combine, independence, inconclusive: inconclusive as "sign" | "refuse" };
+  const policy: ParsedPolicy = { candidates: names, combine, independence, inconclusiveIf: iv.length, fallback: null };
+  const im = exact(m.get("inconclusive")!, "policy.inconclusive", ["fallback"]);
+  const fv = im.get("fallback")!;
+  if (fv !== null) {
+    checkExpr(fv, "policy.inconclusive.fallback", { ...base, leaves: new Set(), fallback: true }, 1);
+    policy.fallback = toPlain(fv) as PlainExpr;
+    for (const l of fallbackLits(policy.fallback, policy)) {
+      try {
+        encodeLit(l, output);
+      } catch (e) {
+        val("policy.inconclusive.fallback", `a value the fallback can take does not encode: ${(e as Error).message}`);
+      }
+    }
+  }
+  return policy;
 }
 
 function checkCandidate(name: string, v: Json, path: string, base: ExprCtx): { role: string; weighted: boolean } {
@@ -2570,70 +2605,254 @@ function checkIndependence(mode: string, names: string[], inputs: JObj): void {
   }
 }
 
-const INCONCLUSIVE_TAG = enc.encode("MOLPHA_INCONCLUSIVE_V1");
+// ---------------------------------------------------------------------------------------------
+// Fallback (node-client docs/policy.md, Fallback): the same checks as new/source/fallback.go
+// ---------------------------------------------------------------------------------------------
 
-/**
- * `I(S) = keccak256("MOLPHA_INCONCLUSIVE_V1" || S)`: the source ID a policy's INCONCLUSIVE result is
- * signed under. A consumer accepts its source `S` and `I(S)`, nothing else.
- */
-export function inconclusiveId(sourceId: Uint8Array | string): Uint8Array {
-  const s = typeof sourceId === "string" ? fromHex32(sourceId) : sourceId;
-  if (s.length !== 32) throw new Error("a source ID is 32 bytes");
-  const b = new Uint8Array(INCONCLUSIVE_TAG.length + 32);
-  b.set(INCONCLUSIVE_TAG);
-  b.set(s, INCONCLUSIVE_TAG.length);
-  return keccak_256(b);
+type Output = { type: OutputType; decimals: number };
+
+const FALLBACK_OPS = new Set(["if", "eq", "ne", "lt", "lte", "gt", "gte", "in", "and", "or", "not"]);
+
+/** A literal: a decimal (m at scale s), a string, bytes or a bool. */
+type Lit =
+  | { kind: "d"; m: bigint; s: number }
+  | { kind: "s"; v: string }
+  | { kind: "y"; v: Uint8Array }
+  | { kind: "b"; v: boolean };
+
+function decLit(x: string): Lit {
+  const neg = x.startsWith("-");
+  const [whole, frac = ""] = (neg ? x.slice(1) : x).split(".");
+  const m = BigInt(whole! + frac);
+  return { kind: "d", m: neg ? -m : m, s: frac.length };
 }
 
-/** {@link inconclusiveId} as `0x`-prefixed hex. */
-export function inconclusiveIdHex(sourceId: Uint8Array | string): string {
-  return "0x" + toHex(inconclusiveId(sourceId));
-}
-
-function fromHex32(h: string): Uint8Array {
-  const x = h.startsWith("0x") ? h.slice(2) : h;
-  if (!/^[0-9a-fA-F]{64}$/.test(x)) throw new Error("a source ID is 32 bytes of hex");
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) out[i] = parseInt(x.slice(2 * i, 2 * i + 2), 16);
+function hexBytes(h: string): Uint8Array {
+  const x = h.slice(2);
+  const out = new Uint8Array(x.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(x.slice(2 * i, 2 * i + 2), 16);
   return out;
 }
 
-/** What a verified attestation says about a source `S` (node-client docs/policy.md). */
-export type Outcome =
-  | { kind: "conclusive"; value: string }
-  | { kind: "inconclusive"; reason: number };
+function exprLit(e: PlainExpr): Lit | null {
+  const o = e as Record<string, unknown>;
+  if (typeof o.const === "string") return decLit(o.const);
+  if (typeof o.str === "string") return { kind: "s", v: o.str };
+  if (typeof o.bytes === "string") return { kind: "y", v: hexBytes(o.bytes) };
+  if (typeof o.bool === "boolean") return { kind: "b", v: o.bool };
+  return null;
+}
+
+function litText(l: Lit): string {
+  switch (l.kind) {
+    case "d": {
+      const neg = l.m < 0n;
+      let d = (neg ? -l.m : l.m).toString();
+      if (l.s > 0) {
+        d = d.padStart(l.s + 1, "0");
+        d = (d.slice(0, d.length - l.s) + "." + d.slice(d.length - l.s)).replace(/\.?0+$/, "");
+      }
+      return (neg ? "-" : "") + d;
+    }
+    case "s":
+      return JSON.stringify(l.v);
+    case "y":
+      return "0x" + toHex(l.v);
+    default:
+      return String(l.v);
+  }
+}
+
+/** The reason codes a policy can conclude INCONCLUSIVE with: its combinator's, then 0x10 + i per inconclusiveIf entry. */
+export function fallbackReasons(p: ParsedPolicy): number[] {
+  const rs = p.combine === "single" || p.combine === "fallback" ? [0x01] : p.combine === "primaryPlusOne" ? [0x03] : [0x01, 0x02];
+  for (let i = 0; i < p.inconclusiveIf; i++) rs.push(0x10 + i);
+  return rs;
+}
+
+/** The values a fallback can take, a superset when a condition can never hold. */
+function fallbackLits(e: PlainExpr, p: ParsedPolicy): Lit[] {
+  if (typeof e.ref === "string") {
+    if (e.ref === "$reason") return fallbackReasons(p).map((r) => ({ kind: "d", m: BigInt(r), s: 0 }));
+    return Array.from({ length: p.candidates.length + 1 }, (_, n): Lit => ({ kind: "d", m: BigInt(n), s: 0 }));
+  }
+  if (typeof e.op === "string") {
+    if (e.op === "if") return [...fallbackLits(e.args![1]!, p), ...fallbackLits(e.args![2]!, p)];
+    return [{ kind: "b", v: false }, { kind: "b", v: true }];
+  }
+  return [exprLit(e)!];
+}
+
+const TWO_255 = 1n << 255n;
+const TWO_256 = 1n << 256n;
+
+/** Encode a literal under the output type as a node would; a decimal must be exact at the output's decimals. */
+function encodeLit(l: Lit, out: Output): Uint8Array {
+  const w = new Uint8Array(32);
+  switch (out.type) {
+    case "int256":
+    case "uint256": {
+      if (l.kind !== "d") throw new Error(`${out.type} needs a decimal, got ${litText(l)}`);
+      if (l.s > out.decimals) throw new Error(`${litText(l)} has more than the output's ${out.decimals} decimals`);
+      let v = l.m * 10n ** BigInt(out.decimals - l.s);
+      if (out.type === "uint256") {
+        if (v < 0n || v >= TWO_256) throw new Error(`${litText(l)} does not fit uint256`);
+      } else {
+        if (v >= TWO_255 || v < -TWO_255) throw new Error(`${litText(l)} does not fit int256`);
+        if (v < 0n) v += TWO_256;
+      }
+      for (let i = 31; i >= 0; i--) {
+        w[i] = Number(v & 0xffn);
+        v >>= 8n;
+      }
+      return w;
+    }
+    case "bool":
+      if (l.kind !== "b") throw new Error(`bool needs a bool, got ${litText(l)}`);
+      w[31] = l.v ? 1 : 0;
+      return w;
+    case "bytes32":
+      if (l.kind !== "y" || l.v.length > 32) throw new Error(`bytes32 needs at most 32 bytes, got ${litText(l)}`);
+      w.set(l.v, 32 - l.v.length);
+      return w;
+    case "string32": {
+      const b = l.kind === "s" ? enc.encode(l.v) : null;
+      if (!b || b.length > 32) throw new Error(`string32 needs a string of at most 32 bytes, got ${litText(l)}`);
+      w.set(b);
+      return w;
+    }
+    case "keccak256":
+      if (l.kind === "s") return keccak_256(enc.encode(l.v));
+      if (l.kind === "y") return keccak_256(l.v);
+      throw new Error(`keccak256 needs a string or bytes, got ${litText(l)}`);
+  }
+  throw new Error(`unknown output type ${JSON.stringify(out.type)}`);
+}
 
 /**
- * Read a verified attestation as a result of `sourceId`: signed under `S` it is the result, under
- * `inconclusiveId(S)` it is INCONCLUSIVE with its reason (`payload.value` a uint256 from 1 to 255).
- * Anything else is not this source's attestation: `null`, reject it.
+ * The 32-byte words (`0x`-hex, sorted, no repeats) a source's fallback can sign: what a consumer
+ * compares a verified value with to tell an INCONCLUSIVE result. Empty without a fallback.
+ */
+export function fallbackWords(src: ParsedSource): string[] {
+  const p = src.policy;
+  if (!p?.fallback) return [];
+  const words = new Set<string>();
+  for (const l of fallbackLits(p.fallback, p)) words.add("0x" + toHex(encodeLit(l, src.output)));
+  return [...words].sort();
+}
+
+const FLIPPED: Record<string, string> = { eq: "eq", ne: "ne", lt: "gt", lte: "gte", gt: "lt", gte: "lte" };
+
+function isOutRef(e: PlainExpr): boolean {
+  return e.ref === "$out";
+}
+
+function literalResults(e: PlainExpr): Lit[] | null {
+  if (e.op === "if") {
+    const a = literalResults(e.args![1]!);
+    const b = a && literalResults(e.args![2]!);
+    return a && b ? [...a, ...b] : null;
+  }
+  const l = exprLit(e);
+  return l ? [l] : null;
+}
+
+function litEqual(a: Lit, b: Lit): boolean {
+  if (a.kind === "d" && b.kind === "d") {
+    const s = Math.max(a.s, b.s);
+    return a.m * 10n ** BigInt(s - a.s) === b.m * 10n ** BigInt(s - b.s);
+  }
+  if (a.kind === "y" && b.kind === "y") return a.v.length === b.v.length && a.v.every((x, i) => x === b.v[i]);
+  if (a.kind === "s" && b.kind === "s") return a.v === b.v;
+  if (a.kind === "b" && b.kind === "b") return a.v === b.v;
+  return false;
+}
+
+/**
+ * Whether assertion `a` compares $out with a literal and fails for every $out encoding to `l`'s word. An
+ * int256 or uint256 output rounds $out half-even to its decimals, so those $out lie in [l - u/2, l + u/2].
+ */
+function assertExcludes(a: PlainExpr, l: Lit, out: Output): boolean {
+  if (typeof a.op !== "string" || !(a.op in FLIPPED)) return false;
+  let op = a.op;
+  let c: Lit | null;
+  if (isOutRef(a.args![0]!)) c = exprLit(a.args![1]!);
+  else if (isOutRef(a.args![1]!)) {
+    c = exprLit(a.args![0]!);
+    op = FLIPPED[op]!;
+  } else return false;
+  if (!c || c.kind !== l.kind) return false;
+  if (out.type === "int256" || out.type === "uint256") {
+    if (c.kind !== "d" || l.kind !== "d") return false;
+    const scale = Math.max(out.decimals + 1, c.s);
+    const at = (m: bigint, from: number) => m * 10n ** BigInt(scale - from);
+    const half = at(5n, out.decimals + 1);
+    const mid = at(l.m, l.s);
+    const lo = mid - half;
+    const hi = mid + half;
+    const cv = at(c.m, c.s);
+    switch (op) {
+      case "gte":
+        return hi < cv;
+      case "gt":
+        return hi <= cv;
+      case "lte":
+        return lo > cv;
+      case "lt":
+        return lo >= cv;
+      case "eq":
+        return cv < lo || cv > hi;
+    }
+    return false;
+  }
+  const same = litEqual(l, c);
+  return op === "eq" ? !same : op === "ne" ? same : false;
+}
+
+/** Whether no CONCLUSIVE result can sign the same word as the fallback value `l` (docs/policy.md). */
+function fallbackUnreachable(doc: Record<string, any>, l: Lit, out: Output): boolean {
+  const word = toHex(encodeLit(l, out));
+  const results = literalResults(doc.transform);
+  if (results) {
+    for (const r of results) {
+      try {
+        if (toHex(encodeLit(r, out)) === word) return false;
+      } catch {
+        // a result that does not encode is a refusal, never a signed word
+      }
+    }
+    return true;
+  }
+  return (doc.assert as PlainExpr[]).some((a) => assertExcludes(a, l, out));
+}
+
+/**
+ * Read a verified attestation as a result of the policy source `src` (node-client docs/policy.md): under any
+ * other source ID it is not this source's (`null`, reject it); a value among the source's
+ * {@link fallbackWords} is its fallback, signed for an INCONCLUSIVE result; anything else is the result.
+ * With a reachable fallback (the analysis says so) a result can equal the fallback.
  */
 export function readOutcome(
   payload: { sourceId: string; value: string },
-  sourceId: Uint8Array | string,
-): Outcome | null {
-  const s = typeof sourceId === "string" ? fromHex32(sourceId) : sourceId;
-  const signed = fromHex32(payload.sourceId);
-  const eq = (a: Uint8Array, b: Uint8Array) => a.every((x, i) => x === b[i]);
-  if (eq(signed, s)) return { kind: "conclusive", value: payload.value };
-  if (eq(signed, inconclusiveId(s))) {
-    const v = fromHex32(payload.value);
-    if (v.slice(0, 31).every((x) => x === 0) && v[31] !== 0) return { kind: "inconclusive", reason: v[31]! };
-  }
-  return null;
+  src: ParsedSource,
+): { kind: "conclusive" | "fallback"; value: string } | null {
+  const norm = (h: string) => (h.startsWith("0x") ? h.slice(2) : h).toLowerCase();
+  if (norm(payload.sourceId) !== norm(src.idHex)) return null;
+  const v = "0x" + norm(payload.value);
+  return { kind: fallbackWords(src).includes(v) ? "fallback" : "conclusive", value: payload.value };
 }
 
 /** Static analysis of a parsed source (node-client docs/policy.md, Analysis): the same facts as Go's source.Analyze. */
 export interface SourceAnalysis {
   sourceId: string;
-  inconclusiveId: string | null;
   inputs: { name: string; kind: string; chain: string | null; host: string | null; candidate: boolean }[];
   policy: {
     candidates: { name: string; role: string; rules: number }[];
     combine: { maxSpreadBps: string | null; minQualifying: string | null; op: string; order: string[] | null };
     independence: string;
     inconclusiveIf: number;
-    inconclusive: string;
+    /** The words the fallback can sign, and whether a CONCLUSIVE result may sign one of them; null without a fallback. */
+    fallback: { values: string[]; reachable: boolean } | null;
   } | null;
   output: { decimals: string | null; type: string };
   aggregation: "exact" | "tolerance";
@@ -2644,7 +2863,7 @@ export interface SourceAnalysis {
   warnings: { code: string; path: string }[];
 }
 
-type PlainExpr = { op?: string; args?: PlainExpr[]; ref?: string };
+type PlainExpr = { op?: string; args?: PlainExpr[]; ref?: string; const?: string; str?: string; bytes?: string; bool?: boolean };
 
 function exprSize(e: PlainExpr, depth: number): [number, number] {
   let nodes = 1;
@@ -2667,7 +2886,6 @@ export function analyzeSource(src: ParsedSource): SourceAnalysis {
   const doc = src.doc as unknown as Record<string, any>;
   const out: SourceAnalysis = {
     sourceId: src.idHex,
-    inconclusiveId: src.signsInconclusive ? inconclusiveIdHex(src.id) : null,
     inputs: [],
     policy: null,
     output: {
@@ -2702,7 +2920,7 @@ export function analyzeSource(src: ParsedSource): SourceAnalysis {
       },
       independence: pol.independence,
       inconclusiveIf: pol.inconclusiveIf.length,
-      inconclusive: pol.inconclusive,
+      fallback: null,
     };
     for (const n of names) {
       trees.push(cands[n].value);
@@ -2711,9 +2929,17 @@ export function analyzeSource(src: ParsedSource): SourceAnalysis {
     }
     trees.push(...pol.inconclusiveIf);
     out.capabilities.push("policy/1");
-    if (pol.inconclusive === "sign") {
-      out.capabilities.push("inconclusive/1");
-      if (src.tolerance) out.capabilities.push("round1/2");
+    const fb = src.policy!.fallback;
+    if (fb) {
+      trees.push(fb);
+      const reachable = fallbackLits(fb, src.policy!).some((l) => !fallbackUnreachable(doc, l, src.output));
+      out.policy.fallback = { values: fallbackWords(src), reachable };
+      out.capabilities.push("fallback/1");
+      if (reachable) out.warnings.push({ code: "fallbackReachable", path: "policy.inconclusive.fallback" });
+      if (src.tolerance) {
+        out.capabilities.push("round1/2");
+        out.warnings.push({ code: "fallbackTolerance", path: "policy.inconclusive.fallback" });
+      }
     }
     if (names.length >= 2 && !src.tolerance) out.warnings.push({ code: "exactComposite", path: "policy" });
     if (names.length >= 2 && pol.independence === "none")
@@ -2820,7 +3046,7 @@ function build(v: Json, maxCanonical: number): ParsedSource {
   const polv = m.get("policy");
   if (polv !== undefined) {
     ctx.maxNodes = MAX_POLICY_EXPR_NODES;
-    policy = checkPolicy(polv, iv, ctx);
+    policy = checkPolicy(polv, iv, ctx, output);
     ctx.allowAgg = true;
   }
   checkExpr(m.get("transform")!, "transform", ctx, 1);
@@ -2860,7 +3086,7 @@ function build(v: Json, maxCanonical: number): ParsedSource {
     tolerance,
     provenance,
     policy,
-    signsInconclusive: policy?.inconclusive === "sign",
+    hasFallback: policy?.fallback != null,
   };
 }
 

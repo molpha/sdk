@@ -8,7 +8,7 @@ import {
   verifyPreimage,
 } from "../core/sourcebuild.js";
 import type { ParsedSource } from "../core/source.js";
-import { inconclusiveIdHex, readOutcome } from "../core/source.js";
+import { fallbackWords } from "../core/source.js";
 import { MOLPHA_PROGRAM_ID } from "../core/constants.js";
 import { DEFAULT_GATEWAY_ENDPOINT } from "../deployment.generated.js";
 import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
@@ -229,11 +229,9 @@ interface GatewaySignedData {
   s?: string;
   commitmentAddr?: string;
   fresh?: boolean;
-  /** A policy source's outcome (conclusive or inconclusive) and INCONCLUSIVE reason (0x01). */
+  /** A policy source's outcome (conclusive or fallback) and, for a fallback, its INCONCLUSIVE reason (0x01). */
   outcome?: string;
   reason?: string;
-  /** The requested source's ID, set by {@link flattenGatewayData} from the body's top-level `sourceId` beside `outcome`. */
-  roundSourceId?: string;
 }
 
 interface GatewayEnvelope<T> {
@@ -1182,8 +1180,6 @@ function flattenGatewayData(data: GatewaySignedData): GatewaySignedData {
   if (!nested) return data;
   const { attestation: _nested, ...rest } = data;
   const { payload, signature } = nested;
-  // With an outcome the body's own sourceId is the requested source; payload.sourceId is what was signed.
-  if (rest.sourceId !== undefined && rest.outcome !== undefined) rest.roundSourceId = rest.sourceId;
   const timestamp = payload?.timestamp ?? payload?.canonicalTimestamp;
   return {
     ...rest,
@@ -1232,14 +1228,10 @@ function toResult(
     }
   }
   const data = flattenGatewayData(raw);
-  // A source that signs INCONCLUSIVE results may be answered under I(S) (node-client docs/policy.md);
-  // anything else must be signed under the requested source itself.
-  const inconclusiveHex = ctx.source.signsInconclusive
-    ? normalizeHex(inconclusiveIdHex(ctx.sourceId))
-    : undefined;
-  const signedHex = data.sourceId !== undefined ? normalizeHex(data.sourceId) : ctx.sourceId;
-  const inconclusive = inconclusiveHex !== undefined && signedHex === inconclusiveHex;
-  if (signedHex !== ctx.sourceId && !inconclusive) {
+  if (
+    data.sourceId !== undefined &&
+    normalizeHex(data.sourceId) !== ctx.sourceId
+  ) {
     throw new GatewayError(
       `Gateway response sourceId ${data.sourceId} does not match the requested ${ctx.sourceId}`,
     );
@@ -1265,19 +1257,17 @@ function toResult(
       throw new GatewayError(`Gateway response is missing ${name}`);
     }
   }
+  // A policy's fallback is an ordinary value under S (node-client docs/policy.md). The gateway's label is
+  // the nodes' word: accept it only on a value the source declares as its fallback.
+  const fallback = data.outcome === "fallback";
+  if (fallback && !fallbackWords(ctx.source).includes("0x" + normalizeHex(fields.value!))) {
+    throw new GatewayError(
+      `Gateway response is labelled a fallback, but ${fields.value} is not one of the source's fallback values`,
+    );
+  }
   let value: string;
-  let reason: string | undefined;
   try {
-    if (inconclusive) {
-      // The value of an INCONCLUSIVE attestation is its reason as a uint256, never the source's output.
-      const outcome = readOutcome({ sourceId: signedHex, value: fields.value! }, ctx.sourceId);
-      if (outcome?.kind !== "inconclusive")
-        throw new Error("an INCONCLUSIVE value must be a reason code from 0x01 to 0xff");
-      reason = "0x" + outcome.reason.toString(16).padStart(2, "0");
-      value = `inconclusive ${reason}`;
-    } else {
-      value = formatValue(fields.value!, ctx.source.output);
-    }
+    value = formatValue(fields.value!, ctx.source.output);
   } catch (err) {
     throw new GatewayError(
       `Gateway response value is not a 32-byte word: ${err instanceof Error ? err.message : String(err)}`,
@@ -1299,7 +1289,7 @@ function toResult(
   }
   return {
     payload: {
-      sourceId: signedHex,
+      sourceId: ctx.sourceId,
       value: fields.value!,
       timestamp: fields.timestamp!,
       registryVersion: fields.registryVersion!,
@@ -1315,9 +1305,8 @@ function toResult(
     ...(valuePreimage ? { valuePreimage } : {}),
     ...(ctx.source.policy
       ? {
-          outcome: inconclusive ? ("inconclusive" as const) : ("conclusive" as const),
-          ...(reason ? { reason } : {}),
-          roundSourceId: ctx.sourceId,
+          outcome: fallback ? ("fallback" as const) : ("conclusive" as const),
+          ...(fallback && data.reason ? { reason: data.reason } : {}),
         }
       : {}),
   };
