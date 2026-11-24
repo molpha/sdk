@@ -61,6 +61,18 @@ describe("simulateSource", () => {
     await expect(simulateSource("https://gw", source.doc, {}, { fetch })).rejects.toThrow(/without a simulation/);
   });
 
+  it("refuses an answer about another source", async () => {
+    const other = { ...simulation, sourceId: "ab".repeat(32) };
+    const fetch = vi.fn(async () => jsonResponse({ status: "ok", data: other })) as unknown as typeof globalThis.fetch;
+    await expect(simulateSource("https://gw", source.doc, {}, { fetch })).rejects.toThrow(/not the source sent/);
+  });
+
+  it("accepts the source ID with or without 0x, and returns the timestamp", async () => {
+    const data = { ...simulation, sourceId: source.idHex.toUpperCase().replace("0X", "0x"), timestampMs: 1_795_000_000_500 };
+    const fetch = vi.fn(async () => jsonResponse({ status: "ok", data })) as unknown as typeof globalThis.fetch;
+    expect((await simulateSource("https://gw", source.doc, {}, { fetch })).timestampMs).toBe(1_795_000_000_500);
+  });
+
   it("is a method of the gateway client, on its first gateway", async () => {
     const fetch = vi.fn(async () => jsonResponse({ status: "ok", data: simulation }));
     globalThis.fetch = fetch as unknown as typeof globalThis.fetch;

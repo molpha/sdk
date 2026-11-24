@@ -4,6 +4,8 @@
  * a policy's fallback included, can be checked against any data, a failure included.
  */
 
+import { deriveSourceIdHex } from "../core/source.js";
+
 /** One decoded field of an input. */
 export interface SimulatedField {
   type: "decimal" | "string" | "bool" | "bytes" | "null";
@@ -52,8 +54,10 @@ export interface SimulatedPolicy {
 }
 
 export interface SimulationResult {
-  /** keccak256 of the canonical source, hex without 0x. */
+  /** keccak256 of the canonical source, hex without 0x; checked against the source that was sent. */
   sourceId: string;
+  /** The round timestamp the source was evaluated at (unix ms); absent from older gateways. */
+  timestampMs?: number;
   /** The source in canonical form. */
   source: unknown;
   inputs: {
@@ -102,6 +106,13 @@ export async function simulateSource(
   inputs: Record<string, SimulatedInput>,
   opts: SimulateOptions = {},
 ): Promise<SimulationResult> {
+  // A source that does not parse is still sent: the gateway's 400 says why.
+  let sentId = "";
+  try {
+    sentId = deriveSourceIdHex(source as object);
+  } catch {
+    sentId = "";
+  }
   const doFetch = opts.fetch ?? fetch;
   const controller = opts.timeoutMs !== undefined ? new AbortController() : undefined;
   const timer = controller ? setTimeout(() => controller.abort(), opts.timeoutMs) : undefined;
@@ -129,6 +140,17 @@ export async function simulateSource(
     }
     if (!body?.data || typeof body.data.sourceId !== "string" || !Array.isArray(body.data.inputs)) {
       throw new SimulateError("POST /v1/source/simulate answered without a simulation", res.status);
+    }
+    // The answer must be about the source that was sent, not another one the gateway evaluated.
+    const strip = (h: string) => (h.startsWith("0x") ? h.slice(2) : h).toLowerCase();
+    if (sentId === "") {
+      throw new SimulateError("this SDK cannot derive the sent source's ID, so the simulation cannot be checked", res.status);
+    }
+    if (strip(body.data.sourceId) !== strip(sentId)) {
+      throw new SimulateError(
+        `POST /v1/source/simulate answered for source ${body.data.sourceId}, not the source sent (${strip(sentId)})`,
+        res.status,
+      );
     }
     return body.data;
   } finally {

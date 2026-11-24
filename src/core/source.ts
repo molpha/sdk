@@ -2592,7 +2592,8 @@ function checkIndependence(mode: string, names: string[], inputs: JObj): void {
     const kind = input.get("kind") as string;
     if (mode === "distinctHosts") {
       if (kind !== "http") continue;
-      const host = splitURL((input.get("read") as JObj).get("url") as string).host;
+      // A trailing dot names the same host (api.example.com. is api.example.com).
+      const host = splitURL((input.get("read") as JObj).get("url") as string).host.replace(/\.$/, "");
       const other = seen.get(host);
       if (other !== undefined) val(path, `distinctHosts: candidates ${other} and ${name} both read ${host}`);
       seen.set(host, name);
@@ -2900,7 +2901,8 @@ function fallbackUnreachable(doc: Record<string, any>, l: Lit, out: Output): boo
 
 /**
  * Read a verified attestation as a result of the policy source `src` (node-client docs/policy.md): under any
- * other source ID it is not this source's (`null`, reject it); a value among the source's
+ * other source ID, or with a value that is not one 32-byte word, it is not this source's (`null`, reject
+ * it); a value among the source's
  * {@link fallbackWords} is its fallback, signed for an INCONCLUSIVE result; anything else is the result.
  * With a reachable fallback (the analysis says so) a result can equal the fallback.
  */
@@ -2911,6 +2913,8 @@ export function readOutcome(
   const norm = (h: string) => (h.startsWith("0x") ? h.slice(2) : h).toLowerCase();
   if (norm(payload.sourceId) !== norm(src.idHex)) return null;
   const v = "0x" + norm(payload.value);
+  // A signed value is one 32-byte word: anything else is not an attestation of this source.
+  if (!/^0x[0-9a-f]{64}$/.test(v)) return null;
   return { kind: fallbackWords(src).includes(v) ? "fallback" : "conclusive", value: payload.value };
 }
 

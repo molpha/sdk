@@ -122,5 +122,9 @@ describe("policy builders", () => {
     expect(readOutcome({ sourceId: s.idHex, value: word(3) }, s)).toEqual({ kind: "fallback", value: word(3) });
     expect(readOutcome({ sourceId: s.idHex, value: word(1) }, s)).toEqual({ kind: "conclusive", value: word(1) });
     expect(readOutcome({ sourceId: "0x" + "22".repeat(32), value: word(2) }, s)).toBeNull();
+    // A value that is not one 32-byte word is not an attestation of the source.
+    expect(readOutcome({ sourceId: s.idHex, value: word(3) + "00" }, s)).toBeNull();
+    expect(readOutcome({ sourceId: s.idHex, value: word(3).slice(0, -2) }, s)).toBeNull();
+    expect(readOutcome({ sourceId: s.idHex, value: "0x" }, s)).toBeNull();
   });
 });
