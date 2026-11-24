@@ -975,10 +975,17 @@
         },
         "n": "1",
         "agg": null,
-        "outcome": "refuse",
-        "reason": null,
-        "signed": null,
-        "stage": "policy inconclusive"
+        "outcome": "inconclusive",
+        "reason": "0x01",
+        "fallback": {
+          "type": "decimal",
+          "value": "-1"
+        },
+        "signed": {
+          "sourceId": "0x2e1a115cb5f4f6a867cbae317150bd3b539a2ba804299f515c758e3a00b73e90",
+          "value": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffa0a1f00"
+        },
+        "stage": null
       }
     },
     {
