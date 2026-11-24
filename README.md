@@ -368,6 +368,20 @@ The returned `Attestation` matches the cross-VM struct (`payload` + `signature`)
 
 A gateway response is a coordination result, not proof of settlement or of on-chain verification. Consumers still decide freshness, source, quorum and replay policy.
 
+The result also carries `roundId`, derived from the signed payload: the round archive serves the round under it, and for a source with a policy each node's receipt of it (what each node read, which candidates qualified, its outcome).
+
+To check a source's logic, a policy included, without paying for a round, evaluate it over inputs you supply. Nothing is fetched or signed; each input is a `body`, decoded `fields`, or an `error`:
+
+```ts
+import { simulateSource } from "@molpha/sdk";
+
+const sim = await simulateSource(gatewayUrl, source.doc, {
+  venueA: { body: '{"price": 65000.12}' },
+  venueB: { error: "fetch" },
+});
+sim.policy?.outcome; // "inconclusive" when one venue is not enough; sim.value is then the fallback
+```
+
 ### 4. Submit on Solana
 
 ```ts

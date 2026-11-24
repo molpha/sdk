@@ -109,6 +109,12 @@ export interface AttestationPayload {
  * metadata and are not part of the signed struct.
  */
 export interface Attestation {
+  /**
+   * The round's ID (`0x` hex), derived from the signed payload: requests for one feed in one 100 ms tick
+   * share it. The round archive serves the round, and for a source with a policy each node's receipt of
+   * it, under this ID (read service `GET /v1/rounds/{roundId}`). Set on results of the gateway client.
+   */
+  roundId?: string;
   payload: AttestationPayload;
   signature: SchnorrSignature;
   /** Human-readable value, rendered from the signed value by the source's output (not signed). */
