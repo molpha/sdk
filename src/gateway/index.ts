@@ -15,6 +15,13 @@ import { bytesToHex, bytesToHex0x } from "../core/encoding.js";
 import { normalizeSecp256k1PublicKeyHex } from "../core/nodeKeys.js";
 import { effectiveSelectionSize, nodeQuorum } from "../core/selection.js";
 import { ROUND_TICK_MS } from "../core/timestamp.js";
+import { deriveRoundIdHex } from "../core/round.js";
+import {
+  simulateSource,
+  type SimulatedInput,
+  type SimulateOptions,
+  type SimulationResult,
+} from "./simulate.js";
 import type {
   Attestation,
   Node,
@@ -48,6 +55,7 @@ export type { RegistrySelectionConfig } from "../core/types.js";
 export * from "./auth.js";
 export * from "./identity.js";
 export * from "./x402.js";
+export * from "./simulate.js";
 
 export interface RequestSignedDataOptions {
   /**
@@ -469,6 +477,21 @@ export class MolphaGateway {
       );
     }
     return info;
+  }
+
+  /**
+   * `POST {url}/v1/source/simulate` — evaluates `source` over `inputs` the caller supplies, with the
+   * nodes' own evaluator, on this client's first gateway (or `endpoint`). Nothing is fetched, signed or
+   * charged. See {@link simulateSource}.
+   */
+  async simulateSource(
+    source: unknown,
+    inputs: Record<string, SimulatedInput>,
+    opts: SimulateOptions & { endpoint?: GatewayEndpointInput } = {},
+  ): Promise<SimulationResult> {
+    const { endpoint, ...rest } = opts;
+    const url = endpoint !== undefined ? normalizeEndpoint(endpoint).url : this.endpoints[0]!.url;
+    return simulateSource(url, source, inputs, rest);
   }
 
   /**
@@ -1285,6 +1308,13 @@ function toResult(
     valuePreimage = "0x" + data.valuePreimage.replace(/^0x/, "");
   }
   return {
+    // Derived from the signed fields, not taken from the gateway: the key of the round's archive page.
+    roundId: deriveRoundIdHex({
+      sourceId: ctx.sourceId,
+      signaturesRequired: ctx.signaturesRequired,
+      registryVersion: fields.registryVersion!,
+      timestamp: fields.timestamp!,
+    }),
     payload: {
       sourceId: ctx.sourceId,
       value: fields.value!,
